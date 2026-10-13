@@ -143,6 +143,7 @@ mod tests {
                 url: None,
             }),
             service: None,
+            services: Vec::new(),
         }
     }
 

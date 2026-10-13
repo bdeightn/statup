@@ -46,13 +46,17 @@ pub enum Subject {
         /// The update posted with the change, as stored: sanitized HTML.
         update: Option<String>,
     },
-    /// A service the checks found down, or back.
-    Service {
-        name: String,
-        /// When it stopped answering.
-        down_since: Option<DateTime<Utc>>,
-    },
+    /// Services the checks found down, or back, in one wave: the first one
+    /// leads, the others fell or came back with it.
+    Service(Vec<ServiceState>),
     Test,
+}
+
+#[derive(Debug, Clone)]
+pub struct ServiceState {
+    pub name: String,
+    /// When it stopped answering.
+    pub down_since: Option<DateTime<Utc>>,
 }
 
 /// Who signs the messages and where their links lead.
@@ -109,9 +113,10 @@ impl Notice {
                 };
                 about.notice(origin, i18n)
             }
-            Subject::Service { name, down_since } => {
-                service_notice(happening, name, *down_since, at, origin, i18n)
-            }
+            Subject::Service(states) => match states.as_slice() {
+                [one] => service_notice(happening, &one.name, one.down_since, at, origin, i18n),
+                wave => wave_notice(happening, wave, origin, i18n),
+            },
             Subject::Test => Self {
                 mark: Mark::Plain,
                 headline: i18n.t("notice.test").to_string(),
@@ -202,6 +207,39 @@ impl AboutEvent<'_> {
         )
         .then(|| plain_text(&sanitize_markdown(&self.event.description)))
         .flatten()
+    }
+}
+
+/// Most names a wave lists before counting the rest.
+const WAVE_NAMES: usize = 10;
+
+/// "3 services ne répondent plus", their names under it.
+fn wave_notice(
+    happening: Happening,
+    wave: &[ServiceState],
+    origin: &Origin,
+    i18n: &I18n,
+) -> Notice {
+    let (mark, key) = if happening == Happening::ServiceUp {
+        (Mark::Restored, "notice.services_up")
+    } else {
+        (Mark::Outage, "notice.services_down")
+    };
+    let mut names: Vec<&str> = wave
+        .iter()
+        .take(WAVE_NAMES)
+        .map(|s| s.name.as_str())
+        .collect();
+    let rest = wave.len().saturating_sub(WAVE_NAMES);
+    let more = (rest > 0).then(|| i18n.plural("notice.and_others", rest));
+    names.extend(more.as_deref());
+    Notice {
+        mark,
+        headline: i18n.tf(key, &[("count", &wave.len().to_string())]),
+        summary: Some(names.join(", ")),
+        text: None,
+        link: page_link(origin, i18n),
+        instance: origin.instance.clone(),
     }
 }
 
@@ -586,10 +624,10 @@ mod tests {
     fn a_service_found_down_then_back() {
         let since = at(0);
         let i18n = I18n::new("fr");
-        let down = Subject::Service {
+        let down = Subject::Service(vec![ServiceState {
             name: "Messagerie".to_string(),
             down_since: Some(since),
-        };
+        }]);
 
         let lost = Notice::write(Happening::ServiceDown, None, &down, &origin(), &i18n, at(3));
         let back = Notice::write(Happening::ServiceUp, None, &down, &origin(), &i18n, at(18));
@@ -628,5 +666,40 @@ mod tests {
             Some(line(&["Investigating", "Réseau, VPN"]).as_str())
         );
         assert_eq!(notice.link.unwrap().label, "See the details");
+    }
+
+    #[test]
+    fn a_wave_says_how_many_and_lists_ten_names() {
+        let i18n = I18n::new("fr");
+        let wave: Vec<ServiceState> = (1..=12)
+            .map(|n| ServiceState {
+                name: format!("S{n}"),
+                down_since: Some(at(0)),
+            })
+            .collect();
+        let subject = Subject::Service(wave);
+
+        let lost = Notice::write(
+            Happening::ServiceDown,
+            None,
+            &subject,
+            &origin(),
+            &i18n,
+            at(3),
+        );
+        let back = Notice::write(
+            Happening::ServiceUp,
+            None,
+            &subject,
+            &origin(),
+            &i18n,
+            at(9),
+        );
+
+        assert_eq!(lost.headline, "12 services ne répondent plus");
+        assert_eq!(back.headline, "12 services répondent de nouveau");
+        let summary = lost.summary.unwrap_or_default();
+        assert!(summary.starts_with("S1, S2,"), "{summary}");
+        assert!(summary.ends_with("S10, et 2 autres"), "{summary}");
     }
 }

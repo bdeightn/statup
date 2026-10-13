@@ -149,6 +149,26 @@ impl NotificationRepository {
         .await
     }
 
+    /// The messages waiting behind a service message that the same round
+    /// queued for the same destination: its wave, sent with it.
+    pub async fn wave_of(pool: &DbPool, head: &Delivery) -> Result<Vec<Delivery>, sqlx::Error> {
+        if head.service_id.is_none() {
+            return Ok(Vec::new());
+        }
+        sqlx::query_as::<_, Delivery>(&format!(
+            "SELECT {DELIVERY_COLUMNS} FROM notification_deliveries d \
+             WHERE d.channel_id = ? AND d.status = 'pending' AND d.happening = ? \
+               AND d.created_at = ? AND d.service_id IS NOT NULL AND d.id > ? \
+             ORDER BY d.id"
+        ))
+        .bind(head.channel_id)
+        .bind(head.happening)
+        .bind(clock::db(head.created_at))
+        .bind(head.id)
+        .fetch_all(pool)
+        .await
+    }
+
     pub async fn mark_sent(pool: &DbPool, id: i64, now: DateTime<Utc>) -> Result<(), sqlx::Error> {
         sqlx::query(
             "UPDATE notification_deliveries SET status = 'sent', attempts = attempts + 1, \
