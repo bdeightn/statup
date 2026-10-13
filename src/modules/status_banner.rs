@@ -80,11 +80,6 @@ impl BannerRow {
             .as_ref()
             .map(|cause| format!("/events/{}/drawer", cause.event_id))
     }
-
-    /// When the incident behind the service will be updated next.
-    pub fn next_update(&self) -> Option<&str> {
-        self.cause.as_ref()?.next.as_deref()
-    }
 }
 
 /// The soonest announced maintenance, when it starts within the week.

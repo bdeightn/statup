@@ -58,15 +58,15 @@
     <ul class="hero-list">
         {% for row in rows %}
         <li class="hero-item" data-tone="{{ row.tone }}">
-            <a class="hero-item-link{% if row.next_update().is_some() %} has-next{% endif %}" href="{{ row.href() }}"{% if let Some(url) = row.drawer_url() %} data-drawer="{{ url }}"{% endif %}>
+            <a class="hero-item-link" href="{{ row.href() }}"{% if let Some(url) = row.drawer_url() %} data-drawer="{{ url }}"{% endif %}>
                 <span class="dot" aria-hidden="true"></span>
                 <span class="hero-item-title">{{ row.service }}</span>
                 <span class="hero-item-state">{{ row.state }}</span>
-                {% if let Some(next) = row.next_update() %}<span class="hero-item-next">{{ next }}</span>{% endif %}
                 {% if let Some(cause) = row.cause %}
                 <span class="hero-item-meta">
                     {%- if let Some(since) = cause.since %}{{ cause.title }}&nbsp;<span aria-hidden="true">·</span> {{ since }}{% else %}{{ cause.title }}{% endif -%}
                 </span>
+                {% if let Some(next) = cause.next %}<span class="hero-item-next">{{ next }}</span>{% endif %}
                 {% if let Some(latest) = cause.latest %}
                 <span class="hero-item-update"><span class="hero-item-update-time">{{ latest.when }}&nbsp;<span aria-hidden="true">·</span></span> {{ latest.text }}</span>
                 {% endif %}
