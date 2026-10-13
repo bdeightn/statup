@@ -12,6 +12,7 @@ use crate::error::AppError;
 use crate::i18n::I18n;
 use crate::middleware::headers::is_htmx;
 use crate::models::User;
+use crate::routes::notices::{Bell, bell};
 use crate::services::EventService;
 use crate::state::AppState;
 
@@ -52,6 +53,8 @@ pub struct Frame {
     /// "UTC+2", the instance zone.
     pub zone: String,
     pub clock_offset: i32,
+    /// The notices of a member who publishes.
+    pub bell: Option<Bell>,
 }
 
 impl Frame {
@@ -72,6 +75,10 @@ impl Frame {
             Some(u) => EventService::unread_count(pool, u.last_seen_at).await?,
             None => 0,
         };
+        let bell = match user {
+            Some(u) => bell(pool, u, i18n).await?,
+            None => None,
+        };
         Ok(Self {
             csrf_token,
             user_name: user.map(|u| u.display_name.clone()).unwrap_or_default(),
@@ -91,6 +98,7 @@ impl Frame {
             clock_time: i18n.format_time(&now),
             zone: clock::offset_label(&now),
             clock_offset: clock::offset_minutes(&now),
+            bell,
         })
     }
 }

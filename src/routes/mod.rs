@@ -14,6 +14,7 @@ mod feed;
 mod health;
 mod icons;
 mod locale;
+mod notices;
 mod notifications;
 mod page;
 mod password;
@@ -289,6 +290,8 @@ fn account_routes() -> Router<AppState> {
             get(profile::edit_form).post(profile::update_profile),
         )
         .route("/profile/password", post(profile::update_password))
+        .route("/notices", get(notices::index))
+        .route("/notices/seen", post(notices::seen))
         .route("/password/new", get(password::form).post(password::update))
 }
 

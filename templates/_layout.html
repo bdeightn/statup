@@ -52,6 +52,7 @@
                         <span class="mast-clock-date"><strong>{{ frame.dateline }}</strong>&nbsp;<span aria-hidden="true">·</span> </span><strong data-clock-time>{{ frame.clock_time }}</strong> <span class="mast-clock-zone">{{ frame.zone }}</span>
                     </p>
                     {% include "components/mast_switches.html" %}
+                    {% if let Some(bell) = frame.bell %}{% let bell_place = "wide" %}{% include "components/bell.html" %}{% endif %}
                     {% if frame.is_authenticated %}
                     <details class="more-actions user-menu" data-more-actions>
                         <summary class="mnav-tool mnav-user"><span class="avatar" aria-hidden="true">{{ frame.user_initial }}</span><span class="mnav-user-name">{{ frame.user_name }}</span>{% call ui::caret_icon() %}{% endcall %}</summary>
@@ -68,6 +69,7 @@
                     <a class="mnav-tool mnav-login" href="/login">{{ i18n.t("nav.login") }}</a>
                     {% endif %}
                 </div>
+                {% if let Some(bell) = frame.bell %}{% let bell_place = "narrow" %}{% include "components/bell.html" %}{% endif %}
                 <button type="button" class="mast-burger" data-menu-toggle aria-expanded="false" aria-controls="mast-menu">
                     <span class="sr-only">{{ i18n.t("nav.main_menu") }}</span>
                     <svg class="mast-burger-icon mast-burger-icon-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5"/></svg>

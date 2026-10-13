@@ -1,0 +1,8 @@
+<a class="notice{% if row.unread %} is-unread{% endif %}" href="{{ row.href }}" data-tone="{{ row.tone }}">
+    <span class="dot" aria-hidden="true"></span>
+    <span class="notice-body">
+        <span class="notice-title">{{ row.title }}{% if row.unread %}<span class="sr-only"> ({{ i18n.t("notices.new") }})</span>{% endif %}</span>
+        <span class="notice-text">{{ row.text }}</span>
+    </span>
+    <span class="notice-time">{{ row.ago }}</span>
+</a>

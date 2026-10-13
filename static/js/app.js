@@ -166,6 +166,34 @@
     // For the page scripts, loaded after this one.
     window.statup = { announce, csrfToken };
 
+    // Opening the bell, or its page, marks the notices seen: the count goes
+    // from both copies of the bell, the list keeps showing what was new.
+    function markNoticesSeen() {
+        const counts = document.querySelectorAll("[data-bell-count]");
+        if (counts.length === 0) return;
+        fetch("/notices/seen", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "X-CSRF-Token": csrfToken() },
+        })
+            .then((response) => {
+                if (!response.ok) return;
+                counts.forEach((count) => count.remove());
+                document.querySelectorAll("[data-bell]").forEach((bell) => {
+                    const label = bell.querySelector("[data-bell-label]");
+                    if (label) label.textContent = bell.dataset.seenLabel;
+                });
+            })
+            .catch(() => {});
+    }
+
+    document.querySelectorAll("details[data-bell]").forEach((bell) => {
+        bell.addEventListener("toggle", () => {
+            if (bell.open) markNoticesSeen();
+        });
+    });
+    if (document.querySelector("[data-notices-seen]")) markNoticesSeen();
+
     // Theme.
     function syncThemeButtons() {
         const dark = root.classList.contains("dark");
