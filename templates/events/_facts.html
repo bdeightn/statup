@@ -9,7 +9,6 @@
             <span class="dot" aria-hidden="true"></span><strong>{{ state.label }}</strong>
             {% if let Some(detail) = state.detail %}<span class="fact-note">{{ detail }}</span>{% endif %}
             {% if let Some(last_news) = state.last_news %}<span class="fact-note">{{ last_news }}</span>{% endif %}
-            {% if let Some(next_update) = state.next_update %}<span class="fact-note">{{ next_update }}</span>{% endif %}
         </dd>
         {% if let Some(label) = revert_label %}
         <dd class="fact-revert">

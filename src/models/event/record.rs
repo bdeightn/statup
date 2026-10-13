@@ -127,20 +127,25 @@ fn takes_next_update(kind: Kind, lifecycle: Option<Lifecycle>) -> bool {
     kind == Kind::Incident && lifecycle.is_some_and(Lifecycle::is_active)
 }
 
-/// When the next update is due, else how long it has been awaited. The
-/// keys say it in full or short.
+/// When the next update is due, else how long it has been awaited, in the
+/// words of `keys` and with their other `args`.
 fn next_update_note(
     due: Option<DateTime<Utc>>,
     (ahead_key, overdue_key): (&str, &str),
+    args: &[(&str, &str)],
     i18n: &I18n,
 ) -> Option<String> {
     let due = due?;
     let now = Utc::now();
-    if due > now {
-        return Some(i18n.tf(ahead_key, &[("when", &i18n.format_short_when(&due))]));
-    }
-    let parts = split_duration(now - due);
-    Some(i18n.tf(overdue_key, &[("duration", &i18n.format_duration(&parts))]))
+    let (key, name, value) = if due > now {
+        (ahead_key, "when", i18n.format_short_when(&due))
+    } else {
+        let parts = split_duration(now - due);
+        (overdue_key, "duration", i18n.format_duration(&parts))
+    };
+    let mut all = args.to_vec();
+    all.push((name, &value));
+    Some(i18n.tf(key, &all))
 }
 
 /// Days, hours and minutes of a span, as `I18n::format_duration` reads them.
@@ -257,13 +262,24 @@ impl Event {
         takes_next_update(self.kind, self.lifecycle)
     }
 
-    /// "prochaine mise à jour à 14:30", or how long it is overdue.
-    pub fn next_update_text(&self, i18n: &I18n) -> Option<String> {
-        next_update_note(
-            self.next_update_at.filter(|_| self.takes_next_update()),
-            ("events.next_update", "events.update_overdue"),
-            i18n,
-        )
+    /// When the next update is due, or how long it is overdue, said after
+    /// the age of the last one when there is one.
+    pub fn next_update_text(&self, last_ago: Option<&str>, i18n: &I18n) -> Option<String> {
+        let due = self.next_update_at.filter(|_| self.takes_next_update());
+        match last_ago {
+            Some(ago) => next_update_note(
+                due,
+                ("events.last_news_next", "events.last_news_overdue"),
+                &[("ago", ago)],
+                i18n,
+            ),
+            None => next_update_note(
+                due,
+                ("events.next_update", "events.update_overdue"),
+                &[],
+                i18n,
+            ),
+        }
     }
 
     pub fn previous_lifecycle_key(&self) -> Option<&'static str> {
@@ -369,21 +385,18 @@ impl EventSummary {
         self.lifecycle.is_some_and(Lifecycle::is_active)
     }
 
-    /// "prochaine mise à jour à 14:30", or how long it is overdue.
+    /// "mise à jour prévue à 14:30" for the status banner, or how long it
+    /// is overdue.
     pub fn next_update_text(&self, i18n: &I18n) -> Option<String> {
-        self.next_update_note(("events.next_update", "events.update_overdue"), i18n)
-    }
-
-    /// "prochaine à 14:30", said after the latest update.
-    pub fn next_update_short(&self, i18n: &I18n) -> Option<String> {
-        self.next_update_note(("banner.next_update", "banner.update_overdue"), i18n)
-    }
-
-    fn next_update_note(&self, keys: (&str, &str), i18n: &I18n) -> Option<String> {
         let due = self
             .next_update_at
             .filter(|_| takes_next_update(self.kind, self.lifecycle));
-        next_update_note(due, keys, i18n)
+        next_update_note(
+            due,
+            ("banner.next_update", "banner.update_overdue"),
+            &[],
+            i18n,
+        )
     }
 
     /// Still worth the reader's eye: work open or to come, and every

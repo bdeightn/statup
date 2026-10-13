@@ -80,6 +80,11 @@ impl BannerRow {
             .as_ref()
             .map(|cause| format!("/events/{}/drawer", cause.event_id))
     }
+
+    /// When the incident behind the service will be updated next.
+    pub fn next_update(&self) -> Option<&str> {
+        self.cause.as_ref()?.next.as_deref()
+    }
 }
 
 /// The soonest announced maintenance, when it starts within the week.
@@ -240,18 +245,12 @@ fn cause(event: &EventSummary, i18n: &I18n) -> Cause {
             when: i18n.format_ago(&at),
             text,
         });
-    // After the latest update it reads short; alone, it says what it is.
-    let next = if latest.is_some() {
-        event.next_update_short(i18n)
-    } else {
-        event.next_update_text(i18n)
-    };
     Cause {
         event_id: event.id,
         title: event.title.clone(),
         since: until_text(event, i18n).or_else(|| event.elapsed_text(i18n)),
         latest,
-        next,
+        next: event.next_update_text(i18n),
     }
 }
 
@@ -557,22 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn the_next_update_follows_the_latest_one() {
-        let mut outage = event(
-            Kind::Incident,
-            Some(Severity::Critical),
-            Lifecycle::Investigating,
-            "Mail",
-        );
-        outage.latest_update = Some("<p>Supplier on it</p>".to_string());
-        outage.latest_update_at = Some(Utc::now() - Duration::minutes(20));
-        outage.next_update_at = Some(Utc::now() + Duration::minutes(10));
-        let next = cause(&outage, &I18n::new("en")).next.unwrap_or_default();
-        assert!(next.starts_with("next at "), "{next}");
-    }
-
-    #[test]
-    fn a_next_update_alone_says_what_it_is() {
+    fn an_announced_update_says_when_it_is_due() {
         let mut outage = event(
             Kind::Incident,
             Some(Severity::Critical),
@@ -581,7 +565,7 @@ mod tests {
         );
         outage.next_update_at = Some(Utc::now() + Duration::minutes(10));
         let next = cause(&outage, &I18n::new("en")).next.unwrap_or_default();
-        assert!(next.starts_with("next update at "), "{next}");
+        assert!(next.starts_with("update due at "), "{next}");
     }
 
     #[test]

@@ -112,10 +112,9 @@ pub struct StateLine {
     pub tone: &'static str,
     pub label: String,
     pub detail: Option<String>,
-    /// How long ago the last update was posted on an open incident.
+    /// How long ago the last update was posted on an open incident, and
+    /// when the next one is due.
     pub last_news: Option<String>,
-    /// When its next update is due, or how long it is overdue.
-    pub next_update: Option<String>,
 }
 
 async fn load_view(
@@ -174,9 +173,12 @@ async fn author_name(state: &AppState, author_id: i64, i18n: &I18n) -> Result<St
 
 fn state_line(event: &Event, last_posted: Option<DateTime<Utc>>, i18n: &I18n) -> Option<StateLine> {
     let lifecycle = event.lifecycle?;
-    let last_news = last_posted
+    let last_ago = last_posted
         .filter(|_| event.kind == Kind::Incident && lifecycle.is_active())
-        .map(|at| i18n.tf("events.last_news", &[("ago", &i18n.format_ago(&at))]));
+        .map(|at| i18n.format_ago(&at));
+    let last_news = event
+        .next_update_text(last_ago.as_deref(), i18n)
+        .or_else(|| last_ago.map(|ago| i18n.tf("events.last_news", &[("ago", &ago)])));
     let detail = match lifecycle {
         Lifecycle::Scheduled => i18n.format_countdown(event.countdown()),
         Lifecycle::Cancelled => None,
@@ -193,7 +195,6 @@ fn state_line(event: &Event, last_posted: Option<DateTime<Utc>>, i18n: &I18n) ->
         label: i18n.t(lifecycle.label_key(event.kind)).to_string(),
         detail,
         last_news,
-        next_update: event.next_update_text(i18n),
     })
 }
 

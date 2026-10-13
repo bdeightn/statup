@@ -184,6 +184,22 @@
         white-space: nowrap;
     }
 
+    /* An announced update sits under the state, in the right-hand column. */
+    .hero-item-next {
+        grid-column: 3;
+        grid-row: 2;
+        justify-self: end;
+        font-size: var(--text-xs);
+        color: var(--ink-soft);
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .hero-item-link.has-next .hero-item-meta,
+    .hero-item-link.has-next .hero-item-update {
+        grid-column: 2;
+    }
+
     .hero-alert .dot {
         background: var(--tone-text);
     }
@@ -246,6 +262,12 @@
 
         .hero-item-state {
             grid-column: 2;
+        }
+
+        .hero-item-next {
+            grid-column: 2;
+            grid-row: auto;
+            justify-self: start;
         }
     }
 
