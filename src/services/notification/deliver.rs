@@ -7,20 +7,22 @@ use chrono::{DateTime, Utc};
 use tokio::task::{AbortHandle, JoinSet};
 use tokio::time::{MissedTickBehavior, interval};
 
-use super::{Facts, Failure, Notice, Notifier, Origin, Sender, Subject};
+use super::{Facts, Failure, Notice, Notifier, Origin, Sender, Subject, remind_overdue};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::I18n;
 use crate::models::{Channel, Delivery};
 use crate::repositories::{
-    EventRepository, NotificationRepository, OutageRepository, ServiceRepository,
-    SettingsRepository,
+    EventRepository, MemberNoticeRepository, NotificationRepository, OutageRepository,
+    ServiceRepository, SettingsRepository,
 };
+use crate::services::tell_delivery_failed;
 
 pub(crate) const PAGE_ADDRESS_SETTING: &str = "page_address";
 
 const DELIVERY_INTERVAL: Duration = Duration::from_secs(5);
 const PURGE_INTERVAL: Duration = Duration::from_secs(3600);
+const REMINDER_INTERVAL: Duration = Duration::from_secs(60);
 const KEEP_HISTORY: chrono::Duration = chrono::Duration::days(30);
 /// The wait before each new attempt, after a failure that waiting may fix.
 const RETRY_DELAYS: [Duration; 4] = [
@@ -215,11 +217,11 @@ async fn settle(
     } else {
         retry_at(delivery.attempts, failure, now)
     };
-    match retry {
-        Some(at) => NotificationRepository::retry_later(pool, delivery.id, &code, at).await?,
-        None => {
-            NotificationRepository::fail_waiting(pool, channel.id, &code, now).await?;
-        }
+    if let Some(at) = retry {
+        NotificationRepository::retry_later(pool, delivery.id, &code, at).await?;
+    } else {
+        NotificationRepository::fail_waiting(pool, channel.id, &code, now).await?;
+        tell_delivery_failed(pool, channel.id).await;
     }
     Ok(())
 }
@@ -234,8 +236,9 @@ fn retry_at(attempts: i64, failure: Failure, now: DateTime<Utc>) -> Option<DateT
     Some(now + chrono::Duration::from_std(delay.max(asked)).ok()?)
 }
 
-/// Sends what is due every few seconds for the life of the server, and
-/// forgets the old finished messages once an hour.
+/// Sends what is due every few seconds for the life of the server, reminds
+/// overdue updates every minute, and forgets the old finished messages and
+/// member notices once an hour.
 pub fn spawn_notifications(
     pool: DbPool,
     notifier: Arc<Notifier>,
@@ -246,6 +249,8 @@ pub fn spawn_notifications(
         deliveries.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut purges = interval(PURGE_INTERVAL);
         purges.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let mut reminders = interval(REMINDER_INTERVAL);
+        reminders.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
             tokio::select! {
                 _ = deliveries.tick() => {
@@ -254,15 +259,26 @@ pub fn spawn_notifications(
                         tracing::warn!(error = %e, "Notifications round failed");
                     }
                 }
-                _ = purges.tick() => {
-                    if let Err(e) = NotificationRepository::purge(&pool, Utc::now() - KEEP_HISTORY).await {
-                        tracing::warn!(error = %e, "Old notifications not purged");
+                _ = reminders.tick() => {
+                    if let Err(e) = remind_overdue(&pool, &notifier, public_url.as_deref(), Utc::now()).await {
+                        tracing::warn!(error = %e, "Update reminders round failed");
                     }
                 }
+                _ = purges.tick() => purge(&pool).await,
             }
         }
     });
     task.abort_handle()
+}
+
+async fn purge(pool: &DbPool) {
+    let before = Utc::now() - KEEP_HISTORY;
+    if let Err(e) = NotificationRepository::purge(pool, before).await {
+        tracing::warn!(error = %e, "Old notifications not purged");
+    }
+    if let Err(e) = MemberNoticeRepository::purge(pool, before).await {
+        tracing::warn!(error = %e, "Old member notices not purged");
+    }
 }
 
 #[cfg(test)]
@@ -494,6 +510,15 @@ mod tests {
                 .iter()
                 .all(|d| d.failure.as_deref() == Some("status_404"))
         );
+        let admin = UserRepository::find_by_email(&pool, "ops@example.com")
+            .await
+            .unwrap()
+            .unwrap();
+        let notices = MemberNoticeRepository::list_for(&pool, admin.id, 10)
+            .await
+            .unwrap();
+        assert_eq!(notices.len(), 1, "the administrator hears of it once");
+        assert_eq!(notices[0].channel_name.as_deref(), Some("team"));
     }
 
     #[tokio::test]

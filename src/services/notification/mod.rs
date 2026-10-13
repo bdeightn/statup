@@ -7,6 +7,7 @@ mod mail;
 mod notice;
 mod queue;
 mod reminder_mail;
+mod reminders;
 mod reset_mail;
 mod sender;
 
@@ -17,5 +18,6 @@ pub use format::*;
 pub use notice::*;
 pub use queue::notify;
 pub use reminder_mail::ReminderEmail;
+pub use reminders::remind_overdue;
 pub use reset_mail::ResetEmail;
 pub use sender::{Failure, Notifier, SEND_TIMEOUT, Sender};

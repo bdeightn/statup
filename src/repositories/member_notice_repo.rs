@@ -35,7 +35,9 @@ impl MemberNoticeRepository {
         Ok(())
     }
 
-    /// One notice for each active member holding one of `roles`.
+    /// One notice for each active member holding one of `roles`, unless the
+    /// same one still waits unread: a service that keeps falling, or a
+    /// destination that keeps refusing, tells each member once.
     pub async fn add_for_roles(
         pool: &DbPool,
         roles: &[Role],
@@ -45,7 +47,10 @@ impl MemberNoticeRepository {
         for role in roles {
             sqlx::query(
                 "INSERT INTO member_notices (user_id, kind, event_id, service_id, channel_id, due_at) \
-                 SELECT id, ?, ?, ?, ?, ? FROM users WHERE role = ? AND is_active = 1",
+                 SELECT u.id, ?1, ?2, ?3, ?4, ?5 FROM users u WHERE u.role = ?6 AND u.is_active = 1 \
+                 AND NOT EXISTS (SELECT 1 FROM member_notices n WHERE n.user_id = u.id \
+                 AND n.kind = ?1 AND n.read_at IS NULL AND n.event_id IS ?2 \
+                 AND n.service_id IS ?3 AND n.channel_id IS ?4)",
             )
             .bind(kind)
             .bind(subject.event_id)
@@ -168,6 +173,43 @@ mod tests {
             .unwrap();
         assert_eq!(listed[0].service_name.as_deref(), Some("VPN"));
         assert_eq!(listed[0].kind, NoticeKind::OutageDetected);
+    }
+
+    #[tokio::test]
+    async fn the_same_news_waits_once_until_it_is_read() {
+        let pool = test_pool().await;
+        let editor = member(&pool, "editor@example.com", Role::Publisher).await;
+        let vpn = ServiceRepository::create(&pool, "VPN", "vpn", None, None, None)
+            .await
+            .unwrap()
+            .id;
+        let roles = [Role::Publisher];
+        let kind = NoticeKind::OutageDetected;
+
+        for _ in 0..2 {
+            MemberNoticeRepository::add_for_roles(&pool, &roles, kind, outage(vpn))
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            MemberNoticeRepository::unread_count(&pool, editor)
+                .await
+                .unwrap(),
+            1
+        );
+
+        MemberNoticeRepository::mark_all_read(&pool, editor, Utc::now())
+            .await
+            .unwrap();
+        MemberNoticeRepository::add_for_roles(&pool, &roles, kind, outage(vpn))
+            .await
+            .unwrap();
+        assert_eq!(
+            MemberNoticeRepository::unread_count(&pool, editor)
+                .await
+                .unwrap(),
+            1
+        );
     }
 
     #[tokio::test]
