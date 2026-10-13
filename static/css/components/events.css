@@ -577,6 +577,12 @@
         max-width: 320px;
     }
 
+    .composer-next,
+    .next-update-field {
+        flex: 0 1 180px;
+        max-width: 180px;
+    }
+
     .composer .form-error {
         margin-bottom: 12px;
     }

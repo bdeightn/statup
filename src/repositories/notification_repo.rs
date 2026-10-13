@@ -317,6 +317,7 @@ mod tests {
             service_ids: Vec::new(),
             follows_event_id: None,
             author_id: author.id,
+            next_update: None,
         };
         EventRepository::create(pool, &input).await.unwrap().id
     }

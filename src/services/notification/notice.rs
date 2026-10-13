@@ -41,7 +41,7 @@ impl Mark {
 /// What a message is about, as it stands when the message goes out.
 pub enum Subject {
     Event {
-        event: Event,
+        event: Box<Event>,
         services: Vec<String>,
         /// The update posted with the change, as stored: sanitized HTML.
         update: Option<String>,
@@ -338,6 +338,8 @@ mod tests {
             keeps_services_up: false,
             created_at: at(0),
             updated_at: at(0),
+            next_update_at: None,
+            update_every_minutes: None,
         }
     }
 
@@ -350,7 +352,7 @@ mod tests {
 
     fn about(event: Event, update: Option<&str>) -> Subject {
         Subject::Event {
-            event,
+            event: Box::new(event),
             services: vec!["Réseau".to_string(), "VPN".to_string()],
             update: update.map(ToString::to_string),
         }
@@ -524,7 +526,7 @@ mod tests {
         announcement.title = "Nouvel intranet".to_string();
         announcement.description = "Il ouvre lundi.".to_string();
         let subject = Subject::Event {
-            event: announcement,
+            event: Box::new(announcement),
             services: Vec::new(),
             update: None,
         };

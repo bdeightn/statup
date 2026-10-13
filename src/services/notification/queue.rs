@@ -71,6 +71,7 @@ mod tests {
             service_ids: Vec::new(),
             follows_event_id: None,
             author_id: author.id,
+            next_update: None,
         }
     }
 
@@ -122,7 +123,7 @@ mod tests {
             ("All good.", Some(Lifecycle::Resolved)),
         ];
         for (message, next) in steps {
-            EventService::post_update(&pool, event.id, message, next, &author)
+            EventService::post_update(&pool, event.id, message, next, None, &author)
                 .await
                 .unwrap();
         }
@@ -189,7 +190,7 @@ mod tests {
         let note = EventService::create(&pool, new_event(Kind::Publication, &author))
             .await
             .unwrap();
-        EventService::post_update(&pool, note.id, "Now open on Mondays.", None, &author)
+        EventService::post_update(&pool, note.id, "Now open on Mondays.", None, None, &author)
             .await
             .unwrap();
 

@@ -52,6 +52,8 @@ pub struct Cause {
     pub title: String,
     pub since: Option<String>,
     pub latest: Option<LatestUpdate>,
+    /// When the next update is due, or how long it is overdue.
+    pub next: Option<String>,
 }
 
 /// The latest word on an event, kept on one line under its service.
@@ -231,17 +233,19 @@ fn cause_of<'a>(service: &Service, events: &'a [EventSummary]) -> Option<&'a Eve
 }
 
 fn cause(event: &EventSummary, i18n: &I18n) -> Cause {
+    let latest = event
+        .latest_update_excerpt(UPDATE_EXCERPT_CHARS)
+        .zip(event.latest_update_at)
+        .map(|(text, at)| LatestUpdate {
+            when: i18n.format_ago(&at),
+            text,
+        });
     Cause {
         event_id: event.id,
         title: event.title.clone(),
         since: until_text(event, i18n).or_else(|| event.elapsed_text(i18n)),
-        latest: event
-            .latest_update_excerpt(UPDATE_EXCERPT_CHARS)
-            .zip(event.latest_update_at)
-            .map(|(text, at)| LatestUpdate {
-                when: i18n.format_ago(&at),
-                text,
-            }),
+        latest,
+        next: event.next_update_text(i18n),
     }
 }
 
@@ -252,16 +256,8 @@ fn keep_each_update_once(rows: &mut [BannerRow]) {
     for cause in rows.iter_mut().filter_map(|row| row.cause.as_mut()) {
         if !told.insert(cause.event_id) {
             cause.latest = None;
+            cause.next = None;
         }
-    }
-}
-
-/// The time alone today, the date and time otherwise.
-fn short_when(at: &DateTime<Utc>, i18n: &I18n) -> String {
-    if crate::clock::local_date(at) == crate::clock::today() {
-        i18n.format_time(at)
-    } else {
-        i18n.format_datetime(at)
     }
 }
 
@@ -272,7 +268,10 @@ fn until_text(event: &EventSummary, i18n: &I18n) -> Option<String> {
         return None;
     }
     let end = event.planned_end?;
-    Some(i18n.tf("maintenance.until", &[("when", &short_when(&end, i18n))]))
+    Some(i18n.tf(
+        "maintenance.until",
+        &[("when", &i18n.format_short_when(&end))],
+    ))
 }
 
 /// The soonest maintenance still to come within the week. The list comes
@@ -354,6 +353,7 @@ mod tests {
             last_activity_at: None,
             latest_update: None,
             latest_update_at: None,
+            next_update_at: None,
         }
     }
 
@@ -548,6 +548,44 @@ mod tests {
         let found = cause(&outage, &I18n::new("en"));
         let when = found.latest.map(|latest| latest.when);
         assert_eq!(when.as_deref(), Some("2h ago"));
+    }
+
+    #[test]
+    fn an_announced_update_says_when_it_is_due() {
+        let mut outage = event(
+            Kind::Incident,
+            Some(Severity::Critical),
+            Lifecycle::Investigating,
+            "Mail",
+        );
+        outage.next_update_at = Some(Utc::now() + Duration::minutes(10));
+        let next = cause(&outage, &I18n::new("en")).next.unwrap_or_default();
+        assert!(next.starts_with("update due\u{a0}"), "{next}");
+    }
+
+    #[test]
+    fn a_missed_update_says_how_long_it_is_overdue() {
+        let mut outage = event(
+            Kind::Incident,
+            Some(Severity::Critical),
+            Lifecycle::Investigating,
+            "Mail",
+        );
+        outage.next_update_at = Some(Utc::now() - Duration::minutes(20));
+        let next = cause(&outage, &I18n::new("en")).next;
+        assert_eq!(next.as_deref(), Some("update due 20 min ago"));
+    }
+
+    #[test]
+    fn a_resolved_incident_owes_no_update() {
+        let mut fixed = event(
+            Kind::Incident,
+            Some(Severity::Critical),
+            Lifecycle::Resolved,
+            "Mail",
+        );
+        fixed.next_update_at = Some(Utc::now() + Duration::minutes(10));
+        assert!(cause(&fixed, &I18n::new("en")).next.is_none());
     }
 
     #[test]

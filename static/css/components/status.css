@@ -178,10 +178,19 @@
     }
 
     .hero-item-state {
-        font-size: var(--text-xs);
-        font-weight: 500;
-        color: var(--ink-soft);
+        font-size: var(--text-sm);
+        font-weight: 600;
+        color: var(--ink);
         white-space: nowrap;
+    }
+
+    /* When the incident's next update is due, between it and its latest
+       word. */
+    .hero-item-next {
+        grid-column: 2 / -1;
+        font-size: var(--text-sm);
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
     }
 
     .hero-alert .dot {

@@ -66,6 +66,7 @@
                 <span class="hero-item-meta">
                     {%- if let Some(since) = cause.since %}{{ cause.title }}&nbsp;<span aria-hidden="true">·</span> {{ since }}{% else %}{{ cause.title }}{% endif -%}
                 </span>
+                {% if let Some(next) = cause.next %}<span class="hero-item-next">{{ next }}</span>{% endif %}
                 {% if let Some(latest) = cause.latest %}
                 <span class="hero-item-update"><span class="hero-item-update-time">{{ latest.when }}&nbsp;<span aria-hidden="true">·</span></span> {{ latest.text }}</span>
                 {% endif %}

@@ -432,12 +432,14 @@ mod tests {
             keeps_services_up: false,
             created_at: at(),
             updated_at: at(),
+            next_update_at: None,
+            update_every_minutes: None,
         }
     }
 
     fn event_subject() -> Subject {
         Subject::Event {
-            event: event(),
+            event: Box::new(event()),
             services: vec!["Réseau".to_string(), "VPN".to_string()],
             update: None,
         }

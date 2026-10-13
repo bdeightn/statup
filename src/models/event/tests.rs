@@ -75,6 +75,7 @@ fn summary(kind: Kind, severity: Option<Severity>, lifecycle: Option<Lifecycle>)
         last_activity_at: None,
         latest_update: None,
         latest_update_at: None,
+        next_update_at: None,
     }
 }
 
@@ -94,6 +95,7 @@ fn input(kind: Kind, planned: bool) -> CreateEventInput {
         service_ids: vec![],
         follows_event_id: None,
         author_id: 1,
+        next_update: None,
     }
 }
 
@@ -304,6 +306,8 @@ fn scheduled_maintenance_is_not_elapsed() {
         keeps_services_up: false,
         created_at: Utc::now(),
         updated_at: Utc::now(),
+        next_update_at: None,
+        update_every_minutes: None,
     };
     assert!(event.elapsed().is_none());
     assert!(event.countdown().is_some());

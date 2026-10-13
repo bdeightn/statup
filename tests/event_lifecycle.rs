@@ -1203,7 +1203,7 @@ async fn an_open_incident_says_how_long_ago_its_last_update_was_posted() {
 
     let (_, body) = app.get(&path).await;
     assert!(
-        !body.contains("dernière nouvelle"),
+        !body.contains("dernière mise à jour"),
         "without an update, the time since it opened already says it all"
     );
 
@@ -1214,7 +1214,7 @@ async fn an_open_incident_says_how_long_ago_its_last_update_was_posted() {
     .await;
     let (_, body) = app.get(&path).await;
     assert!(
-        body.contains("dernière nouvelle il y a 1\u{a0}min"),
+        body.contains("dernière mise à jour il y a 1\u{a0}min"),
         "the state line should tell how old the last word is"
     );
 }
@@ -2182,4 +2182,176 @@ async fn a_reader_cannot_search_read_or_delete_templates() {
             .await
             .is_some()
     );
+}
+
+const NEXT_UPDATE_NOTE: &str = "prévue\u{a0}";
+const NEXT_UPDATE_REFUSAL: &str =
+    "Écrivez un délai (30 min, 1 h) ou une heure (14:30) pour la prochaine mise à jour.";
+
+/// Declares an incident that announces its next update in 30 minutes.
+async fn declare_incident_with_next_update(app: &TestApp) -> (String, i64) {
+    let path = app
+        .submit_create_event(
+            vec![
+                ("title", "Mail is slow".to_string()),
+                ("description", "Delivery is delayed".to_string()),
+                ("kind", "incident".to_string()),
+                ("severity", "critical".to_string()),
+                ("next_update", "30 min".to_string()),
+            ],
+            &[],
+        )
+        .await;
+    let id = event_id_from_path(&path);
+    (path, id)
+}
+
+async fn post_update(app: &TestApp, id: i64, fields: &[(&str, &str)]) -> (StatusCode, String) {
+    let (status, body, _) = app
+        .post_form_with_header_csrf(&format!("/events/{id}/updates"), fields)
+        .await;
+    (status, body)
+}
+
+#[tokio::test]
+async fn a_declared_incident_tells_when_its_next_update_is_due() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let (path, _) = declare_incident_with_next_update(&app).await;
+
+    let (_, body) = app.get(&path).await;
+    assert!(
+        body.contains(NEXT_UPDATE_NOTE),
+        "the state line should say when the next update is due"
+    );
+    assert!(
+        body.contains("value=\"30 min\""),
+        "the composer should offer the delay again"
+    );
+}
+
+#[tokio::test]
+async fn a_blank_next_update_clears_the_announced_one() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let (path, id) = declare_incident_with_next_update(&app).await;
+
+    post_update(
+        &app,
+        id,
+        &[
+            ("lifecycle", ""),
+            ("message", "Still looking"),
+            ("next_update", ""),
+        ],
+    )
+    .await;
+
+    let (_, body) = app.get(&path).await;
+    assert!(!body.contains(NEXT_UPDATE_NOTE));
+    assert!(!body.contains("value=\"30 min\""));
+}
+
+#[tokio::test]
+async fn a_time_of_day_is_not_offered_again() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let path = app
+        .create_incident("Mail is slow", "", "critical", &[])
+        .await;
+    let id = event_id_from_path(&path);
+
+    post_update(
+        &app,
+        id,
+        &[
+            ("lifecycle", ""),
+            ("message", "Back soon"),
+            ("next_update", "14:30"),
+        ],
+    )
+    .await;
+
+    let (_, body) = app.get(&path).await;
+    assert!(body.contains(NEXT_UPDATE_NOTE));
+    assert!(
+        body.contains("name=\"next_update\" type=\"text\" class=\"input\" value=\"\""),
+        "only a delay is offered again, never a time of day"
+    );
+}
+
+#[tokio::test]
+async fn an_unreadable_next_update_is_refused() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let path = app
+        .create_incident("Mail is slow", "", "critical", &[])
+        .await;
+    let id = event_id_from_path(&path);
+
+    let (_, body) = post_update(
+        &app,
+        id,
+        &[
+            ("lifecycle", ""),
+            ("message", "Soon"),
+            ("next_update", "bientôt"),
+        ],
+    )
+    .await;
+    assert!(body.contains(NEXT_UPDATE_REFUSAL));
+    assert!(
+        body.contains("value=\"bientôt\""),
+        "what was typed comes back"
+    );
+
+    let (_, body) = app.get(&path).await;
+    assert!(!body.contains(NEXT_UPDATE_NOTE));
+    assert!(!body.contains("Soon"), "a refused update is not stored");
+}
+
+#[tokio::test]
+async fn a_missed_next_update_says_how_long_it_is_overdue() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let (path, id) = declare_incident_with_next_update(&app).await;
+
+    let twenty_minutes_ago = (Utc::now() - chrono::Duration::minutes(20))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+    sqlx::query("UPDATE events SET next_update_at = ?1 WHERE id = ?2")
+        .bind(twenty_minutes_ago)
+        .bind(id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let (_, body) = app.get(&path).await;
+    assert!(
+        body.contains("mise à jour attendue depuis 2"),
+        "an update past its time is said to be overdue"
+    );
+    assert!(!body.contains(NEXT_UPDATE_NOTE));
+}
+
+#[tokio::test]
+async fn resolving_an_incident_drops_its_next_update() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let (path, id) = declare_incident_with_next_update(&app).await;
+
+    post_update(
+        &app,
+        id,
+        &[
+            ("lifecycle", "resolved"),
+            ("message", "Fixed"),
+            ("next_update", "30 min"),
+        ],
+    )
+    .await;
+
+    let (_, body) = app.get(&path).await;
+    assert!(!body.contains(NEXT_UPDATE_NOTE));
+    assert!(!body.contains("mise à jour attendue"));
 }

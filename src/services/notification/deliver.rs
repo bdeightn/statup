@@ -185,7 +185,7 @@ async fn load_event(
         None => None,
     };
     Ok(Some(Subject::Event {
-        event: found.event,
+        event: Box::new(found.event),
         services: found.services.into_iter().map(|s| s.name).collect(),
         update,
     }))
@@ -376,6 +376,7 @@ mod tests {
             service_ids: Vec::new(),
             follows_event_id: None,
             author_id: author.id,
+            next_update: None,
         };
         EventRepository::create(pool, &input).await.unwrap().id
     }

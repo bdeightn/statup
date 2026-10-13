@@ -123,6 +123,31 @@ fn open_elapsed(
         .map(|start| split_duration(Utc::now() - start))
 }
 
+fn takes_next_update(kind: Kind, lifecycle: Option<Lifecycle>) -> bool {
+    kind == Kind::Incident && lifecycle.is_some_and(Lifecycle::is_active)
+}
+
+/// When the next update is due, else how long it has been awaited, in the
+/// words of `keys` and with their other `args`.
+fn next_update_note(
+    due: Option<DateTime<Utc>>,
+    (ahead_key, overdue_key): (&str, &str),
+    args: &[(&str, &str)],
+    i18n: &I18n,
+) -> Option<String> {
+    let due = due?;
+    let now = Utc::now();
+    let (key, name, value) = if due > now {
+        (ahead_key, "when", i18n.format_due(&due))
+    } else {
+        let parts = split_duration(now - due);
+        (overdue_key, "duration", i18n.format_duration(&parts))
+    };
+    let mut all = args.to_vec();
+    all.push((name, &value));
+    Some(i18n.tf(key, &all))
+}
+
 /// Days, hours and minutes of a span, as `I18n::format_duration` reads them.
 pub fn split_duration(diff: chrono::TimeDelta) -> (i64, i64, i64) {
     (
@@ -154,6 +179,10 @@ pub struct Event {
     pub follows_event_id: Option<i64>,
     /// Maintenance its services stay up through.
     pub keeps_services_up: bool,
+    /// When the team said its next update is due.
+    pub next_update_at: Option<DateTime<Utc>>,
+    /// The delay that time was given as, offered again with the next update.
+    pub update_every_minutes: Option<i64>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -228,6 +257,31 @@ impl Event {
         qualifier_key(self.kind, self.severity, self.category).map(|key| i18n.t(key).to_string())
     }
 
+    /// An open incident, which may say when its next update is due.
+    pub fn takes_next_update(&self) -> bool {
+        takes_next_update(self.kind, self.lifecycle)
+    }
+
+    /// When the next update is due, or how long it is overdue, said after
+    /// the age of the last one when there is one.
+    pub fn next_update_text(&self, last_ago: Option<&str>, i18n: &I18n) -> Option<String> {
+        let due = self.next_update_at.filter(|_| self.takes_next_update());
+        match last_ago {
+            Some(ago) => next_update_note(
+                due,
+                ("events.last_news_next", "events.last_news_overdue"),
+                &[("ago", ago)],
+                i18n,
+            ),
+            None => next_update_note(
+                due,
+                ("events.next_update", "events.update_overdue"),
+                &[],
+                i18n,
+            ),
+        }
+    }
+
     pub fn previous_lifecycle_key(&self) -> Option<&'static str> {
         self.previous_lifecycle.map(|l| l.label_key(self.kind))
     }
@@ -256,6 +310,7 @@ pub struct EventSummary {
     pub started_at: Option<DateTime<Utc>>,
     pub ended_at: Option<DateTime<Utc>>,
     pub keeps_services_up: bool,
+    pub next_update_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub author_id: i64,
@@ -328,6 +383,20 @@ impl EventSummary {
 
     pub fn is_open(&self) -> bool {
         self.lifecycle.is_some_and(Lifecycle::is_active)
+    }
+
+    /// "mise à jour prévue à 14:30" for the status banner, or how long it
+    /// is overdue.
+    pub fn next_update_text(&self, i18n: &I18n) -> Option<String> {
+        let due = self
+            .next_update_at
+            .filter(|_| takes_next_update(self.kind, self.lifecycle));
+        next_update_note(
+            due,
+            ("banner.next_update", "banner.update_overdue"),
+            &[],
+            i18n,
+        )
     }
 
     /// Still worth the reader's eye: work open or to come, and every
