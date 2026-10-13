@@ -59,6 +59,7 @@ A service is monitored from its form, under **Monitoring**: **Web** for an addre
 - Statup checks every minute, from the server it runs on, so internal addresses work. A web address that answers with any status below 500 counts as answering, even a refusal such as 401 or 404. Tick **Internal certificate** for a tool whose certificate no public authority signed.
 - After three failed checks in a row, the service shows an outage, marked "detected automatically", and comes back as soon as it answers. Statup never writes an incident itself: the team declares one in a click, from the banner or the Services page, with the service and the start already filled in.
 - Nothing is declared during a maintenance that takes the service down, nor when every checked service fails at once, which points at Statup's own connection rather than at the services. If that lasts five minutes, the checks count again.
+- Services that fall in the same minute, such as the services of a server being restarted, are told in one message per destination ("3 services are not answering", with their names), and their return in one more. Declaring a maintenance before a planned restart keeps the checks quiet altogether.
 - A detected outage of fifteen minutes or more counts in the service's thirty days. Choosing **None** or changing the address of a service in a false outage clears it, from its state and from the thirty days.
 - The checks only reach the addresses you set, never read a page's content, and keep no credentials: an address with a user name or a password is refused.
 
@@ -129,7 +130,7 @@ A `POST` with a JSON body, version 1:
 ```
 
 - `happening`: `opened`, `updated`, `rescheduled`, `started`, `closed`, `published`, `service_down`, `service_up` or `test`.
-- `event`: `kind` is `incident`, `maintenance` or `publication`; `severity` is `minor` or `critical`; `category` is `changelog` or `info`; `state` is the state the event moved to. It is `null` for an outage the checks found, which fills `service` instead: `{"name": "Mail", "down_since": "2026-10-07T08:57:00Z"}`.
+- `event`: `kind` is `incident`, `maintenance` or `publication`; `severity` is `minor` or `critical`; `category` is `changelog` or `info`; `state` is the state the event moved to. It is `null` for an outage the checks found, which fills `services` instead, one entry per service of the wave: `[{"name": "Mail", "down_since": "2026-10-07T08:57:00Z"}]`. When the message is about one service alone, `service` holds that same entry; it is `null` for a wave.
 - `message`: the text the chat tools receive, in the language of the destination; `mark` is `outage`, `degraded`, `maintenance`, `restored` or `plain`.
 - Dates are in UTC. A later version adds fields without changing these.
 
