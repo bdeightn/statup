@@ -6,6 +6,7 @@ mod format;
 mod mail;
 mod notice;
 mod queue;
+mod reminder_mail;
 mod reset_mail;
 mod sender;
 
@@ -15,5 +16,6 @@ pub use destinations::{destination_allowed, destination_name_refusal, email_addr
 pub use format::*;
 pub use notice::*;
 pub use queue::notify;
+pub use reminder_mail::ReminderEmail;
 pub use reset_mail::ResetEmail;
 pub use sender::{Failure, Notifier, SEND_TIMEOUT, Sender};
