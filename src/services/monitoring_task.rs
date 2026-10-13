@@ -13,7 +13,7 @@ use super::monitoring::{
     Observation, Outcome, Transition, looks_like_own_failure, next_state, skip_round,
 };
 use super::probe::{CHECK_TIMEOUT, Prober, Probes, Report};
-use super::{ServiceService, notify};
+use super::{ServiceService, notify, tell_outage_detected};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{CheckedService, Happening, Notification};
@@ -248,6 +248,7 @@ async fn apply(
                     Notification::service(Happening::ServiceDown, service_id),
                 )
                 .await;
+                tell_outage_detected(pool, service_id).await;
             }
         }
         Transition::Up => {
@@ -296,7 +297,9 @@ mod tests {
         ChannelInput, ChannelKind, CheckKind, CreateEventInput, Kind, Role, ServiceCheck,
         ServiceStatus, Severity,
     };
-    use crate::repositories::{NotificationRepository, OutageRepository, UserRepository};
+    use crate::repositories::{
+        MemberNoticeRepository, NotificationRepository, OutageRepository, UserRepository,
+    };
     use crate::services::Finding;
     use crate::test_helpers::test_pool;
 
@@ -400,6 +403,25 @@ mod tests {
         let spans = OutageRepository::since(&pool, minute(0)).await.unwrap();
         assert_eq!(spans[&id][0].start, minute(1));
         assert_eq!(spans[&id][0].end, None);
+    }
+
+    #[tokio::test]
+    async fn an_outage_found_by_the_checks_is_told_to_the_editors() {
+        let pool = test_pool().await;
+        let editor = UserRepository::create(&pool, "ed@example.com", "hash", "Ed", Role::Publisher)
+            .await
+            .unwrap()
+            .id;
+        let id = checked_service(&pool, "Mail").await;
+        let mut state = MonitorState::default();
+
+        rounds(&pool, &mut state, Outcome::Failed, &[1, 2, 3]).await;
+
+        let notices = MemberNoticeRepository::list_for(&pool, editor, 10)
+            .await
+            .unwrap();
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].service_id, Some(id));
     }
 
     #[tokio::test]

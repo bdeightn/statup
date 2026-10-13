@@ -83,7 +83,7 @@ Statup posts each incident, maintenance and announcement where people already re
 
 ### Email
 
-Set your mail server in `.env`. Email destinations are offered only when `SMTP_HOST` is set. The same server sends the links of [forgotten passwords](#forgotten-password).
+Set your mail server in `.env`. Email destinations are offered only when `SMTP_HOST` is set. The same server sends the links of [forgotten passwords](#forgotten-password), and reminds a member when an update they announced on an incident is more than 5 minutes late (once, with a link to the incident when the address of the page is known).
 
 | Variable | Default | Description |
 |---|---|---|
