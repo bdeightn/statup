@@ -98,6 +98,17 @@ impl NotificationRepository {
         notification: &Notification,
         now: DateTime<Utc>,
     ) -> Result<u64, sqlx::Error> {
+        Self::enqueue_after(pool, notification, now, now).await
+    }
+
+    /// Queues a message that happened at `now` and leaves no sooner than
+    /// `send_at`.
+    pub async fn enqueue_after(
+        pool: &DbPool,
+        notification: &Notification,
+        now: DateTime<Utc>,
+        send_at: DateTime<Utc>,
+    ) -> Result<u64, sqlx::Error> {
         let column = match notification.audience {
             Audience::Incidents => "on_incidents",
             Audience::Maintenances => "on_maintenances",
@@ -118,15 +129,14 @@ impl NotificationRepository {
              SELECT c.id, ?, ?, ?, ?, ?, ?, ? FROM notification_channels c \
              WHERE c.{column} = 1{after_outage}"
         );
-        let at = clock::db(now);
         let mut query = sqlx::query(&sql)
             .bind(notification.happening)
             .bind(notification.event_id)
             .bind(notification.update_id)
             .bind(notification.lifecycle)
             .bind(notification.service_id)
-            .bind(&at)
-            .bind(&at);
+            .bind(clock::db(send_at))
+            .bind(clock::db(now));
         if coming_back {
             query = query.bind(notification.service_id);
         }
@@ -145,6 +155,26 @@ impl NotificationRepository {
              ORDER BY d.id"
         ))
         .bind(clock::db(now))
+        .fetch_all(pool)
+        .await
+    }
+
+    /// The messages waiting behind a service message that the same round
+    /// queued for the same destination: its wave, sent with it.
+    pub async fn wave_of(pool: &DbPool, head: &Delivery) -> Result<Vec<Delivery>, sqlx::Error> {
+        if head.service_id.is_none() {
+            return Ok(Vec::new());
+        }
+        sqlx::query_as::<_, Delivery>(&format!(
+            "SELECT {DELIVERY_COLUMNS} FROM notification_deliveries d \
+             WHERE d.channel_id = ? AND d.status = 'pending' AND d.happening = ? \
+               AND d.created_at = ? AND d.service_id IS NOT NULL AND d.id > ? \
+             ORDER BY d.id"
+        ))
+        .bind(head.channel_id)
+        .bind(head.happening)
+        .bind(clock::db(head.created_at))
+        .bind(head.id)
         .fetch_all(pool)
         .await
     }

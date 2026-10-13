@@ -80,6 +80,19 @@ fn title(notice: &MemberNotice, i18n: &I18n) -> String {
     let name = |name: &Option<String>| name.clone().unwrap_or_default();
     match notice.kind {
         NoticeKind::UpdateOverdue => i18n.t("notices.update_overdue").to_string(),
+        NoticeKind::OutageDetected if notice.others > 0 => {
+            let others = i18n.plural(
+                "notices.others",
+                usize::try_from(notice.others).unwrap_or(0),
+            );
+            i18n.tf(
+                "notices.outage_detected_many",
+                &[
+                    ("service", &name(&notice.service_name)),
+                    ("others", &others),
+                ],
+            )
+        }
         NoticeKind::OutageDetected => i18n.tf(
             "notices.outage_detected",
             &[("service", &name(&notice.service_name))],
@@ -109,10 +122,11 @@ fn text(notice: &MemberNotice, i18n: &I18n) -> String {
     }
 }
 
-/// Where a notice leads: the late incident, the incident to declare, the
-/// destinations.
+/// Where a notice leads: the late incident, the incident to declare (the
+/// dashboard, which lists them, for several services), the destinations.
 fn href(notice: &MemberNotice) -> String {
     match notice.kind {
+        NoticeKind::OutageDetected if notice.others > 0 => "/".to_string(),
         NoticeKind::UpdateOverdue => format!("/events/{}", notice.event_id.unwrap_or_default()),
         NoticeKind::OutageDetected => format!(
             "/events/new?service={}",

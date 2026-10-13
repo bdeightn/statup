@@ -34,6 +34,8 @@ pub struct NoticeSubject {
     pub service_id: Option<i64>,
     pub channel_id: Option<i64>,
     pub due_at: Option<DateTime<Utc>>,
+    /// The services that fell with the one named.
+    pub others: i64,
 }
 
 /// A notice as the bell lists it, with the names of what it is about.
@@ -45,6 +47,7 @@ pub struct MemberNotice {
     pub service_id: Option<i64>,
     pub channel_id: Option<i64>,
     pub due_at: Option<DateTime<Utc>>,
+    pub others: i64,
     pub created_at: DateTime<Utc>,
     pub read_at: Option<DateTime<Utc>>,
     pub event_title: Option<String>,

@@ -7,7 +7,9 @@ use chrono::{DateTime, Utc};
 use tokio::task::{AbortHandle, JoinSet};
 use tokio::time::{MissedTickBehavior, interval};
 
-use super::{Facts, Failure, Notice, Notifier, Origin, Sender, Subject, remind_overdue};
+use super::{
+    Facts, Failure, Notice, Notifier, Origin, Sender, ServiceState, Subject, remind_overdue,
+};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::I18n;
@@ -52,6 +54,8 @@ pub async fn page_address(
 /// A message ready to leave, with everything it is written from.
 struct Outgoing {
     delivery: Delivery,
+    /// The message and the ones of its wave, sent as one.
+    ids: Vec<i64>,
     channel: Channel,
     notice: Notice,
     facts: Facts,
@@ -107,7 +111,15 @@ async fn deliver_batch<S: Sender + Send + Sync + 'static>(
     while let Some(done) = sends.join_next().await {
         match done {
             Ok((message, result)) => {
-                settle(pool, &message.delivery, &message.channel, result, now).await?;
+                settle(
+                    pool,
+                    &message.delivery,
+                    &message.ids,
+                    &message.channel,
+                    result,
+                    now,
+                )
+                .await?;
                 sent += usize::from(result.is_ok());
             }
             Err(e) => tracing::warn!(error = %e, "A notification send stopped before its result"),
@@ -130,8 +142,13 @@ async fn prepare(
         else {
             continue;
         };
-        let Some(subject) = load_subject(pool, &delivery).await? else {
-            settle(pool, &delivery, &channel, Err(Failure::Gone), now).await?;
+        let wave = NotificationRepository::wave_of(pool, &delivery).await?;
+        let ids: Vec<i64> = std::iter::once(&delivery)
+            .chain(&wave)
+            .map(|d| d.id)
+            .collect();
+        let Some(subject) = load_subject(pool, &delivery, &wave).await? else {
+            settle(pool, &delivery, &ids, &channel, Err(Failure::Gone), now).await?;
             continue;
         };
         let i18n = I18n::new(&channel.locale);
@@ -147,6 +164,7 @@ async fn prepare(
         let facts = Facts::of(delivery.happening, delivery.lifecycle, &subject, origin, at);
         outgoing.push(Outgoing {
             delivery,
+            ids,
             channel,
             notice,
             facts,
@@ -156,20 +174,32 @@ async fn prepare(
 }
 
 /// What the message is about as it stands now, or `None` when it is gone.
-async fn load_subject(pool: &DbPool, delivery: &Delivery) -> Result<Option<Subject>, AppError> {
+async fn load_subject(
+    pool: &DbPool,
+    delivery: &Delivery,
+    wave: &[Delivery],
+) -> Result<Option<Subject>, AppError> {
     if let Some(event_id) = delivery.event_id {
         return load_event(pool, event_id, delivery.update_id).await;
     }
-    let Some(service_id) = delivery.service_id else {
+    if delivery.service_id.is_none() {
         return Ok(Some(Subject::Test));
-    };
-    let Some(service) = ServiceRepository::find_by_id(pool, service_id).await? else {
-        return Ok(None);
-    };
-    Ok(Some(Subject::Service {
-        name: service.name,
-        down_since: OutageRepository::latest_start(pool, service_id).await?,
-    }))
+    }
+    let ids = std::iter::once(delivery)
+        .chain(wave)
+        .filter_map(|d| d.service_id);
+    let mut states = Vec::new();
+    // A service deleted since is left out of its wave.
+    for service_id in ids {
+        if let Some(service) = ServiceRepository::find_by_id(pool, service_id).await? {
+            let down_since = OutageRepository::latest_start(pool, service_id).await?;
+            states.push(ServiceState {
+                name: service.name,
+                down_since,
+            });
+        }
+    }
+    Ok((!states.is_empty()).then_some(Subject::Service(states)))
 }
 
 async fn load_event(
@@ -193,23 +223,29 @@ async fn load_event(
     }))
 }
 
-/// Records how sending went, and logs it without the address.
+/// Records how sending went for the message and its wave, `ids`, and logs
+/// it without the address.
 async fn settle(
     pool: &DbPool,
     delivery: &Delivery,
+    ids: &[i64],
     channel: &Channel,
     result: Result<(), Failure>,
     now: DateTime<Utc>,
 ) -> Result<(), AppError> {
     let Err(failure) = result else {
-        NotificationRepository::mark_sent(pool, delivery.id, now).await?;
+        for id in ids {
+            NotificationRepository::mark_sent(pool, *id, now).await?;
+        }
         tracing::debug!(channel_id = channel.id, kind = ?channel.kind, "Notification delivered");
         return Ok(());
     };
     let code = failure.code();
     tracing::warn!(channel_id = channel.id, kind = ?channel.kind, failure = %code, "Notification not delivered");
     if failure == Failure::Gone {
-        NotificationRepository::fail(pool, delivery.id, &code, now).await?;
+        for id in ids {
+            NotificationRepository::fail(pool, *id, &code, now).await?;
+        }
         return Ok(());
     }
     let retry = if failure.is_permanent() {
@@ -218,7 +254,9 @@ async fn settle(
         retry_at(delivery.attempts, failure, now)
     };
     if let Some(at) = retry {
-        NotificationRepository::retry_later(pool, delivery.id, &code, at).await?;
+        for id in ids {
+            NotificationRepository::retry_later(pool, *id, &code, at).await?;
+        }
     } else {
         NotificationRepository::fail_waiting(pool, channel.id, &code, now).await?;
         tell_delivery_failed(pool, channel.id).await;
@@ -617,5 +655,46 @@ mod tests {
         assert_eq!(outcomes[0].status, DeliveryStatus::Failed);
         assert_eq!(outcomes[0].failure.as_deref(), Some("gone"));
         assert_eq!(outcomes[1].status, DeliveryStatus::Sent);
+    }
+
+    #[tokio::test]
+    async fn a_wave_of_outages_leaves_as_one_message() {
+        let pool = test_pool().await;
+        let team = channel(&pool, "team", "en").await;
+        let mut wave = Vec::new();
+        for name in ["Mail", "Wiki", "VPN"] {
+            let service =
+                ServiceRepository::create(&pool, name, &name.to_lowercase(), None, None, None)
+                    .await
+                    .unwrap();
+            wave.push(service.id);
+        }
+        for (minute, service_id) in [(0, wave[0]), (0, wave[1]), (0, wave[2]), (1, wave[0])] {
+            let happening = if minute == 0 {
+                Happening::ServiceDown
+            } else {
+                Happening::ServiceUp
+            };
+            NotificationRepository::enqueue(
+                &pool,
+                &Notification::service(happening, service_id),
+                at(minute),
+            )
+            .await
+            .unwrap();
+        }
+        let script = Arc::new(Script::default());
+
+        let sent = deliver_due(&pool, &script, None, at(2)).await.unwrap();
+
+        assert_eq!(sent, 2, "the wave, then the return of one service");
+        let headlines: Vec<String> = script.sent().into_iter().map(|(_, h)| h).collect();
+        assert_eq!(headlines[0], "3 services are not answering");
+        assert!(
+            rows(&pool, team)
+                .await
+                .iter()
+                .all(|d| d.status == DeliveryStatus::Sent)
+        );
     }
 }

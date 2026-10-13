@@ -1,6 +1,6 @@
 //! What happened, queued for the destinations that receive it.
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 use crate::db::DbPool;
 use crate::models::Notification;
@@ -10,7 +10,19 @@ use crate::repositories::NotificationRepository;
 /// to the log and no further: the change it reports is saved already, and a
 /// message must never undo it.
 pub async fn notify(pool: &DbPool, notification: Notification) {
-    if let Err(e) = NotificationRepository::enqueue(pool, &notification, Utc::now()).await {
+    let now = Utc::now();
+    notify_later(pool, notification, now, now).await;
+}
+
+/// Queues a message that happened at `now` and leaves no sooner than
+/// `send_at`.
+pub async fn notify_later(
+    pool: &DbPool,
+    notification: Notification,
+    now: DateTime<Utc>,
+    send_at: DateTime<Utc>,
+) {
+    if let Err(e) = NotificationRepository::enqueue_after(pool, &notification, now, send_at).await {
         tracing::warn!(
             error = %e,
             happening = notification.happening.as_str(),

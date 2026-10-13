@@ -16,7 +16,7 @@ pub use deliver::{deliver_due, page_address, spawn_notifications};
 pub use destinations::{destination_allowed, destination_name_refusal, email_addresses};
 pub use format::*;
 pub use notice::*;
-pub use queue::notify;
+pub use queue::{notify, notify_later};
 pub use reminder_mail::ReminderEmail;
 pub use reminders::remind_overdue;
 pub use reset_mail::ResetEmail;

@@ -10,10 +10,15 @@ use crate::repositories::MemberNoticeRepository;
 
 const EDITORS: [Role; 2] = [Role::Publisher, Role::Admin];
 
-/// The checks found a service down: every editor hears of it.
-pub async fn tell_outage_detected(pool: &DbPool, service_id: i64) {
+/// The checks found services down: every editor hears of it, once for
+/// the services that fell together.
+pub async fn tell_outage_detected(pool: &DbPool, service_ids: &[i64]) {
+    let Some((first, others)) = service_ids.split_first() else {
+        return;
+    };
     let subject = NoticeSubject {
-        service_id: Some(service_id),
+        service_id: Some(*first),
+        others: i64::try_from(others.len()).unwrap_or(i64::MAX),
         ..NoticeSubject::default()
     };
     tell(pool, &EDITORS, NoticeKind::OutageDetected, subject).await;
