@@ -242,11 +242,8 @@ fn wave_notice(
         .iter()
         .filter_map(|s| s.down_since)
         .min()
-        .filter(|since| back && at > *since)
-        .map(|since| {
-            let duration = i18n.format_duration(&split_duration(at - since));
-            i18n.tf("notice.down_for", &[("duration", &duration)])
-        });
+        .filter(|_| back)
+        .and_then(|since| down_for(since, at, i18n));
     let summary = match lasted {
         Some(lasted) => format!("{lasted}{SEPARATOR}{names}"),
         None => names,
@@ -261,6 +258,14 @@ fn wave_notice(
     }
 }
 
+/// "Panne de 12 min", for services back at `at`.
+fn down_for(since: DateTime<Utc>, at: DateTime<Utc>, i18n: &I18n) -> Option<String> {
+    (at > since).then(|| {
+        let duration = i18n.format_duration(&split_duration(at - since));
+        i18n.tf("notice.down_for", &[("duration", &duration)])
+    })
+}
+
 fn service_notice(
     happening: Happening,
     name: &str,
@@ -270,10 +275,7 @@ fn service_notice(
     i18n: &I18n,
 ) -> Notice {
     let (mark, key, summary) = if happening == Happening::ServiceUp {
-        let summary = down_since.filter(|since| at > *since).map(|since| {
-            let duration = i18n.format_duration(&split_duration(at - since));
-            i18n.tf("notice.down_for", &[("duration", &duration)])
-        });
+        let summary = down_since.and_then(|since| down_for(since, at, i18n));
         (Mark::Restored, "notice.service_up", summary)
     } else {
         let summary = down_since.map_or_else(

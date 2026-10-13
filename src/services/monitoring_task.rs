@@ -267,7 +267,12 @@ async fn apply(
 /// instant a little ahead: the delivery, which runs more often than the
 /// round, then finds the whole wave and sends it as one message.
 async fn announce(pool: &DbPool, changes: &[(Happening, i64)], now: DateTime<Utc>) {
-    let send_at = now + WAVE_WAIT;
+    // A lone change has nothing to wait for.
+    let send_at = if changes.len() > 1 {
+        now + WAVE_WAIT
+    } else {
+        now
+    };
     for (happening, service_id) in changes {
         let notification = Notification::service(*happening, *service_id);
         notify_later(pool, notification, now, send_at).await;

@@ -54,20 +54,11 @@ pub async fn page_address(
 /// A message ready to leave, with everything it is written from.
 struct Outgoing {
     delivery: Delivery,
-    /// The messages of its wave, sent as part of it.
-    wave: Vec<i64>,
+    /// The message and the ones of its wave, sent as one.
+    ids: Vec<i64>,
     channel: Channel,
     notice: Notice,
     facts: Facts,
-}
-
-impl Outgoing {
-    /// The message and the ones of its wave.
-    fn ids(&self) -> Vec<i64> {
-        std::iter::once(self.delivery.id)
-            .chain(self.wave.iter().copied())
-            .collect()
-    }
 }
 
 /// Sends the first waiting message of each destination whose time has come,
@@ -120,8 +111,15 @@ async fn deliver_batch<S: Sender + Send + Sync + 'static>(
     while let Some(done) = sends.join_next().await {
         match done {
             Ok((message, result)) => {
-                let ids = message.ids();
-                settle(pool, &message.delivery, &ids, &message.channel, result, now).await?;
+                settle(
+                    pool,
+                    &message.delivery,
+                    &message.ids,
+                    &message.channel,
+                    result,
+                    now,
+                )
+                .await?;
                 sent += usize::from(result.is_ok());
             }
             Err(e) => tracing::warn!(error = %e, "A notification send stopped before its result"),
@@ -145,10 +143,11 @@ async fn prepare(
             continue;
         };
         let wave = NotificationRepository::wave_of(pool, &delivery).await?;
+        let ids: Vec<i64> = std::iter::once(&delivery)
+            .chain(&wave)
+            .map(|d| d.id)
+            .collect();
         let Some(subject) = load_subject(pool, &delivery, &wave).await? else {
-            let ids: Vec<i64> = std::iter::once(delivery.id)
-                .chain(wave.iter().map(|d| d.id))
-                .collect();
             settle(pool, &delivery, &ids, &channel, Err(Failure::Gone), now).await?;
             continue;
         };
@@ -165,7 +164,7 @@ async fn prepare(
         let facts = Facts::of(delivery.happening, delivery.lifecycle, &subject, origin, at);
         outgoing.push(Outgoing {
             delivery,
-            wave: wave.iter().map(|waiting| waiting.id).collect(),
+            ids,
             channel,
             notice,
             facts,
