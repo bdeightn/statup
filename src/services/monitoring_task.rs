@@ -13,7 +13,7 @@ use super::monitoring::{
     Observation, Outcome, Transition, looks_like_own_failure, next_state, skip_round,
 };
 use super::probe::{CHECK_TIMEOUT, Prober, Probes, Report};
-use super::{ServiceService, notify, tell_outage_detected};
+use super::{ServiceService, notify_at, tell_outage_detected};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{CheckedService, Happening, Notification};
@@ -22,6 +22,9 @@ use crate::repositories::{EventRepository, ServiceRepository};
 const ROUND_INTERVAL: Duration = Duration::from_secs(60);
 /// Checks running at once, so a long list never floods the network.
 const MAX_CONCURRENT_CHECKS: usize = 16;
+/// How long a round's messages wait, so the services that fell together
+/// leave as one message.
+const WAVE_WAIT: chrono::TimeDelta = chrono::TimeDelta::seconds(10);
 
 /// What the last check of a service found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,12 +173,18 @@ pub async fn run_round<P: Prober>(
     }
     // One service that cannot be recorded, such as one deleted during the
     // round, leaves the others to be judged.
+    let mut changes = Vec::new();
     for (service_id, observation) in observed {
         let silenced = silenced.contains(&service_id);
-        if let Err(e) = apply(pool, state, service_id, observation, silenced, now).await {
-            tracing::warn!(service_id, error = %e, "Monitoring could not record a change");
+        match apply(pool, state, service_id, observation, silenced, now).await {
+            Ok(Some(happening)) => changes.push((happening, service_id)),
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!(service_id, error = %e, "Monitoring could not record a change");
+            }
         }
     }
+    announce(pool, &changes, now).await;
     Ok(())
 }
 
@@ -230,38 +239,46 @@ async fn apply(
     observation: Observation,
     silenced: bool,
     now: DateTime<Utc>,
-) -> Result<(), AppError> {
+) -> Result<Option<Happening>, AppError> {
     let (failures, transition) = next_state(observation, silenced);
     let since = state.record(service_id, failures, silenced, now);
-    match transition {
-        Transition::Stay => return Ok(()),
+    let told = match transition {
+        Transition::Stay => return Ok(None),
         Transition::Down => {
             ServiceRepository::mark_detected_down(pool, service_id, since).await?;
             tracing::info!(service_id, "Service detected down");
             // An incident being worked on already tells people.
-            if EventRepository::status_drivers(pool, service_id)
+            EventRepository::status_drivers(pool, service_id)
                 .await?
                 .is_empty()
-            {
-                notify(
-                    pool,
-                    Notification::service(Happening::ServiceDown, service_id),
-                )
-                .await;
-                tell_outage_detected(pool, service_id).await;
-            }
+                .then_some(Happening::ServiceDown)
         }
         Transition::Up => {
             ServiceRepository::mark_detected_up(pool, service_id, now).await?;
             tracing::info!(service_id, "Service detected back up");
-            notify(
-                pool,
-                Notification::service(Happening::ServiceUp, service_id),
-            )
-            .await;
+            Some(Happening::ServiceUp)
         }
+    };
+    ServiceService::recalculate_status(pool, service_id).await?;
+    Ok(told)
+}
+
+/// Queues what the round found to tell, every message of the wave at one
+/// instant a little ahead: the delivery, which runs more often than the
+/// round, then finds the whole wave and sends it as one message.
+async fn announce(pool: &DbPool, changes: &[(Happening, i64)], now: DateTime<Utc>) {
+    let at = now + WAVE_WAIT;
+    for (happening, service_id) in changes {
+        notify_at(pool, Notification::service(*happening, *service_id), at).await;
     }
-    ServiceService::recalculate_status(pool, service_id).await
+    let fallen: Vec<i64> = changes
+        .iter()
+        .filter(|(happening, _)| *happening == Happening::ServiceDown)
+        .map(|(_, service_id)| *service_id)
+        .collect();
+    if !fallen.is_empty() {
+        tell_outage_detected(pool, &fallen).await;
+    }
 }
 
 /// Runs [`run_round`] every minute for the life of the server, sharing what
@@ -651,5 +668,66 @@ mod tests {
                 (Happening::ServiceUp, alone)
             ]
         );
+    }
+
+    /// Every service fails but one, which keeps the round from looking
+    /// like Statup's own connection lost.
+    struct AllBut(i64);
+
+    impl Prober for AllBut {
+        fn check(&self, service: &CheckedService) -> impl Future<Output = Report> + Send {
+            let outcome = if service.id == self.0 {
+                Outcome::Answered
+            } else {
+                Outcome::Failed
+            };
+            std::future::ready(report(outcome))
+        }
+    }
+
+    #[tokio::test]
+    async fn services_that_fall_together_leave_as_one_wave() {
+        let pool = test_pool().await;
+        let detected_only = ChannelInput {
+            name: "IT team".to_string(),
+            kind: ChannelKind::Teams,
+            target: "https://example.logic.azure.com/workflows/1".to_string(),
+            locale: "fr".to_string(),
+            on_incidents: false,
+            on_maintenances: false,
+            on_publications: false,
+            on_detected: true,
+        };
+        NotificationRepository::create_channel(&pool, &detected_only)
+            .await
+            .unwrap();
+        let editor = UserRepository::create(&pool, "ed@example.com", "hash", "Ed", Role::Publisher)
+            .await
+            .unwrap()
+            .id;
+        for name in ["Mail", "Wiki", "VPN"] {
+            checked_service(&pool, name).await;
+        }
+        let standing = checked_service(&pool, "Intranet").await;
+        let mut state = MonitorState::default();
+
+        let prober = Arc::new(AllBut(standing));
+        for n in 1..=3 {
+            run_round(&pool, &prober, &mut state, minute(n))
+                .await
+                .unwrap();
+        }
+
+        let instants: Vec<String> =
+            sqlx::query_scalar("SELECT DISTINCT created_at FROM notification_deliveries")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(instants.len(), 1, "the three outages share one instant");
+        let notices = MemberNoticeRepository::list_for(&pool, editor, 10)
+            .await
+            .unwrap();
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].others, 2);
     }
 }

@@ -8,7 +8,7 @@ use crate::db::DbPool;
 use crate::models::{MemberNotice, NoticeKind, NoticeSubject, Role};
 
 const NOTICE_COLUMNS: &str = "n.id, n.kind, n.event_id, n.service_id, n.channel_id, n.due_at, \
-     n.created_at, n.read_at, e.title AS event_title, s.name AS service_name, \
+     n.others, n.created_at, n.read_at, e.title AS event_title, s.name AS service_name, \
      c.name AS channel_name";
 
 pub struct MemberNoticeRepository;
@@ -21,8 +21,8 @@ impl MemberNoticeRepository {
         subject: NoticeSubject,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            "INSERT INTO member_notices (user_id, kind, event_id, service_id, channel_id, due_at) \
-             VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO member_notices (user_id, kind, event_id, service_id, channel_id, due_at, \
+             others) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(user_id)
         .bind(kind)
@@ -30,6 +30,7 @@ impl MemberNoticeRepository {
         .bind(subject.service_id)
         .bind(subject.channel_id)
         .bind(subject.due_at.map(clock::db))
+        .bind(subject.others)
         .execute(pool)
         .await?;
         Ok(())
@@ -50,7 +51,7 @@ impl MemberNoticeRepository {
         let mut tx = pool.begin().await?;
         // The same news, unread, is brought up to now rather than doubled.
         sqlx::query(
-            "UPDATE member_notices SET created_at = datetime('now') \
+            "UPDATE member_notices SET created_at = datetime('now'), others = ?6 \
              WHERE kind = ?1 AND read_at IS NULL AND event_id IS ?2 AND service_id IS ?3 \
              AND channel_id IS ?4 AND user_id IN (SELECT id FROM users \
              WHERE is_active = 1 AND role IN (SELECT value FROM json_each(?5)))",
@@ -60,11 +61,12 @@ impl MemberNoticeRepository {
         .bind(subject.service_id)
         .bind(subject.channel_id)
         .bind(&roles)
+        .bind(subject.others)
         .execute(&mut *tx)
         .await?;
         sqlx::query(
-            "INSERT INTO member_notices (user_id, kind, event_id, service_id, channel_id, due_at) \
-             SELECT u.id, ?1, ?2, ?3, ?4, ?5 FROM users u \
+            "INSERT INTO member_notices (user_id, kind, event_id, service_id, channel_id, due_at, \
+             others) SELECT u.id, ?1, ?2, ?3, ?4, ?5, ?7 FROM users u \
              WHERE u.is_active = 1 AND u.role IN (SELECT value FROM json_each(?6)) \
              AND NOT EXISTS (SELECT 1 FROM member_notices n WHERE n.user_id = u.id \
              AND n.kind = ?1 AND n.read_at IS NULL AND n.event_id IS ?2 \
@@ -76,6 +78,7 @@ impl MemberNoticeRepository {
         .bind(subject.channel_id)
         .bind(subject.due_at.map(clock::db))
         .bind(&roles)
+        .bind(subject.others)
         .execute(&mut *tx)
         .await?;
         tx.commit().await
