@@ -646,6 +646,7 @@
   "validation.password_unchanged": "Choose a password different from the temporary one.",
   "validation.rate_limited": "Too many attempts. Try again in 15 minutes.",
   "validation.update_required": "Write a message or choose a new progress state.",
+  "validation.next_update": "Write a delay (30 min, 1 h) or a time (14:30) for the next update.",
   "validation.service_name_required": "Give the service a name.",
   "validation.service_name_too_long": "The name is longer than 100 characters.",
   "validation.description_max_length": "The description is longer than 500 characters.",

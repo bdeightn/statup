@@ -646,6 +646,7 @@
   "validation.password_unchanged": "Wählen Sie ein anderes Passwort als das vorläufige.",
   "validation.rate_limited": "Zu viele Versuche. Versuchen Sie es in 15 Minuten erneut.",
   "validation.update_required": "Schreiben Sie eine Nachricht oder wählen Sie einen neuen Fortschritt.",
+  "validation.next_update": "Geben Sie eine Frist (30 min, 1 h) oder eine Uhrzeit (14:30) für die nächste Aktualisierung an.",
   "validation.service_name_required": "Geben Sie dem Dienst einen Namen.",
   "validation.service_name_too_long": "Der Name ist länger als 100 Zeichen.",
   "validation.description_max_length": "Die Beschreibung ist länger als 500 Zeichen.",

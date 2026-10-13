@@ -154,6 +154,10 @@ pub struct Event {
     pub follows_event_id: Option<i64>,
     /// Maintenance its services stay up through.
     pub keeps_services_up: bool,
+    /// When the team said its next update is due.
+    pub next_update_at: Option<DateTime<Utc>>,
+    /// The delay that time was given as, offered again with the next update.
+    pub update_every_minutes: Option<i64>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -256,6 +260,7 @@ pub struct EventSummary {
     pub started_at: Option<DateTime<Utc>>,
     pub ended_at: Option<DateTime<Utc>>,
     pub keeps_services_up: bool,
+    pub next_update_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub author_id: i64,

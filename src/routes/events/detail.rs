@@ -11,7 +11,7 @@ use super::form::MaintenanceChoice;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, OptionalUser};
-use crate::models::{Event, Kind, Lifecycle, Service, ServiceTag, User};
+use crate::models::{Event, Kind, Lifecycle, Service, ServiceTag, User, delay_text};
 use crate::repositories::EventRepository;
 use crate::routes::timeline::{self, TimelineEntry};
 use crate::routes::{Frame, members_only, render};
@@ -30,7 +30,22 @@ pub struct TransitionOption {
 pub struct Composer {
     pub message: String,
     pub lifecycle: Option<Lifecycle>,
+    /// When the next update is due, as written.
+    pub next_update: String,
     pub error: Option<String>,
+}
+
+impl Composer {
+    /// A fresh composer offers again the delay the last update gave.
+    fn prefilled(mut self, event: &Event) -> Self {
+        if self.error.is_none() {
+            self.next_update = event
+                .update_every_minutes
+                .map(delay_text)
+                .unwrap_or_default();
+        }
+        self
+    }
 }
 
 #[derive(Template)]
@@ -242,6 +257,7 @@ pub(super) async fn detail_page(
     composer: Composer,
 ) -> Result<EventDetailTemplate, AppError> {
     let view = load_view(state, id, user, &i18n).await?;
+    let composer = composer.prefilled(&view.event);
     let can_edit = user.is_some_and(|u| can_modify(&view.event, u.role));
     let changelog_offer = user.is_some_and(|u| u.role.can_publish())
         && view.event.kind == Kind::Maintenance
@@ -275,6 +291,7 @@ pub(super) async fn drawer_page(
     composer: Composer,
 ) -> Result<DrawerTemplate, AppError> {
     let view = load_view(state, id, user, &i18n).await?;
+    let composer = composer.prefilled(&view.event);
     let can_edit = user.is_some_and(|u| can_modify(&view.event, u.role));
     Ok(DrawerTemplate {
         transitions: transition_options(&view.event, composer.lifecycle, &i18n),

@@ -12,13 +12,13 @@ use crate::clock;
 use crate::db::DbPool;
 use crate::models::{
     ActivityKind, CreateEventInput, Event, EventFilters, EventSummary, EventUpdateWithAuthor,
-    EventWithServices, Kind, Lifecycle, Service, Severity, UpdateEventInput,
+    EventWithServices, Kind, Lifecycle, NextUpdate, Service, Severity, UpdateEventInput,
 };
 use crate::repositories::service_repo::CHOSEN_ORDER;
 
 const SUMMARY_COLUMNS: &str = "e.id, e.kind, e.severity, e.planned, e.lifecycle, e.category, \
      e.title, e.description, e.planned_start, e.planned_end, e.started_at, e.ended_at, \
-     e.keeps_services_up, e.created_at, e.updated_at, e.author_id, \
+     e.keeps_services_up, e.next_update_at, e.created_at, e.updated_at, e.author_id, \
      COALESCE((SELECT GROUP_CONCAT(s.name, char(31) ORDER BY s.position, s.name COLLATE NOCASE, s.id) \
                FROM event_services es JOIN services s ON s.id = es.service_id \
                WHERE es.event_id = e.id), '') AS service_names, \
@@ -64,8 +64,8 @@ impl EventRepository {
         let event = sqlx::query_as::<_, Event>(
             "INSERT INTO events (kind, severity, planned, lifecycle, category, title, \
              description, planned_start, planned_end, started_at, follows_event_id, author_id, \
-             keeps_services_up) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+             keeps_services_up, next_update_at, update_every_minutes) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
         )
         .bind(input.kind)
         .bind(input.severity)
@@ -80,6 +80,8 @@ impl EventRepository {
         .bind(input.follows_event_id)
         .bind(input.author_id)
         .bind(input.kind == Kind::Maintenance && input.keeps_services_up)
+        .bind(input.next_update.map(|next| clock::db(next.at)))
+        .bind(input.next_update.and_then(|next| next.every_minutes))
         .fetch_one(&mut *tx)
         .await?;
         link_services(&mut tx, event.id, &input.service_ids).await?;
@@ -418,6 +420,25 @@ impl EventRepository {
         Ok(service_ids)
     }
 
+    /// Replaces when the next update is due. Leaves the row alone when
+    /// nothing changes, so its last change time stays.
+    pub async fn set_next_update(
+        pool: &DbPool,
+        id: i64,
+        next: Option<NextUpdate>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE events SET next_update_at = ?1, update_every_minutes = ?2 \
+             WHERE id = ?3 AND (next_update_at IS NOT ?1 OR update_every_minutes IS NOT ?2)",
+        )
+        .bind(next.map(|next| clock::db(next.at)))
+        .bind(next.and_then(|next| next.every_minutes))
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     /// Returns the id of the update.
     pub async fn add_update(
         pool: &DbPool,
@@ -665,6 +686,7 @@ mod tests {
             service_ids,
             follows_event_id: None,
             author_id,
+            next_update: None,
         }
     }
 
@@ -688,6 +710,7 @@ mod tests {
             service_ids,
             follows_event_id: None,
             author_id,
+            next_update: None,
         }
     }
 

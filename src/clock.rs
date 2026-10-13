@@ -107,6 +107,12 @@ pub fn day_start(date: NaiveDate) -> Option<DateTime<Utc>> {
     to_utc(&zone(), date.and_time(NaiveTime::MIN))
 }
 
+/// The next moment after `after` the instance clock shows `time`: later
+/// today, else tomorrow. `None` when daylight saving skips it.
+pub fn next_occurrence(time: NaiveTime, after: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    next_occurrence_in(&zone(), time, after)
+}
+
 /// Offset of the instance zone at `dt`, as people write it: "UTC",
 /// "UTC+2", "UTC-3:30".
 pub fn offset_label(dt: &DateTime<Utc>) -> String {
@@ -122,6 +128,19 @@ pub fn offset_minutes(dt: &DateTime<Utc>) -> i32 {
 fn parse_input_in<Tz: TimeZone>(value: &str, zone: &Tz) -> Option<DateTime<Utc>> {
     let naive = NaiveDateTime::parse_from_str(value.trim(), "%Y-%m-%dT%H:%M").ok()?;
     to_utc(zone, naive)
+}
+
+fn next_occurrence_in<Tz: TimeZone>(
+    zone: &Tz,
+    time: NaiveTime,
+    after: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    let today = after.with_timezone(zone).date_naive();
+    let at = to_utc(zone, today.and_time(time))?;
+    if at > after {
+        return Some(at);
+    }
+    to_utc(zone, today.succ_opt()?.and_time(time))
 }
 
 /// A wall-clock time skipped by a daylight saving change has no instant; the
@@ -168,6 +187,32 @@ mod tests {
     fn malformed_input_is_none() {
         assert!(parse_input_in("", &Utc).is_none());
         assert!(parse_input_in("20/09/2026 22:00", &Utc).is_none());
+    }
+
+    #[test]
+    fn a_time_still_ahead_today_is_today() {
+        let paris_summer = FixedOffset::east_opt(2 * 3600).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 10, 13, 10, 0, 0).unwrap();
+        let time = NaiveTime::from_hms_opt(14, 30, 0).unwrap();
+        let at = next_occurrence_in(&paris_summer, time, now).unwrap();
+        assert_eq!(at, Utc.with_ymd_and_hms(2026, 10, 13, 12, 30, 0).unwrap());
+    }
+
+    #[test]
+    fn a_time_already_past_today_is_tomorrow() {
+        let paris_summer = FixedOffset::east_opt(2 * 3600).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 10, 13, 21, 0, 0).unwrap();
+        let time = NaiveTime::from_hms_opt(9, 0, 0).unwrap();
+        let at = next_occurrence_in(&paris_summer, time, now).unwrap();
+        assert_eq!(at, Utc.with_ymd_and_hms(2026, 10, 14, 7, 0, 0).unwrap());
+    }
+
+    #[test]
+    fn a_time_skipped_by_daylight_saving_has_no_occurrence() {
+        let paris = chrono_tz::Europe::Paris;
+        let now = Utc.with_ymd_and_hms(2027, 3, 28, 0, 30, 0).unwrap();
+        let time = NaiveTime::from_hms_opt(2, 30, 0).unwrap();
+        assert!(next_occurrence_in(&paris, time, now).is_none());
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 
-use super::{Category, Kind, Lifecycle, LifecycleGroup, Severity};
+use super::{Category, Kind, Lifecycle, LifecycleGroup, NextUpdate, Severity};
 
 #[derive(Debug)]
 pub struct CreateEventInput {
@@ -23,6 +23,8 @@ pub struct CreateEventInput {
     pub service_ids: Vec<i64>,
     pub follows_event_id: Option<i64>,
     pub author_id: i64,
+    /// When an incident's first update is due.
+    pub next_update: Option<NextUpdate>,
 }
 
 impl CreateEventInput {

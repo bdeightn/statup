@@ -10,9 +10,12 @@
 //! - `category`: kind of announcement, publications only.
 //! - `keeps_services_up`: a maintenance that leaves its services in their
 //!   state while it runs.
+//!
+//! An open incident may also say when its next update is due.
 
 mod dimensions;
 mod input;
+mod next_update;
 mod record;
 mod service_tag;
 #[cfg(test)]
@@ -20,5 +23,6 @@ mod tests;
 
 pub use dimensions::*;
 pub use input::*;
+pub use next_update::*;
 pub use record::*;
 pub use service_tag::*;

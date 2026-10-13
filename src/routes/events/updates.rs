@@ -7,11 +7,11 @@ use serde::Deserialize;
 
 use super::detail::{Composer, detail_page, drawer_page};
 use crate::error::AppError;
-use crate::i18n::Locale;
+use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
-use crate::models::Lifecycle;
+use crate::models::{Lifecycle, User};
 use crate::routes::render;
-use crate::services::EventService;
+use crate::services::{EventService, read_next_update};
 use crate::state::AppState;
 
 #[derive(Deserialize)]
@@ -20,6 +20,33 @@ pub struct UpdateInput {
     message: String,
     #[serde(default, deserialize_with = "super::deserialize_blank_as_none")]
     lifecycle: Option<Lifecycle>,
+    #[serde(default)]
+    next_update: String,
+}
+
+impl UpdateInput {
+    async fn post(&self, state: &AppState, id: i64, user: &User) -> Result<(), AppError> {
+        let next_update = read_next_update(&self.next_update)?;
+        EventService::post_update(
+            &state.pool,
+            id,
+            &self.message,
+            self.lifecycle,
+            next_update,
+            user,
+        )
+        .await
+    }
+
+    /// The form again, with what the author wrote and why it was refused.
+    fn refused(self, key: &str, i18n: &I18n) -> Composer {
+        Composer {
+            error: Some(i18n.t(key).to_string()),
+            message: self.message,
+            lifecycle: self.lifecycle,
+            next_update: self.next_update,
+        }
+    }
 }
 
 pub async fn add_update(
@@ -30,14 +57,10 @@ pub async fn add_update(
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<UpdateInput>,
 ) -> Result<Response, AppError> {
-    match EventService::post_update(&state.pool, id, &input.message, input.lifecycle, &user).await {
+    match input.post(&state, id, &user).await {
         Ok(()) => Ok(Redirect::to(&format!("/events/{id}?posted=1")).into_response()),
         Err(AppError::Validation(key)) => {
-            let composer = Composer {
-                error: Some(i18n.t(&key).to_string()),
-                message: input.message,
-                lifecycle: input.lifecycle,
-            };
+            let composer = input.refused(&key, &i18n);
             let page = detail_page(&state, id, Some(&user), csrf_token.0, i18n, composer).await?;
             render(&page)
         }
@@ -55,15 +78,9 @@ pub async fn add_update_in_panel(
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<UpdateInput>,
 ) -> Result<Response, AppError> {
-    let result =
-        EventService::post_update(&state.pool, id, &input.message, input.lifecycle, &user).await;
-    let composer = match result {
+    let composer = match input.post(&state, id, &user).await {
         Ok(()) => Composer::default(),
-        Err(AppError::Validation(key)) => Composer {
-            error: Some(i18n.t(&key).to_string()),
-            message: input.message,
-            lifecycle: input.lifecycle,
-        },
+        Err(AppError::Validation(key)) => input.refused(&key, &i18n),
         Err(e) => return Err(e),
     };
     let posted = composer.error.is_none();

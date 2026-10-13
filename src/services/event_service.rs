@@ -10,8 +10,8 @@ use crate::clock;
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{
-    CreateEventInput, Event, EventWithServices, Happening, Kind, Lifecycle, Notification, Role,
-    Severity, UpdateEventInput, User,
+    CreateEventInput, Event, EventWithServices, Happening, Kind, Lifecycle, NextUpdate,
+    Notification, Role, Severity, UpdateEventInput, User,
 };
 use crate::repositories::EventRepository;
 use crate::services::{ServiceService, notify};
@@ -94,12 +94,14 @@ impl EventService {
         Ok(())
     }
 
-    /// Posts a message, moves the event to `next`, or both at once.
+    /// Posts a message, moves the event to `next`, or both at once. An
+    /// incident's next update becomes `next_update`, none once it is over.
     pub async fn post_update(
         pool: &DbPool,
         id: i64,
         message: &str,
         next: Option<Lifecycle>,
+        next_update: Option<NextUpdate>,
         author: &User,
     ) -> Result<(), AppError> {
         let event = find(pool, id).await?;
@@ -123,6 +125,11 @@ impl EventService {
                 return Err(AppError::validation("validation.invalid_transition"));
             }
             recalculate_event_services(pool, id).await?;
+        }
+        if event.kind == Kind::Incident {
+            let over = next.is_some_and(Lifecycle::is_terminal);
+            let next_update = next_update.filter(|_| !over);
+            EventRepository::set_next_update(pool, id, next_update).await?;
         }
         tell_update(pool, &event, next, update_id).await;
         Ok(())
@@ -240,6 +247,11 @@ pub fn spawn_maintenance_schedule(pool: DbPool) -> AbortHandle {
 
 /// Title rules as a message key, so a route can re-render the form with
 /// what the author typed. The description is optional.
+/// When the team says its next update is due, read from what it wrote.
+pub fn read_next_update(text: &str) -> Result<Option<NextUpdate>, AppError> {
+    NextUpdate::parse(text, Utc::now()).map_err(|_| AppError::validation("validation.next_update"))
+}
+
 pub fn event_field_error(title: &str) -> Option<&'static str> {
     let title = title.trim();
     if title.is_empty() {
@@ -414,6 +426,8 @@ mod tests {
             follows_event_id: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            next_update_at: None,
+            update_every_minutes: None,
         }
     }
 

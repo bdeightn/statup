@@ -354,6 +354,7 @@ mod tests {
             last_activity_at: None,
             latest_update: None,
             latest_update_at: None,
+            next_update_at: None,
         }
     }
 
