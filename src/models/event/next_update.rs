@@ -48,6 +48,17 @@ impl NextUpdate {
     }
 }
 
+/// An overdue update and the member who announced it.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct DueReminder {
+    pub event_id: i64,
+    pub title: String,
+    pub next_update_at: DateTime<Utc>,
+    pub user_id: i64,
+    pub email: String,
+    pub preferred_locale: Option<String>,
+}
+
 /// A remembered delay as the field shows it again: "30 min", "2 h".
 pub fn delay_text(minutes: i64) -> String {
     if minutes % 60 == 0 && minutes / 60 <= MAX_DELAY_HOURS {

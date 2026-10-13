@@ -129,7 +129,7 @@ impl EventService {
         if event.kind == Kind::Incident {
             let over = next.is_some_and(Lifecycle::is_terminal);
             let next_update = next_update.filter(|_| !over);
-            EventRepository::set_next_update(pool, id, next_update).await?;
+            EventRepository::set_next_update(pool, id, next_update, author.id).await?;
         }
         tell_update(pool, &event, next, update_id).await;
         Ok(())
@@ -245,13 +245,13 @@ pub fn spawn_maintenance_schedule(pool: DbPool) -> AbortHandle {
     task.abort_handle()
 }
 
-/// Title rules as a message key, so a route can re-render the form with
-/// what the author typed. The description is optional.
 /// When the team says its next update is due, read from what it wrote.
 pub fn read_next_update(text: &str) -> Result<Option<NextUpdate>, AppError> {
     NextUpdate::parse(text, Utc::now()).map_err(|_| AppError::validation("validation.next_update"))
 }
 
+/// Title rules as a message key, so a route can re-render the form with
+/// what the author typed. The description is optional.
 pub fn event_field_error(title: &str) -> Option<&'static str> {
     let title = title.trim();
     if title.is_empty() {
@@ -428,6 +428,8 @@ mod tests {
             updated_at: Utc::now(),
             next_update_at: None,
             update_every_minutes: None,
+            next_update_by: None,
+            next_update_reminded: false,
         }
     }
 
