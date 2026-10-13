@@ -115,7 +115,7 @@ impl Notice {
             }
             Subject::Service(states) => match states.as_slice() {
                 [one] => service_notice(happening, &one.name, one.down_since, at, origin, i18n),
-                wave => wave_notice(happening, wave, origin, i18n),
+                wave => wave_notice(happening, wave, at, origin, i18n),
             },
             Subject::Test => Self {
                 mark: Mark::Plain,
@@ -217,26 +217,44 @@ const WAVE_NAMES: usize = 10;
 fn wave_notice(
     happening: Happening,
     wave: &[ServiceState],
+    at: DateTime<Utc>,
     origin: &Origin,
     i18n: &I18n,
 ) -> Notice {
-    let (mark, key) = if happening == Happening::ServiceUp {
+    let back = happening == Happening::ServiceUp;
+    let (mark, key) = if back {
         (Mark::Restored, "notice.services_up")
     } else {
         (Mark::Outage, "notice.services_down")
     };
-    let mut names: Vec<&str> = wave
+    let mut names = wave
         .iter()
         .take(WAVE_NAMES)
         .map(|s| s.name.as_str())
-        .collect();
+        .collect::<Vec<_>>()
+        .join(", ");
     let rest = wave.len().saturating_sub(WAVE_NAMES);
-    let more = (rest > 0).then(|| i18n.plural("notice.and_others", rest));
-    names.extend(more.as_deref());
+    if rest > 0 {
+        names = format!("{names} {}", i18n.plural("notice.and_others", rest));
+    }
+    // Back together, they were down since the first of them fell.
+    let lasted = wave
+        .iter()
+        .filter_map(|s| s.down_since)
+        .min()
+        .filter(|since| back && at > *since)
+        .map(|since| {
+            let duration = i18n.format_duration(&split_duration(at - since));
+            i18n.tf("notice.down_for", &[("duration", &duration)])
+        });
+    let summary = match lasted {
+        Some(lasted) => format!("{lasted}{SEPARATOR}{names}"),
+        None => names,
+    };
     Notice {
         mark,
         headline: i18n.tf(key, &[("count", &wave.len().to_string())]),
-        summary: Some(names.join(", ")),
+        summary: Some(summary),
         text: None,
         link: page_link(origin, i18n),
         instance: origin.instance.clone(),
@@ -700,6 +718,8 @@ mod tests {
         assert_eq!(back.headline, "12 services répondent de nouveau");
         let summary = lost.summary.unwrap_or_default();
         assert!(summary.starts_with("S1, S2,"), "{summary}");
-        assert!(summary.ends_with("S10, et 2 autres"), "{summary}");
+        assert!(summary.ends_with("S10 et 2 autres"), "{summary}");
+        let returned = back.summary.unwrap_or_default();
+        assert!(returned.starts_with("Panne de 9\u{a0}min"), "{returned}");
     }
 }

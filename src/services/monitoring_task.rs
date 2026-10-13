@@ -13,7 +13,7 @@ use super::monitoring::{
     Observation, Outcome, Transition, looks_like_own_failure, next_state, skip_round,
 };
 use super::probe::{CHECK_TIMEOUT, Prober, Probes, Report};
-use super::{ServiceService, notify_at, tell_outage_detected};
+use super::{ServiceService, notify_later, tell_outage_detected};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{CheckedService, Happening, Notification};
@@ -267,9 +267,10 @@ async fn apply(
 /// instant a little ahead: the delivery, which runs more often than the
 /// round, then finds the whole wave and sends it as one message.
 async fn announce(pool: &DbPool, changes: &[(Happening, i64)], now: DateTime<Utc>) {
-    let at = now + WAVE_WAIT;
+    let send_at = now + WAVE_WAIT;
     for (happening, service_id) in changes {
-        notify_at(pool, Notification::service(*happening, *service_id), at).await;
+        let notification = Notification::service(*happening, *service_id);
+        notify_later(pool, notification, now, send_at).await;
     }
     let fallen: Vec<i64> = changes
         .iter()

@@ -98,6 +98,17 @@ impl NotificationRepository {
         notification: &Notification,
         now: DateTime<Utc>,
     ) -> Result<u64, sqlx::Error> {
+        Self::enqueue_after(pool, notification, now, now).await
+    }
+
+    /// Queues a message that happened at `now` and leaves no sooner than
+    /// `send_at`.
+    pub async fn enqueue_after(
+        pool: &DbPool,
+        notification: &Notification,
+        now: DateTime<Utc>,
+        send_at: DateTime<Utc>,
+    ) -> Result<u64, sqlx::Error> {
         let column = match notification.audience {
             Audience::Incidents => "on_incidents",
             Audience::Maintenances => "on_maintenances",
@@ -118,15 +129,14 @@ impl NotificationRepository {
              SELECT c.id, ?, ?, ?, ?, ?, ?, ? FROM notification_channels c \
              WHERE c.{column} = 1{after_outage}"
         );
-        let at = clock::db(now);
         let mut query = sqlx::query(&sql)
             .bind(notification.happening)
             .bind(notification.event_id)
             .bind(notification.update_id)
             .bind(notification.lifecycle)
             .bind(notification.service_id)
-            .bind(&at)
-            .bind(&at);
+            .bind(clock::db(send_at))
+            .bind(clock::db(now));
         if coming_back {
             query = query.bind(notification.service_id);
         }
