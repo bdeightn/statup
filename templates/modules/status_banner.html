@@ -67,7 +67,9 @@
                     {%- if let Some(since) = cause.since %}{{ cause.title }}&nbsp;<span aria-hidden="true">·</span> {{ since }}{% else %}{{ cause.title }}{% endif -%}
                 </span>
                 {% if let Some(latest) = cause.latest %}
-                <span class="hero-item-update"><span class="hero-item-update-time">{{ latest.when }}&nbsp;<span aria-hidden="true">·</span></span> {{ latest.text }}</span>
+                <span class="hero-item-update"><span class="hero-item-update-time">{{ latest.when }}{% if let Some(next) = cause.next %}&nbsp;<span aria-hidden="true">·</span> {{ next }}{% endif %}&nbsp;<span aria-hidden="true">·</span></span> {{ latest.text }}</span>
+                {% else if let Some(next) = cause.next %}
+                <span class="hero-item-update"><span class="hero-item-update-time">{{ next }}</span></span>
                 {% endif %}
                 {% else if let Some(detected) = row.detected %}
                 <span class="hero-item-meta">

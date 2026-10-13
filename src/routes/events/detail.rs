@@ -114,6 +114,8 @@ pub struct StateLine {
     pub detail: Option<String>,
     /// How long ago the last update was posted on an open incident.
     pub last_news: Option<String>,
+    /// When its next update is due, or how long it is overdue.
+    pub next_update: Option<String>,
 }
 
 async fn load_view(
@@ -191,6 +193,7 @@ fn state_line(event: &Event, last_posted: Option<DateTime<Utc>>, i18n: &I18n) ->
         label: i18n.t(lifecycle.label_key(event.kind)).to_string(),
         detail,
         last_news,
+        next_update: event.next_update_text(i18n),
     })
 }
 

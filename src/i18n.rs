@@ -262,6 +262,15 @@ impl I18n {
         }
     }
 
+    /// The time alone today, the date and time otherwise.
+    pub fn format_short_when(&self, at: &DateTime<Utc>) -> String {
+        if clock::local_date(at) == clock::today() {
+            self.format_time(at)
+        } else {
+            self.format_datetime(at)
+        }
+    }
+
     /// "il y a 2 h" for a moment past.
     pub fn format_ago(&self, at: &DateTime<Utc>) -> String {
         let parts = split_duration(Utc::now() - *at);

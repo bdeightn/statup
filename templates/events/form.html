@@ -195,6 +195,10 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="field next-update-field">
+                                <label for="next_update" class="field-label">{{ i18n.t("events.next_update_label") }}</label>
+                                <input id="next_update" name="next_update" type="text" class="input" value="{{ form.next_update }}" placeholder="{{ i18n.t("events.next_update_placeholder") }}" autocomplete="off" maxlength="16">
+                            </div>
                         </div>
                         {% endif %}
                         {% if !maintenances.is_empty() %}

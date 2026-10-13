@@ -11,6 +11,12 @@
               placeholder="{{ i18n.t("events.composer_placeholder") }}"{% if composer.error.is_some() %} aria-invalid="true" aria-describedby="{{ prefix }}composer-error {{ prefix }}message-hint"{% else %} aria-describedby="{{ prefix }}message-hint"{% endif %}>{{ composer.message }}</textarea>
     <p id="{{ prefix }}message-hint" class="field-hint mt-1">{{ i18n.t("events.formatting_hint") }}</p>
     <div class="composer-row">
+        {% if view.event.takes_next_update() %}
+        <div class="composer-next">
+            <label for="{{ prefix }}next-update" class="field-label">{{ i18n.t("events.next_update_label") }}</label>
+            <input id="{{ prefix }}next-update" name="next_update" type="text" class="input" value="{{ composer.next_update }}" placeholder="{{ i18n.t("events.next_update_placeholder") }}" autocomplete="off" maxlength="16">
+        </div>
+        {% endif %}
         {% if !transitions.is_empty() %}
         <div class="composer-state">
             <label for="{{ prefix }}lifecycle" class="sr-only">{{ i18n.t("events.composer_state") }}</label>
