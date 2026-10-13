@@ -39,13 +39,12 @@ pub async fn remind_overdue(
             due_at: Some(reminder.next_update_at),
             ..NoticeSubject::default()
         };
-        MemberNoticeRepository::add_for_member(
-            pool,
-            reminder.user_id,
-            NoticeKind::UpdateOverdue,
-            subject,
-        )
-        .await?;
+        let kind = NoticeKind::UpdateOverdue;
+        if let Err(e) =
+            MemberNoticeRepository::add_for_member(pool, reminder.user_id, kind, subject).await
+        {
+            tracing::warn!(error = %e, event_id = reminder.event_id, "Overdue update notice not stored");
+        }
         if notifier.mail_ready() {
             email(notifier, reminder, page.as_deref(), now).await;
         }

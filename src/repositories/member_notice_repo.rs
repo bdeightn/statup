@@ -37,7 +37,8 @@ impl MemberNoticeRepository {
 
     /// One notice for each active member holding one of `roles`, unless the
     /// same one still waits unread: a service that keeps falling, or a
-    /// destination that keeps refusing, tells each member once.
+    /// destination that keeps refusing, tells each member once, dated from
+    /// the latest time.
     pub async fn add_for_roles(
         pool: &DbPool,
         roles: &[Role],
@@ -45,6 +46,20 @@ impl MemberNoticeRepository {
         subject: NoticeSubject,
     ) -> Result<(), sqlx::Error> {
         for role in roles {
+            // The same news, unread, is brought up to now rather than doubled.
+            sqlx::query(
+                "UPDATE member_notices SET created_at = datetime('now') \
+                 WHERE kind = ?1 AND read_at IS NULL AND event_id IS ?2 AND service_id IS ?3 \
+                 AND channel_id IS ?4 AND user_id IN \
+                 (SELECT id FROM users WHERE role = ?5 AND is_active = 1)",
+            )
+            .bind(kind)
+            .bind(subject.event_id)
+            .bind(subject.service_id)
+            .bind(subject.channel_id)
+            .bind(role)
+            .execute(pool)
+            .await?;
             sqlx::query(
                 "INSERT INTO member_notices (user_id, kind, event_id, service_id, channel_id, due_at) \
                  SELECT u.id, ?1, ?2, ?3, ?4, ?5 FROM users u WHERE u.role = ?6 AND u.is_active = 1 \

@@ -456,7 +456,8 @@ impl EventRepository {
             "SELECT e.id AS event_id, e.title, e.next_update_at, u.id AS user_id, u.email, \
              u.preferred_locale FROM events e JOIN users u ON u.id = e.next_update_by \
              WHERE e.kind = 'incident' AND e.lifecycle NOT IN ('resolved', 'cancelled') \
-             AND e.next_update_at <= ? AND e.next_update_reminded = 0 AND u.is_active = 1",
+             AND e.next_update_at <= ? AND e.next_update_reminded = 0 AND u.is_active = 1 \
+             AND u.role IN ('publisher', 'admin')",
         )
         .bind(clock::db(cutoff))
         .fetch_all(pool)
