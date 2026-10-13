@@ -308,8 +308,6 @@ fn scheduled_maintenance_is_not_elapsed() {
         updated_at: Utc::now(),
         next_update_at: None,
         update_every_minutes: None,
-        next_update_by: None,
-        next_update_reminded: false,
     };
     assert!(event.elapsed().is_none());
     assert!(event.countdown().is_some());

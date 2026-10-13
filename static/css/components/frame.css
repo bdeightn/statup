@@ -23,6 +23,8 @@
        the mark lines up with the content under it. When room runs out, a
        host's long name is cut before the tabs are. */
     .mast {
+        /* The menu button's side, which the narrow bell's list reaches past. */
+        --mast-button: 44px;
         position: sticky;
         top: 0;
         z-index: 40;
@@ -632,7 +634,7 @@
         align-items: center;
         justify-content: center;
         align-self: center;
-        width: 44px;
+        width: var(--mast-button);
         height: 44px;
         color: var(--muted);
         border-radius: 6px;
@@ -788,7 +790,7 @@
         /* Its list lines up with the menu button beside it, the edge of
            the screen, rather than with the bell. */
         .bell-narrow .bell-menu {
-            right: -44px;
+            right: calc(-1 * var(--mast-button));
         }
     }
 

@@ -46,8 +46,10 @@ pub async fn bell(pool: &DbPool, user: &User, i18n: &I18n) -> Result<Option<Bell
     if !user.role.can_publish() {
         return Ok(None);
     }
-    let unread = MemberNoticeRepository::unread_count(pool, user.id).await?;
-    let notices = MemberNoticeRepository::list_for(pool, user.id, BELL_ROWS).await?;
+    let (unread, notices) = tokio::try_join!(
+        MemberNoticeRepository::unread_count(pool, user.id),
+        MemberNoticeRepository::list_for(pool, user.id, BELL_ROWS),
+    )?;
     let title = i18n.t("notices.title");
     let label = if unread > 0 {
         let count = i18n.plural("notices.unread", usize::try_from(unread).unwrap_or(0));
@@ -64,61 +66,60 @@ pub async fn bell(pool: &DbPool, user: &User, i18n: &I18n) -> Result<Option<Bell
 }
 
 fn row(notice: &MemberNotice, i18n: &I18n) -> NoticeRow {
-    let (title, text, href, tone) = match notice.kind {
-        NoticeKind::UpdateOverdue => overdue(notice, i18n),
-        NoticeKind::OutageDetected => (
-            i18n.tf(
-                "notices.outage_detected",
-                &[(
-                    "service",
-                    notice.service_name.as_deref().unwrap_or_default(),
-                )],
-            ),
-            i18n.t("notices.outage_detected_text").to_string(),
-            format!(
-                "/events/new?service={}",
-                notice.service_id.unwrap_or_default()
-            ),
-            "crit",
-        ),
-        NoticeKind::DeliveryFailed => (
-            i18n.tf(
-                "notices.delivery_failed",
-                &[(
-                    "channel",
-                    notice.channel_name.as_deref().unwrap_or_default(),
-                )],
-            ),
-            i18n.t("notices.delivery_failed_text").to_string(),
-            "/admin/notifications".to_string(),
-            "minor",
-        ),
-    };
     NoticeRow {
-        title,
-        text,
-        href,
-        tone,
+        title: title(notice, i18n),
+        text: text(notice, i18n),
+        href: href(notice),
+        tone: notice.kind.tone(),
         unread: notice.is_unread(),
         ago: i18n.format_ago(&notice.created_at),
     }
 }
 
-fn overdue(notice: &MemberNotice, i18n: &I18n) -> (String, String, String, &'static str) {
-    let incident = notice.event_title.clone().unwrap_or_default();
-    let text = match notice.due_at {
-        Some(due) => {
-            let due = i18n.tf("notices.due", &[("when", &i18n.format_due(&due))]);
-            format!("{incident}{SEPARATOR}{due}")
+fn title(notice: &MemberNotice, i18n: &I18n) -> String {
+    let name = |name: &Option<String>| name.clone().unwrap_or_default();
+    match notice.kind {
+        NoticeKind::UpdateOverdue => i18n.t("notices.update_overdue").to_string(),
+        NoticeKind::OutageDetected => i18n.tf(
+            "notices.outage_detected",
+            &[("service", &name(&notice.service_name))],
+        ),
+        NoticeKind::DeliveryFailed => i18n.tf(
+            "notices.delivery_failed",
+            &[("channel", &name(&notice.channel_name))],
+        ),
+    }
+}
+
+/// "Messagerie très lente · prévue à 14:30" for a late update.
+fn text(notice: &MemberNotice, i18n: &I18n) -> String {
+    match notice.kind {
+        NoticeKind::UpdateOverdue => {
+            let incident = notice.event_title.clone().unwrap_or_default();
+            match notice.due_at {
+                Some(due) => {
+                    let due = i18n.tf("notices.due", &[("when", &i18n.format_due(&due))]);
+                    format!("{incident}{SEPARATOR}{due}")
+                }
+                None => incident,
+            }
         }
-        None => incident,
-    };
-    (
-        i18n.t("notices.update_overdue").to_string(),
-        text,
-        format!("/events/{}", notice.event_id.unwrap_or_default()),
-        "ink",
-    )
+        NoticeKind::OutageDetected => i18n.t("notices.outage_detected_text").to_string(),
+        NoticeKind::DeliveryFailed => i18n.t("notices.delivery_failed_text").to_string(),
+    }
+}
+
+/// Where a notice leads: the late incident, the incident to declare, the
+/// destinations.
+fn href(notice: &MemberNotice) -> String {
+    match notice.kind {
+        NoticeKind::UpdateOverdue => format!("/events/{}", notice.event_id.unwrap_or_default()),
+        NoticeKind::OutageDetected => format!(
+            "/events/new?service={}",
+            notice.service_id.unwrap_or_default()
+        ),
+        NoticeKind::DeliveryFailed => "/admin/notifications".to_string(),
+    }
 }
 
 #[derive(Template)]

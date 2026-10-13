@@ -183,9 +183,6 @@ pub struct Event {
     pub next_update_at: Option<DateTime<Utc>>,
     /// The delay that time was given as, offered again with the next update.
     pub update_every_minutes: Option<i64>,
-    /// The member who announced it, reminded once it is overdue.
-    pub next_update_by: Option<i64>,
-    pub next_update_reminded: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

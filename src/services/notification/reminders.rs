@@ -8,8 +8,9 @@ use super::{Notifier, ReminderEmail};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::I18n;
-use crate::models::{DueReminder, NoticeKind, NoticeSubject, split_duration};
-use crate::repositories::{EventRepository, MemberNoticeRepository};
+use crate::models::{DueReminder, split_duration};
+use crate::repositories::EventRepository;
+use crate::services::tell_update_overdue;
 
 /// Time left to a member who is still writing their update.
 const MARGIN: Duration = Duration::minutes(5);
@@ -34,17 +35,13 @@ pub async fn remind_overdue(
         {
             continue;
         }
-        let subject = NoticeSubject {
-            event_id: Some(reminder.event_id),
-            due_at: Some(reminder.next_update_at),
-            ..NoticeSubject::default()
-        };
-        let kind = NoticeKind::UpdateOverdue;
-        if let Err(e) =
-            MemberNoticeRepository::add_for_member(pool, reminder.user_id, kind, subject).await
-        {
-            tracing::warn!(error = %e, event_id = reminder.event_id, "Overdue update notice not stored");
-        }
+        tell_update_overdue(
+            pool,
+            reminder.user_id,
+            reminder.event_id,
+            reminder.next_update_at,
+        )
+        .await;
         if notifier.mail_ready() {
             email(notifier, reminder, page.as_deref(), now).await;
         }
@@ -81,8 +78,8 @@ async fn email(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{CreateEventInput, Kind, NextUpdate, Role, Severity};
-    use crate::repositories::UserRepository;
+    use crate::models::{CreateEventInput, Kind, NextUpdate, NoticeKind, Role, Severity};
+    use crate::repositories::{MemberNoticeRepository, UserRepository};
     use crate::test_helpers::test_pool;
 
     fn notifier() -> Notifier {

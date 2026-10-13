@@ -434,8 +434,6 @@ mod tests {
             updated_at: at(),
             next_update_at: None,
             update_every_minutes: None,
-            next_update_by: None,
-            next_update_reminded: false,
         }
     }
 

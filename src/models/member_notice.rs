@@ -15,6 +15,18 @@ pub enum NoticeKind {
     DeliveryFailed,
 }
 
+impl NoticeKind {
+    /// The hue of its square: a late update is the team's own, an outage
+    /// and a refused message are problems.
+    pub fn tone(self) -> &'static str {
+        match self {
+            Self::UpdateOverdue => "ink",
+            Self::OutageDetected => "crit",
+            Self::DeliveryFailed => "minor",
+        }
+    }
+}
+
 /// What a notice is about; only the one its kind needs is set.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NoticeSubject {

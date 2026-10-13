@@ -14,8 +14,13 @@ CREATE TABLE member_notices (
     read_at TEXT
 );
 
-CREATE INDEX idx_member_notices_user ON member_notices(user_id, read_at, created_at);
+CREATE INDEX idx_member_notices_user ON member_notices(user_id, created_at);
+CREATE INDEX idx_member_notices_unread ON member_notices(user_id) WHERE read_at IS NULL;
 
 -- Who announced an incident's next update, reminded once it is overdue.
 ALTER TABLE events ADD COLUMN next_update_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE events ADD COLUMN next_update_reminded INTEGER NOT NULL DEFAULT 0;
+
+-- The minute round looks for the announced updates not yet reminded.
+CREATE INDEX idx_events_update_reminders ON events(next_update_at)
+    WHERE next_update_at IS NOT NULL AND next_update_reminded = 0;

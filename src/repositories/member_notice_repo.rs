@@ -45,38 +45,40 @@ impl MemberNoticeRepository {
         kind: NoticeKind,
         subject: NoticeSubject,
     ) -> Result<(), sqlx::Error> {
-        for role in roles {
-            // The same news, unread, is brought up to now rather than doubled.
-            sqlx::query(
-                "UPDATE member_notices SET created_at = datetime('now') \
-                 WHERE kind = ?1 AND read_at IS NULL AND event_id IS ?2 AND service_id IS ?3 \
-                 AND channel_id IS ?4 AND user_id IN \
-                 (SELECT id FROM users WHERE role = ?5 AND is_active = 1)",
-            )
-            .bind(kind)
-            .bind(subject.event_id)
-            .bind(subject.service_id)
-            .bind(subject.channel_id)
-            .bind(role)
-            .execute(pool)
-            .await?;
-            sqlx::query(
-                "INSERT INTO member_notices (user_id, kind, event_id, service_id, channel_id, due_at) \
-                 SELECT u.id, ?1, ?2, ?3, ?4, ?5 FROM users u WHERE u.role = ?6 AND u.is_active = 1 \
-                 AND NOT EXISTS (SELECT 1 FROM member_notices n WHERE n.user_id = u.id \
-                 AND n.kind = ?1 AND n.read_at IS NULL AND n.event_id IS ?2 \
-                 AND n.service_id IS ?3 AND n.channel_id IS ?4)",
-            )
-            .bind(kind)
-            .bind(subject.event_id)
-            .bind(subject.service_id)
-            .bind(subject.channel_id)
-            .bind(subject.due_at.map(clock::db))
-            .bind(role)
-            .execute(pool)
-            .await?;
-        }
-        Ok(())
+        let roles: Vec<&str> = roles.iter().map(|role| role.as_str()).collect();
+        let roles = serde_json::to_string(&roles).unwrap_or_default();
+        let mut tx = pool.begin().await?;
+        // The same news, unread, is brought up to now rather than doubled.
+        sqlx::query(
+            "UPDATE member_notices SET created_at = datetime('now') \
+             WHERE kind = ?1 AND read_at IS NULL AND event_id IS ?2 AND service_id IS ?3 \
+             AND channel_id IS ?4 AND user_id IN (SELECT id FROM users \
+             WHERE is_active = 1 AND role IN (SELECT value FROM json_each(?5)))",
+        )
+        .bind(kind)
+        .bind(subject.event_id)
+        .bind(subject.service_id)
+        .bind(subject.channel_id)
+        .bind(&roles)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO member_notices (user_id, kind, event_id, service_id, channel_id, due_at) \
+             SELECT u.id, ?1, ?2, ?3, ?4, ?5 FROM users u \
+             WHERE u.is_active = 1 AND u.role IN (SELECT value FROM json_each(?6)) \
+             AND NOT EXISTS (SELECT 1 FROM member_notices n WHERE n.user_id = u.id \
+             AND n.kind = ?1 AND n.read_at IS NULL AND n.event_id IS ?2 \
+             AND n.service_id IS ?3 AND n.channel_id IS ?4)",
+        )
+        .bind(kind)
+        .bind(subject.event_id)
+        .bind(subject.service_id)
+        .bind(subject.channel_id)
+        .bind(subject.due_at.map(clock::db))
+        .bind(&roles)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await
     }
 
     /// The latest notices of a member, newest first.

@@ -2,6 +2,8 @@
 //! causes them and never in its way: a notice that cannot be stored is
 //! logged, the outage or the delivery goes on.
 
+use chrono::{DateTime, Utc};
+
 use crate::db::DbPool;
 use crate::models::{NoticeKind, NoticeSubject, Role};
 use crate::repositories::MemberNoticeRepository;
@@ -25,6 +27,24 @@ pub async fn tell_delivery_failed(pool: &DbPool, channel_id: i64) {
         ..NoticeSubject::default()
     };
     tell(pool, &[Role::Admin], NoticeKind::DeliveryFailed, subject).await;
+}
+
+/// The update a member announced is late: they hear of it.
+pub async fn tell_update_overdue(
+    pool: &DbPool,
+    user_id: i64,
+    event_id: i64,
+    due_at: DateTime<Utc>,
+) {
+    let subject = NoticeSubject {
+        event_id: Some(event_id),
+        due_at: Some(due_at),
+        ..NoticeSubject::default()
+    };
+    let kind = NoticeKind::UpdateOverdue;
+    if let Err(e) = MemberNoticeRepository::add_for_member(pool, user_id, kind, subject).await {
+        tracing::warn!(error = %e, ?kind, "Member notice not stored");
+    }
 }
 
 async fn tell(pool: &DbPool, roles: &[Role], kind: NoticeKind, subject: NoticeSubject) {
