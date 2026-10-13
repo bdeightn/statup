@@ -4,6 +4,9 @@ use chrono::{DateTime, Duration, NaiveTime, Utc};
 
 use crate::clock;
 
+/// Units a delay in minutes may be written with, longest first.
+const MINUTE_UNITS: [&str; 6] = ["minutes", "minute", "mins", "min", "mn", "m"];
+
 /// Longest delay a team may announce.
 const MAX_DELAY_MINUTES: i64 = 24 * 60;
 
@@ -62,27 +65,42 @@ enum Reading {
 
 fn read(text: &str) -> Option<Reading> {
     let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-    if let Some((hours, minutes)) = compact.split_once([':', 'h'])
-        && !minutes.is_empty()
-    {
+    if !compact.is_ascii() {
+        return None;
+    }
+    if let Some((hours, minutes)) = compact.split_once(':') {
         return time_of_day(hours, minutes);
     }
-    if let Some(hours) = compact.strip_suffix('h') {
-        let hours: i64 = digits(hours, 2)?;
-        return if hours <= MAX_DELAY_HOURS {
-            delay(hours * 60)
-        } else {
-            time_of_day(&hours.to_string(), "00")
-        };
+    if let Some((hours, minutes)) = compact.split_once('h') {
+        return hours_and_minutes(hours, minutes);
     }
-    let number = ["min", "mn", "m"]
-        .iter()
-        .find_map(|unit| compact.strip_suffix(unit))
-        .unwrap_or(&compact);
+    let number = without_minute_unit(&compact);
     if number.len() == 4 {
         return time_of_day(&number[..2], &number[2..]);
     }
     delay(digits(number, 3)?)
+}
+
+fn without_minute_unit(text: &str) -> &str {
+    MINUTE_UNITS
+        .iter()
+        .find_map(|unit| text.strip_suffix(unit))
+        .unwrap_or(text)
+}
+
+/// "2h" or "1h30" is a delay up to a few hours, a time of day past them.
+fn hours_and_minutes(hours: &str, minutes: &str) -> Option<Reading> {
+    let minutes = without_minute_unit(minutes);
+    let count = digits(hours, 2)?;
+    if count > MAX_DELAY_HOURS {
+        return time_of_day(hours, if minutes.is_empty() { "00" } else { minutes });
+    }
+    let extra = if minutes.is_empty() {
+        0
+    } else {
+        digits(minutes, 2).filter(|m| *m < 60)?
+    };
+    delay(count * 60 + extra)
 }
 
 fn time_of_day(hours: &str, minutes: &str) -> Option<Reading> {
@@ -127,6 +145,10 @@ mod tests {
         assert_eq!(read("90m"), Some(Reading::Delay(90)));
         assert_eq!(read("1 h"), Some(Reading::Delay(60)));
         assert_eq!(read("4h"), Some(Reading::Delay(240)));
+        assert_eq!(read("1h30"), Some(Reading::Delay(90)));
+        assert_eq!(read("0h45"), Some(Reading::Delay(45)));
+        assert_eq!(read("30 mins"), Some(Reading::Delay(30)));
+        assert_eq!(read("30 minutes"), Some(Reading::Delay(30)));
     }
 
     #[test]
@@ -142,12 +164,13 @@ mod tests {
     fn hours_past_a_short_delay_are_a_time_of_day() {
         assert_eq!(read("9h"), at(9, 0));
         assert_eq!(read("15 h"), at(15, 0));
+        assert_eq!(read("5h30"), at(5, 30));
     }
 
     #[test]
     fn nonsense_and_out_of_range_are_refused() {
         for text in [
-            "", "soon", "25:00", "14:3", "14:300", "0", "2500", "-5", "1,5 h", "99h",
+            "", "soon", "25:00", "14:3", "14:300", "0", "2500", "-5", "1,5 h", "99h", "1h75", "1é1",
         ] {
             assert_eq!(read(text), None, "{text}");
         }

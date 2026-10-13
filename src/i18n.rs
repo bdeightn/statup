@@ -271,6 +271,19 @@ impl I18n {
         }
     }
 
+    /// "à 14:30" for a moment due later today, "demain à 09:00" tomorrow.
+    pub fn format_due(&self, at: &DateTime<Utc>) -> String {
+        let time = self.format_time(at);
+        let day = clock::local_date(at);
+        if day == clock::today() {
+            self.tf("date.at_time", &[("time", &time)])
+        } else if Some(day) == clock::today().succ_opt() {
+            self.tf("date.tomorrow_at_time", &[("time", &time)])
+        } else {
+            self.format_datetime(at)
+        }
+    }
+
     /// "il y a 2 h" for a moment past.
     pub fn format_ago(&self, at: &DateTime<Utc>) -> String {
         let parts = split_duration(Utc::now() - *at);

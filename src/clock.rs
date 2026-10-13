@@ -108,7 +108,7 @@ pub fn day_start(date: NaiveDate) -> Option<DateTime<Utc>> {
 }
 
 /// The next moment after `after` the instance clock shows `time`: later
-/// today, else tomorrow. `None` when daylight saving skips it.
+/// today, else tomorrow.
 pub fn next_occurrence(time: NaiveTime, after: DateTime<Utc>) -> Option<DateTime<Utc>> {
     next_occurrence_in(&zone(), time, after)
 }
@@ -136,8 +136,7 @@ fn next_occurrence_in<Tz: TimeZone>(
     after: DateTime<Utc>,
 ) -> Option<DateTime<Utc>> {
     let today = after.with_timezone(zone).date_naive();
-    let at = to_utc(zone, today.and_time(time))?;
-    if at > after {
+    if let Some(at) = to_utc(zone, today.and_time(time)).filter(|at| *at > after) {
         return Some(at);
     }
     to_utc(zone, today.succ_opt()?.and_time(time))
@@ -208,11 +207,12 @@ mod tests {
     }
 
     #[test]
-    fn a_time_skipped_by_daylight_saving_has_no_occurrence() {
+    fn a_time_skipped_by_daylight_saving_today_is_tomorrow() {
         let paris = chrono_tz::Europe::Paris;
-        let now = Utc.with_ymd_and_hms(2027, 3, 28, 0, 30, 0).unwrap();
+        let now = Utc.with_ymd_and_hms(2027, 3, 28, 2, 0, 0).unwrap();
         let time = NaiveTime::from_hms_opt(2, 30, 0).unwrap();
-        assert!(next_occurrence_in(&paris, time, now).is_none());
+        let at = next_occurrence_in(&paris, time, now).unwrap();
+        assert_eq!(at, Utc.with_ymd_and_hms(2027, 3, 29, 0, 30, 0).unwrap());
     }
 
     #[test]

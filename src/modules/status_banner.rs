@@ -560,7 +560,7 @@ mod tests {
         );
         outage.next_update_at = Some(Utc::now() + Duration::minutes(10));
         let next = cause(&outage, &I18n::new("en")).next.unwrap_or_default();
-        assert!(next.starts_with("update due at "), "{next}");
+        assert!(next.starts_with("update due\u{a0}"), "{next}");
     }
 
     #[test]

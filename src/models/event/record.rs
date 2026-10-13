@@ -138,7 +138,7 @@ fn next_update_note(
     let due = due?;
     let now = Utc::now();
     let (key, name, value) = if due > now {
-        (ahead_key, "when", i18n.format_short_when(&due))
+        (ahead_key, "when", i18n.format_due(&due))
     } else {
         let parts = split_duration(now - due);
         (overdue_key, "duration", i18n.format_duration(&parts))

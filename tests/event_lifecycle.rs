@@ -2184,7 +2184,7 @@ async fn a_reader_cannot_search_read_or_delete_templates() {
     );
 }
 
-const NEXT_UPDATE_NOTE: &str = "prévue";
+const NEXT_UPDATE_NOTE: &str = "prévue\u{a0}";
 const NEXT_UPDATE_REFUSAL: &str =
     "Écrivez un délai (30 min, 1 h) ou une heure (14:30) pour la prochaine mise à jour.";
 
