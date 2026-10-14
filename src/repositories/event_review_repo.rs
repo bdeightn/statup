@@ -77,12 +77,22 @@ impl EventReviewRepository {
         qb.build_query_as::<(i64, String)>().fetch_all(pool).await
     }
 
+    /// Removes the review. The event is touched so that its feed entry,
+    /// dated by its last activity, tells readers the text is gone.
     pub async fn delete(pool: &DbPool, event_id: i64) -> Result<(), sqlx::Error> {
-        sqlx::query("DELETE FROM event_reviews WHERE event_id = ?")
+        let mut tx = pool.begin().await?;
+        let removed = sqlx::query("DELETE FROM event_reviews WHERE event_id = ?")
             .bind(event_id)
-            .execute(pool)
-            .await?;
-        Ok(())
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+        if removed > 0 {
+            sqlx::query("UPDATE events SET updated_at = datetime('now') WHERE id = ?")
+                .bind(event_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await
     }
 }
 
@@ -213,7 +223,16 @@ mod tests {
             .unwrap();
         assert!(has_review(pool.clone()).await);
 
+        sqlx::query("UPDATE events SET updated_at = '2026-10-01 09:00:00'")
+            .execute(&pool)
+            .await
+            .unwrap();
         EventReviewRepository::delete(&pool, id).await.unwrap();
+        let feed = EventRepository::list_for_feed(&pool, 10).await.unwrap();
+        assert!(
+            feed[0].updated_at.to_rfc3339().as_str() > "2026-10-01T09:00:00+00:00",
+            "a removal is news for feed readers"
+        );
         assert!(
             EventReviewRepository::find(&pool, id)
                 .await

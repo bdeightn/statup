@@ -204,7 +204,7 @@ async fn load_subject(
 
 /// The event as it stands, with the text that goes with the message: the
 /// update posted, or the review published. A review removed before its
-/// message left sends nothing.
+/// message left, or an incident opened again since, sends nothing.
 async fn load_event(
     pool: &DbPool,
     event_id: i64,
@@ -215,8 +215,8 @@ async fn load_event(
     };
     let update = match (delivery.happening, delivery.update_id) {
         (Happening::Reviewed, _) => match EventReviewRepository::find(pool, event_id).await? {
-            Some(review) => Some(sanitize_markdown(&review.body)),
-            None => return Ok(None),
+            Some(review) if found.event.takes_review() => Some(sanitize_markdown(&review.body)),
+            _ => return Ok(None),
         },
         (_, Some(update_id)) => EventRepository::find_update(pool, event_id, update_id)
             .await?
@@ -664,16 +664,20 @@ mod tests {
         assert_eq!(outcomes[1].status, DeliveryStatus::Sent);
     }
 
-    #[tokio::test]
-    async fn a_review_removed_before_its_message_leaves_sends_nothing() {
-        let pool = test_pool().await;
-        let team = channel(&pool, "team", "en").await;
-        let id = incident(&pool, "Outage").await;
-        let author = UserRepository::find_by_email(&pool, "ops@example.com")
+    /// A resolved incident with its review, and the review's message queued.
+    async fn reviewed_incident(pool: &DbPool) -> (i64, i64) {
+        let team = channel(pool, "team", "en").await;
+        let id = incident(pool, "Outage").await;
+        sqlx::query("UPDATE events SET lifecycle = 'resolved' WHERE id = ?")
+            .bind(id)
+            .execute(pool)
+            .await
+            .unwrap();
+        let author = UserRepository::find_by_email(pool, "ops@example.com")
             .await
             .unwrap()
             .unwrap();
-        EventReviewRepository::save(&pool, id, "A cable was cut.", author.id)
+        EventReviewRepository::save(pool, id, "A cable was cut.", author.id)
             .await
             .unwrap();
         let reviewed = Notification::event(
@@ -682,18 +686,53 @@ mod tests {
             id,
             Some(Lifecycle::Resolved),
         );
-        NotificationRepository::enqueue(&pool, &reviewed, at(0))
+        NotificationRepository::enqueue(pool, &reviewed, at(0))
             .await
             .unwrap();
-        EventReviewRepository::delete(&pool, id).await.unwrap();
+        (team, id)
+    }
+
+    async fn sends_nothing(pool: &DbPool, team: i64) {
+        let script = Arc::new(Script::default());
+        deliver_due(pool, &script, None, at(1)).await.unwrap();
+        assert_eq!(script.sent(), Vec::new());
+        let outcomes = rows(pool, team).await;
+        assert_eq!(outcomes[0].status, DeliveryStatus::Failed);
+        assert_eq!(outcomes[0].failure.as_deref(), Some("gone"));
+    }
+
+    #[tokio::test]
+    async fn a_review_goes_out_while_its_incident_stays_resolved() {
+        let pool = test_pool().await;
+        let (team, _) = reviewed_incident(&pool).await;
         let script = Arc::new(Script::default());
 
         deliver_due(&pool, &script, None, at(1)).await.unwrap();
 
-        assert_eq!(script.sent(), Vec::new());
-        let outcomes = rows(&pool, team).await;
-        assert_eq!(outcomes[0].status, DeliveryStatus::Failed);
-        assert_eq!(outcomes[0].failure.as_deref(), Some("gone"));
+        assert_eq!(script.sent().len(), 1);
+        assert_eq!(rows(&pool, team).await[0].status, DeliveryStatus::Sent);
+    }
+
+    #[tokio::test]
+    async fn a_review_removed_before_its_message_leaves_sends_nothing() {
+        let pool = test_pool().await;
+        let (team, id) = reviewed_incident(&pool).await;
+        EventReviewRepository::delete(&pool, id).await.unwrap();
+
+        sends_nothing(&pool, team).await;
+    }
+
+    #[tokio::test]
+    async fn a_review_of_an_incident_opened_again_sends_nothing() {
+        let pool = test_pool().await;
+        let (team, id) = reviewed_incident(&pool).await;
+        sqlx::query("UPDATE events SET lifecycle = 'monitoring' WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sends_nothing(&pool, team).await;
     }
 
     #[tokio::test]
