@@ -693,6 +693,43 @@ mod tests {
     }
 
     #[test]
+    fn a_review_reaches_a_webhook_with_its_happening_and_its_text() {
+        let mut resolved = event();
+        resolved.lifecycle = Some(Lifecycle::Resolved);
+        let subject = Subject::Event {
+            event: Box::new(resolved),
+            services: vec!["Réseau".to_string()],
+            message: Some("<p>Un câble a été coupé.</p>".to_string()),
+        };
+        let reviewed = Some(Lifecycle::Resolved);
+        let i18n = crate::i18n::I18n::new("fr");
+        let notice = Notice::write(
+            Happening::Reviewed,
+            reviewed,
+            &subject,
+            &origin(),
+            &i18n,
+            at(),
+        );
+        let facts = Facts::of(Happening::Reviewed, reviewed, &subject, &origin(), at());
+
+        let body = post(
+            ChannelKind::Webhook,
+            "https://hooks.example/any",
+            &notice,
+            &facts,
+        )
+        .map(|posted| posted.body);
+
+        let body = body.unwrap_or_default();
+        assert_eq!(body["happening"], "reviewed");
+        assert_eq!(body["event"]["state"], "resolved");
+        assert_eq!(body["message"]["mark"], "restored");
+        assert_eq!(body["message"]["summary"], "Bilan publié\u{a0}· Réseau");
+        assert_eq!(body["message"]["text"], "Un câble a été coupé.");
+    }
+
+    #[test]
     fn email_is_sent_another_way() {
         assert_eq!(
             post_for(ChannelKind::Email, "a@example.com", &fixture()),
