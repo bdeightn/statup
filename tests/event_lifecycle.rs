@@ -2669,3 +2669,47 @@ async fn the_feed_carries_the_report_without_its_author() {
     assert!(body.contains("&#60;h4&#62;Bilan&#60;/h4&#62;"));
     assert!(!body.contains("Publisher"));
 }
+
+/// Undoing a step is shown only to who may do it: an editor on open work,
+/// an administrator on anything; a closed incident is the administrators'.
+#[tokio::test]
+async fn going_back_a_step_is_offered_only_to_who_may_do_it() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let mut paths = Vec::new();
+    for (title, next) in [
+        ("Panne du VPN", "in_progress"),
+        ("Panne du Wi-Fi", "resolved"),
+    ] {
+        let path = app
+            .create_incident(title, "Ne répond plus.", "minor", &[])
+            .await;
+        let id = event_id_from_path(&path);
+        let (status, _, _) = app
+            .post_form_with_header_csrf(
+                &format!("/events/{id}/updates"),
+                &[("lifecycle", next), ("message", "Suite.")],
+            )
+            .await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        paths.push(path);
+    }
+    let offers = |body: &str| body.contains("/revert-lifecycle");
+
+    let (_, open) = app.get(&paths[0]).await;
+    let (_, closed) = app.get(&paths[1]).await;
+    assert!(offers(&open), "an editor undoes a step of open work");
+    assert!(!offers(&closed), "a closed incident is the administrators'");
+
+    app.post_form_with_header_csrf("/logout", &[]).await;
+    app.create_user(
+        "reader@example.com",
+        "reader_pass_1234",
+        "Reader",
+        Role::Reader,
+    )
+    .await;
+    app.login("reader@example.com", "reader_pass_1234").await;
+    let (_, open) = app.get(&paths[0]).await;
+    assert!(!offers(&open), "a reader cannot undo anything");
+}

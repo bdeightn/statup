@@ -370,7 +370,7 @@ pub(super) async fn detail_page(
         follow_up: FollowUp::of(&view.event, user),
         frame: Frame::load(&state.pool, user, csrf_token, &i18n).await?,
         transitions: transition_options(&view.event, composer.lifecycle, &i18n),
-        revert_label: revert_label(&view.event, &i18n),
+        revert_label: can_edit.then(|| revert_label(&view.event, &i18n)).flatten(),
         published_notice: false,
         can_edit,
         view,
@@ -380,7 +380,8 @@ pub(super) async fn detail_page(
     })
 }
 
-/// "Back to Investigating", when the last step can be undone.
+/// "Back to Investigating", when the last step can be undone; offered only
+/// to whoever may change the event, as the undo itself checks.
 fn revert_label(event: &Event, i18n: &I18n) -> Option<String> {
     event
         .previous_lifecycle_key()
