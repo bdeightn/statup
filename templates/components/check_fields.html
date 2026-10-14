@@ -58,7 +58,7 @@
         <label class="outage-delay">
             <span>{{ i18n.t("services.check_outage_before") }}</span>
             <input id="check_outage_after" name="check_outage_after" type="text" class="input" inputmode="numeric" autocomplete="off" maxlength="2"
-                   value="{{ delay.value }}" placeholder="3"
+                   value="{{ delay.value }}" placeholder="{{ crate::services::DEFAULT_OUTAGE_AFTER }}"
                    {% if delay.error.is_some() %}aria-invalid="true" aria-describedby="outage-error" autofocus{% endif %}>
             <span>{{ i18n.t("services.check_outage_unit") }}</span>
         </label>

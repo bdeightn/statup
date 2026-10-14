@@ -125,6 +125,15 @@ impl CheckInput {
             .ok_or_else(|| AppError::validation(OUTAGE_AFTER_INVALID))
     }
 
+    /// What to test and the delay the result announces; nothing without
+    /// monitoring.
+    fn tested(&self) -> Result<Option<(ServiceCheck, u8)>, AppError> {
+        let Some(check) = self.check()? else {
+            return Ok(None);
+        };
+        Ok(Some((check, self.outage_after()?)))
+    }
+
     pub fn check(&self) -> Result<Option<ServiceCheck>, AppError> {
         parse_check(
             &self.kind,
@@ -210,12 +219,9 @@ pub async fn test_check(
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<CheckInput>,
 ) -> Result<Response, AppError> {
-    let checked = input
-        .check()
-        .and_then(|check| Ok((check, input.outage_after()?)));
-    let (check, outage_after) = match checked {
-        Ok((Some(check), outage_after)) => (check, outage_after),
-        Ok((None, _)) => return Err(AppError::validation("error.invalid_data")),
+    let (check, outage_after) = match input.tested() {
+        Ok(Some(tested)) => tested,
+        Ok(None) => return Err(AppError::validation("error.invalid_data")),
         Err(AppError::Validation(key)) => {
             let message = i18n.t(&key).to_string();
             return render(&CheckResultFragment {

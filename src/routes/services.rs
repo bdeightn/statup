@@ -361,13 +361,7 @@ async fn render_form(
         None => false,
     };
     let mut form = page.form;
-    let mut error_key = page.error_key.as_deref();
-    if error_key == Some(OUTAGE_AFTER_INVALID)
-        && let Some(delay) = form.check.outage_after.as_mut()
-    {
-        delay.error = Some(i18n.t(OUTAGE_AFTER_INVALID).to_string());
-        error_key = None;
-    }
+    let error_key = place_delay_error(&mut form.check, page.error_key.as_deref(), &i18n);
     let (error, name_error, check_error) = place_error(error_key, &i18n);
     render(&ServiceFormTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
@@ -385,6 +379,21 @@ async fn render_form(
         upload_error: None,
         i18n,
     })
+}
+
+/// A refused delay is said under the delay; any other refusal is left to
+/// [`place_error`].
+fn place_delay_error<'a>(
+    check: &mut CheckFields,
+    key: Option<&'a str>,
+    i18n: &I18n,
+) -> Option<&'a str> {
+    if key != Some(OUTAGE_AFTER_INVALID) {
+        return key;
+    }
+    let delay = check.outage_after.as_mut()?;
+    delay.error = Some(i18n.t(OUTAGE_AFTER_INVALID).to_string());
+    None
 }
 
 /// A refusal is said under its field when it has one: the name, the
@@ -449,10 +458,7 @@ async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<i64, AppError> 
         icon_name.as_deref(),
     )
     .await?;
-    ServiceService::set_check(pool, service.id, check.as_ref()).await?;
-    if let Some(minutes) = outage_after {
-        ServiceRepository::set_outage_after(pool, service.id, minutes).await?;
-    }
+    save_monitoring(pool, service.id, check.as_ref(), outage_after).await?;
     Ok(service.id)
 }
 
@@ -463,6 +469,19 @@ fn outage_after_of(
     check: Option<&ServiceCheck>,
 ) -> Result<Option<u8>, AppError> {
     check.map(|_| input.check.outage_after()).transpose()
+}
+
+async fn save_monitoring(
+    pool: &DbPool,
+    id: i64,
+    check: Option<&ServiceCheck>,
+    outage_after: Option<u8>,
+) -> Result<(), AppError> {
+    ServiceService::set_check(pool, id, check).await?;
+    if let Some(minutes) = outage_after {
+        ServiceRepository::set_outage_after(pool, id, minutes).await?;
+    }
+    Ok(())
 }
 
 async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), AppError> {
@@ -478,11 +497,7 @@ async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), A
         icon_name.as_deref(),
     )
     .await?;
-    ServiceService::set_check(pool, id, check.as_ref()).await?;
-    if let Some(minutes) = outage_after {
-        ServiceRepository::set_outage_after(pool, id, minutes).await?;
-    }
-    Ok(())
+    save_monitoring(pool, id, check.as_ref(), outage_after).await
 }
 
 pub async fn edit_form(
