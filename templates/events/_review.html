@@ -4,7 +4,8 @@
    `review_csrf`. #}
 <div class="review">
     <div class="review-dateline">
-        <p class="article-dateline"><time datetime="{{ review.iso }}">{{ review.time }}</time>{% if let Some(author) = review.author %}&nbsp;<span aria-hidden="true">·</span> {{ author }}{% endif %}</p>
+        {% let dateline = review %}
+        {% include "events/_dateline.html" %}
         {% if review_actions %}
         <form class="review-remove" method="post" action="/events/{{ view.event.id }}/review/delete" data-confirm>
             <input type="hidden" name="csrf_token" value="{{ review_csrf }}">

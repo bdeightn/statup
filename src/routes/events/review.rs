@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use super::detail::{Composer, ReviewForm, detail_page};
 use crate::error::AppError;
-use crate::i18n::Locale;
+use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
 use crate::routes::render;
 use crate::services::EventService;
@@ -17,6 +17,16 @@ use crate::state::AppState;
 pub struct ReviewInput {
     #[serde(default)]
     body: String,
+}
+
+impl ReviewInput {
+    /// The form again, with what the author wrote and why it was refused.
+    fn refused(self, key: &str, i18n: &I18n) -> ReviewForm {
+        ReviewForm {
+            error: Some(i18n.t(key).to_string()),
+            body: self.body,
+        }
+    }
 }
 
 /// A refused review comes back in its form, open, with why.
@@ -31,10 +41,7 @@ pub async fn publish_review(
     match EventService::publish_review(&state.pool, id, &input.body, &user).await {
         Ok(()) => Ok(Redirect::to(&format!("/events/{id}?published=1")).into_response()),
         Err(AppError::Validation(key)) => {
-            let review_form = ReviewForm {
-                error: Some(i18n.t(&key).to_string()),
-                body: input.body,
-            };
+            let review_form = input.refused(&key, &i18n);
             let page = detail_page(
                 &state,
                 id,

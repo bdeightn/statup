@@ -352,6 +352,7 @@ mod tests {
             service_names: services.to_string(),
             service_icons: String::new(),
             last_activity_at: None,
+            review_body: None,
             latest_update: None,
             latest_update_at: None,
             next_update_at: None,

@@ -14,7 +14,7 @@ use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::OptionalUser;
 use crate::models::{EventSummary, EventUpdateWithAuthor};
-use crate::repositories::{EventRepository, EventReviewRepository};
+use crate::repositories::EventRepository;
 use crate::services::sanitize_markdown;
 use crate::state::AppState;
 
@@ -103,18 +103,14 @@ async fn render_entries(
     let ids: Vec<i64> = events.iter().map(|e| e.id).collect();
     let mut updates_by_event =
         group_by_event(EventRepository::list_updates_for_events(&state.pool, &ids).await?);
-    let reviews: HashMap<i64, String> = EventReviewRepository::bodies_for(&state.pool, &ids)
-        .await?
-        .into_iter()
-        .collect();
     events
         .iter()
         .map(|event| {
             let updates = updates_by_event.remove(&event.id).unwrap_or_default();
-            let review = reviews
-                .get(&event.id)
-                .filter(|_| event.shows_review())
-                .map(String::as_str);
+            let review = event
+                .review_body
+                .as_deref()
+                .filter(|_| event.shows_review());
             render_entry(event, updates, review, i18n)
         })
         .collect()

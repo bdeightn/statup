@@ -334,10 +334,13 @@ pub struct EventSummary {
     /// split by [`ICON_SEPARATOR`].
     #[sqlx(default)]
     pub service_icons: String,
-    /// Latest of the event's own update time, its last posted update and its review.
+    /// Latest of the event's own update time and its last posted update.
     /// Only filled by the feed query.
     #[sqlx(default)]
     pub last_activity_at: Option<DateTime<Utc>>,
+    /// Its review as written. Only filled by the feed query.
+    #[sqlx(default)]
+    pub review_body: Option<String>,
     /// Latest posted update, sanitized HTML. Only filled by the banner query.
     #[sqlx(default)]
     pub latest_update: Option<String>,

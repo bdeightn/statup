@@ -43,8 +43,9 @@ pub enum Subject {
     Event {
         event: Box<Event>,
         services: Vec<String>,
-        /// The update posted with the change, as stored: sanitized HTML.
-        update: Option<String>,
+        /// What was written with it, sanitized HTML: the update posted with
+        /// the change, or the review published.
+        message: Option<String>,
     },
     /// Services the checks found down, or back, in one wave: the first one
     /// leads, the others fell or came back with it.
@@ -102,14 +103,14 @@ impl Notice {
             Subject::Event {
                 event,
                 services,
-                update,
+                message,
             } => {
                 let about = AboutEvent {
                     happening,
                     lifecycle: lifecycle.or(event.lifecycle),
                     event,
                     services,
-                    update: update.as_deref(),
+                    message: message.as_deref(),
                 };
                 about.notice(origin, i18n)
             }
@@ -134,7 +135,7 @@ struct AboutEvent<'a> {
     lifecycle: Option<Lifecycle>,
     event: &'a Event,
     services: &'a [String],
-    update: Option<&'a str>,
+    message: Option<&'a str>,
 }
 
 impl AboutEvent<'_> {
@@ -196,10 +197,10 @@ impl AboutEvent<'_> {
         }
     }
 
-    /// The message posted with the change, or what the event says when it
+    /// What was written with the change, or what the event says when it
     /// begins.
     fn text(&self) -> Option<String> {
-        if let Some(html) = self.update {
+        if let Some(html) = self.message {
             return plain_text(html);
         }
         matches!(
@@ -413,7 +414,7 @@ mod tests {
         Subject::Event {
             event: Box::new(event),
             services: vec!["Réseau".to_string(), "VPN".to_string()],
-            update: update.map(ToString::to_string),
+            message: update.map(ToString::to_string),
         }
     }
 
@@ -613,7 +614,7 @@ mod tests {
         let subject = Subject::Event {
             event: Box::new(announcement),
             services: Vec::new(),
-            update: None,
+            message: None,
         };
 
         let published = write(Happening::Published, &subject, "fr");

@@ -213,7 +213,7 @@ async fn load_event(
     let Some(found) = EventRepository::find_with_services(pool, event_id).await? else {
         return Ok(None);
     };
-    let update = match (delivery.happening, delivery.update_id) {
+    let message = match (delivery.happening, delivery.update_id) {
         (Happening::Reviewed, _) => match EventReviewRepository::find(pool, event_id).await? {
             Some(review) if found.event.takes_review() => Some(sanitize_markdown(&review.body)),
             _ => return Ok(None),
@@ -226,7 +226,7 @@ async fn load_event(
     Ok(Some(Subject::Event {
         event: Box::new(found.event),
         services: found.services.into_iter().map(|s| s.name).collect(),
-        update,
+        message,
     }))
 }
 

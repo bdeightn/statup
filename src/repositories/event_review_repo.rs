@@ -1,7 +1,7 @@
 //! Reviews of resolved incidents: one per incident, published, corrected
-//! and removed.
+//! and removed. Each change dates its event, so the feed entry says it.
 
-use sqlx::{QueryBuilder, Sqlite};
+use sqlx::{Sqlite, Transaction};
 
 use crate::db::DbPool;
 use crate::models::{EventReview, ReviewSaved};
@@ -41,15 +41,13 @@ impl EventReviewRepository {
         .await?
         .rows_affected();
         if inserted == 0 {
-            sqlx::query(
-                "UPDATE event_reviews SET body = ?, updated_at = datetime('now') \
-                 WHERE event_id = ?",
-            )
-            .bind(body)
-            .bind(event_id)
-            .execute(&mut *tx)
-            .await?;
+            sqlx::query("UPDATE event_reviews SET body = ? WHERE event_id = ?")
+                .bind(body)
+                .bind(event_id)
+                .execute(&mut *tx)
+                .await?;
         }
+        touch_event(&mut tx, event_id).await?;
         tx.commit().await?;
         Ok(if inserted == 0 {
             ReviewSaved::Corrected
@@ -58,27 +56,6 @@ impl EventReviewRepository {
         })
     }
 
-    /// The review texts of several events in one query, as `(event_id, body)`.
-    pub async fn bodies_for(
-        pool: &DbPool,
-        event_ids: &[i64],
-    ) -> Result<Vec<(i64, String)>, sqlx::Error> {
-        if event_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let mut qb = QueryBuilder::<Sqlite>::new(
-            "SELECT event_id, body FROM event_reviews WHERE event_id IN (",
-        );
-        let mut ids = qb.separated(", ");
-        for id in event_ids {
-            ids.push_bind(*id);
-        }
-        qb.push(")");
-        qb.build_query_as::<(i64, String)>().fetch_all(pool).await
-    }
-
-    /// Removes the review. The event is touched so that its feed entry,
-    /// dated by its last activity, tells readers the text is gone.
     pub async fn delete(pool: &DbPool, event_id: i64) -> Result<(), sqlx::Error> {
         let mut tx = pool.begin().await?;
         let removed = sqlx::query("DELETE FROM event_reviews WHERE event_id = ?")
@@ -87,13 +64,18 @@ impl EventReviewRepository {
             .await?
             .rows_affected();
         if removed > 0 {
-            sqlx::query("UPDATE events SET updated_at = datetime('now') WHERE id = ?")
-                .bind(event_id)
-                .execute(&mut *tx)
-                .await?;
+            touch_event(&mut tx, event_id).await?;
         }
         tx.commit().await
     }
+}
+
+async fn touch_event(tx: &mut Transaction<'_, Sqlite>, event_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE events SET updated_at = datetime('now') WHERE id = ?")
+        .bind(event_id)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -131,6 +113,25 @@ mod tests {
         EventRepository::create(pool, &input).await.unwrap().id
     }
 
+    const LONG_AGO: &str = "2026-10-01 09:00:00";
+
+    async fn date_events_long_ago(pool: &DbPool) {
+        sqlx::query("UPDATE events SET updated_at = ?")
+            .bind(LONG_AGO)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    async fn feed_entry(pool: &DbPool, id: i64) -> crate::models::EventSummary {
+        EventRepository::list_for_feed(pool, 10)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|e| e.id == id)
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn a_correction_keeps_who_published_and_when() {
         let pool = test_pool().await;
@@ -147,7 +148,8 @@ mod tests {
         let first = EventReviewRepository::save(&pool, id, "A disk filled up.", jane)
             .await
             .unwrap();
-        sqlx::query("UPDATE event_reviews SET published_at = '2026-10-01 09:00:00'")
+        sqlx::query("UPDATE event_reviews SET published_at = ?")
+            .bind(LONG_AGO)
             .execute(&pool)
             .await
             .unwrap();
@@ -172,73 +174,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_corrected_review_is_the_feed_activity_and_its_text_is_found() {
-        let pool = test_pool().await;
-        let jane = member(&pool, "jane@example.com", "Jane").await;
-        let reviewed = incident(&pool, jane).await;
-        let bare = incident(&pool, jane).await;
-        EventReviewRepository::save(&pool, reviewed, "A disk filled up.", jane)
-            .await
-            .unwrap();
-        sqlx::query("UPDATE events SET updated_at = '2026-10-01 09:00:00'")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("UPDATE event_reviews SET updated_at = '2026-10-02 09:00:00'")
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        let feed = EventRepository::list_for_feed(&pool, 10).await.unwrap();
-        let activity = feed
-            .iter()
-            .find(|e| e.id == reviewed)
-            .unwrap()
-            .last_activity_at;
-        assert_eq!(
-            activity.map(|at| at.to_rfc3339()),
-            Some("2026-10-02T09:00:00+00:00".to_string())
-        );
-        let bodies = EventReviewRepository::bodies_for(&pool, &[reviewed, bare])
-            .await
-            .unwrap();
-        assert_eq!(bodies, vec![(reviewed, "A disk filled up.".to_string())]);
-        assert_eq!(
-            EventReviewRepository::bodies_for(&pool, &[]).await.unwrap(),
-            Vec::<(i64, String)>::new()
-        );
-    }
-
-    #[tokio::test]
-    async fn a_removed_review_is_gone_and_the_summary_says_so() {
+    async fn each_change_to_a_review_dates_its_feed_entry() {
         let pool = test_pool().await;
         let jane = member(&pool, "jane@example.com", "Jane").await;
         let id = incident(&pool, jane).await;
-        let has_review = |pool: DbPool| async move {
-            EventRepository::list_for_feed(&pool, 10).await.unwrap()[0].has_review
-        };
+        let bare = incident(&pool, jane).await;
+        let long_ago = "2026-10-01T09:00:00+00:00";
 
-        EventReviewRepository::save(&pool, id, "A disk filled up.", jane)
-            .await
-            .unwrap();
-        assert!(has_review(pool.clone()).await);
+        for text in ["A disk filled up.", "A log disk filled up."] {
+            date_events_long_ago(&pool).await;
+            EventReviewRepository::save(&pool, id, text, jane)
+                .await
+                .unwrap();
+            let entry = feed_entry(&pool, id).await;
+            assert!(entry.updated_at.to_rfc3339().as_str() > long_ago, "{text}");
+            assert_eq!(entry.review_body.as_deref(), Some(text));
+            assert!(entry.has_review);
+        }
+        assert_eq!(feed_entry(&pool, bare).await.review_body, None);
 
-        sqlx::query("UPDATE events SET updated_at = '2026-10-01 09:00:00'")
-            .execute(&pool)
-            .await
-            .unwrap();
+        date_events_long_ago(&pool).await;
         EventReviewRepository::delete(&pool, id).await.unwrap();
-        let feed = EventRepository::list_for_feed(&pool, 10).await.unwrap();
-        assert!(
-            feed[0].updated_at.to_rfc3339().as_str() > "2026-10-01T09:00:00+00:00",
-            "a removal is news for feed readers"
-        );
+
+        let entry = feed_entry(&pool, id).await;
+        assert!(entry.updated_at.to_rfc3339().as_str() > long_ago);
+        assert_eq!(entry.review_body, None);
+        assert!(!entry.has_review);
         assert!(
             EventReviewRepository::find(&pool, id)
                 .await
                 .unwrap()
                 .is_none()
         );
-        assert!(!has_review(pool.clone()).await);
     }
 }

@@ -211,20 +211,18 @@ impl EventRepository {
         .await
     }
 
-    /// Newest events with their last activity time, for the Atom feed. A
-    /// posted update or a corrected review does not touch `events.updated_at`,
-    /// so they are folded in.
+    /// Newest events with their last activity time and their review, for the
+    /// Atom feed. A posted update does not touch `events.updated_at`, so it
+    /// is folded in.
     pub async fn list_for_feed(
         pool: &DbPool,
         limit: i64,
     ) -> Result<Vec<EventSummary>, sqlx::Error> {
         sqlx::query_as::<_, EventSummary>(&format!(
             "SELECT {SUMMARY_COLUMNS}, \
-               MAX(e.updated_at, \
-                   COALESCE((SELECT MAX(u.created_at) FROM event_updates u \
-                       WHERE u.event_id = e.id), e.updated_at), \
-                   COALESCE((SELECT r.updated_at FROM event_reviews r \
-                       WHERE r.event_id = e.id), e.updated_at)) AS last_activity_at \
+               MAX(e.updated_at, COALESCE((SELECT MAX(u.created_at) FROM event_updates u \
+                   WHERE u.event_id = e.id), e.updated_at)) AS last_activity_at, \
+               (SELECT r.body FROM event_reviews r WHERE r.event_id = e.id) AS review_body \
              FROM events e WHERE e.id IN ( \
                SELECT id FROM events ORDER BY created_at DESC, id DESC LIMIT ?) \
              ORDER BY e.created_at DESC, e.id DESC"

@@ -399,40 +399,6 @@
         gap: 4px 16px;
     }
 
-    .review-remove {
-        margin-left: auto;
-    }
-
-    /* Removing it is rare: under a pointer the action shows over the
-       review only; a touch screen keeps it in sight. */
-    @media (hover: hover) {
-        .review-remove {
-            opacity: 0;
-            transition: opacity 150ms var(--ease-out);
-        }
-
-        .review:hover .review-remove,
-        .review:focus-within .review-remove {
-            opacity: 1;
-        }
-    }
-
-    /* Written where it shows, folded until asked for. */
-    .review-form:not(.is-open, :target) {
-        display: none;
-    }
-
-    .review-form .form-error {
-        margin-bottom: 12px;
-    }
-
-    .review-buttons {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 16px;
-        margin-top: 12px;
-    }
 
     .rich-text > * + * {
         margin-top: 10px;
@@ -573,25 +539,32 @@
         margin-top: 4px;
     }
 
-    .moment-delete {
+    .moment-delete,
+    .review-remove {
         margin-left: auto;
     }
 
-    /* Deleting a message is rare: under a pointer the action shows only
-       over its message; a touch screen, without hover, keeps it in sight. */
+    /* Deleting a message, or a review, is rare: under a pointer the action
+       shows only over what it removes; a touch screen, without hover, keeps
+       it in sight. */
     @media (hover: hover) {
-        .moment-delete {
+        .moment-delete,
+        .review-remove {
             opacity: 0;
             transition: opacity 150ms var(--ease-out);
         }
 
         .moment:hover .moment-delete,
-        .moment:focus-within .moment-delete {
+        .moment:focus-within .moment-delete,
+        .review:hover .review-remove,
+        .review:focus-within .review-remove {
             opacity: 1;
         }
     }
 
-    .composer:not(.is-open, :target) {
+    /* The composer and the review form, folded until asked for. */
+    .composer:not(.is-open, :target),
+    .review-form:not(.is-open, :target) {
         display: none;
     }
 
@@ -658,7 +631,8 @@
         max-width: 180px;
     }
 
-    .composer .form-error {
+    .composer .form-error,
+    .review-form .form-error {
         margin-bottom: 12px;
     }
 

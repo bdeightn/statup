@@ -74,6 +74,7 @@ fn summary(kind: Kind, severity: Option<Severity>, lifecycle: Option<Lifecycle>)
         service_names: String::new(),
         service_icons: String::new(),
         last_activity_at: None,
+        review_body: None,
         latest_update: None,
         latest_update_at: None,
         next_update_at: None,

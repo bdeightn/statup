@@ -454,7 +454,7 @@ mod tests {
         Subject::Event {
             event: Box::new(event()),
             services: vec!["Réseau".to_string(), "VPN".to_string()],
-            update: None,
+            message: None,
         }
     }
 
