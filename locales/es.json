@@ -411,7 +411,7 @@
   "services.status_now": "Estado actual: {status}.",
   "services.status_change_link": "Cambiarlo desde la lista",
   "services.saved_notice": "guardado.",
-  "services.saved_monitored_notice": "guardado, supervisado cada minuto: 3 fallos seguidos lo marcan como caído.",
+  "services.saved_monitored_notice": "guardado, supervisado cada minuto: tras {minutes} min sin respuesta, se marca como caído.",
   "services.deleted_notice": "eliminado.",
   "services.publish_status": "Publicar",
   "services.confirm_status": "¿Mostrar «{status}» a todos los visitantes?",

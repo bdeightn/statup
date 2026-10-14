@@ -411,7 +411,7 @@
   "services.status_now": "État actuel : {status}.",
   "services.status_change_link": "Le changer depuis la liste",
   "services.saved_notice": "enregistré.",
-  "services.saved_monitored_notice": "enregistré, surveillé chaque minute : 3 échecs de suite le passent en panne.",
+  "services.saved_monitored_notice": "enregistré, surveillé chaque minute : sans réponse pendant {minutes} min, il passe en panne.",
   "services.deleted_notice": "supprimé.",
   "services.publish_status": "Publier",
   "services.confirm_status": "Afficher « {status} » à tous les visiteurs ?",

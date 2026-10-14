@@ -411,7 +411,7 @@
   "services.status_now": "Aktueller Status: {status}.",
   "services.status_change_link": "Über die Liste ändern",
   "services.saved_notice": "gespeichert.",
-  "services.saved_monitored_notice": "gespeichert, wird jede Minute überwacht: 3 Fehlschläge in Folge markieren ihn als ausgefallen.",
+  "services.saved_monitored_notice": "gespeichert, wird jede Minute überwacht: nach {minutes} Min. ohne Antwort wird er als ausgefallen markiert.",
   "services.deleted_notice": "gelöscht.",
   "services.publish_status": "Veröffentlichen",
   "services.confirm_status": "„{status}“ allen Besuchern anzeigen?",

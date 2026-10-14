@@ -921,6 +921,11 @@ async fn each_service_keeps_the_delay_typed_for_it() {
     assert_eq!(checked[0].outage_after, 15);
     let id = checked[0].id;
 
+    let (_, list) = app.get(&format!("/services?saved={id}")).await;
+    assert!(
+        list.contains("sans réponse pendant 15 min"),
+        "the notice gives the service's own delay"
+    );
     let (_, form) = app.get(&format!("/services/{id}/edit")).await;
     assert!(form.contains(r#"value="15""#), "the saved delay is shown");
 
@@ -937,13 +942,17 @@ async fn each_service_keeps_the_delay_typed_for_it() {
     app.post_form(
         &edit,
         &csrf,
-        &[("name", "Imprimante"), ("check_kind", "none")],
+        &[
+            ("name", "Imprimante"),
+            ("check_kind", "none"),
+            ("check_outage_after", "left over"),
+        ],
     )
     .await;
     assert_eq!(
         app.service(id).await.outage_after_minutes,
         20,
-        "turning the monitoring off keeps the delay for later"
+        "turning the monitoring off keeps the delay, whatever its box holds"
     );
 }
 

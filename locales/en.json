@@ -411,7 +411,7 @@
   "services.status_now": "Current state: {status}.",
   "services.status_change_link": "Change it from the list",
   "services.saved_notice": "saved.",
-  "services.saved_monitored_notice": "saved, monitored every minute: 3 failures in a row mark it down.",
+  "services.saved_monitored_notice": "saved, monitored every minute: after {minutes} min without an answer, it is marked down.",
   "services.deleted_notice": "deleted.",
   "services.publish_status": "Publish",
   "services.confirm_status": "Show “{status}” to every visitor?",

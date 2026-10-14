@@ -16,8 +16,8 @@ use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::is_htmx;
 use crate::middleware::{CsrfToken, HtmlForm, OptionalUser, RequirePublisher};
 use crate::models::{
-    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, Service, ServiceStatus, User,
-    find_builtin_icon,
+    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, Service, ServiceCheck,
+    ServiceStatus, User, find_builtin_icon,
 };
 use crate::modules::services::{LONG_DAYS, ServiceRow, Strip, service_history, strips};
 use crate::repositories::{EventRepository, ServiceRepository};
@@ -37,8 +37,9 @@ struct ServiceListTemplate {
     previous: Option<ServiceStatus>,
     saved_id: Option<i64>,
     saved_name: Option<String>,
-    /// The saved service is monitored: the notice says what that means.
-    saved_monitored: bool,
+    /// The delay of the saved service, when monitored: the notice says
+    /// what that means.
+    saved_monitored: Option<u8>,
     /// What the last check of each monitored service found.
     pulses: HashMap<i64, Pulse>,
     /// Each service's last ninety days, drawn small on its row.
@@ -57,6 +58,17 @@ impl ServiceListTemplate {
     #[allow(clippy::trivially_copy_pass_by_ref)]
     fn is_saved(&self, id: &i64) -> bool {
         self.saved_id == Some(*id)
+    }
+
+    /// What saving did, and for a monitored service, when it shows an outage.
+    fn saved_notice(&self) -> String {
+        match self.saved_monitored {
+            Some(minutes) => self.i18n.tf(
+                "services.saved_monitored_notice",
+                &[("minutes", &minutes.to_string())],
+            ),
+            None => self.i18n.t("services.saved_notice").to_string(),
+        }
     }
 
     #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -144,7 +156,9 @@ async fn render_list(
         .saved
         .and_then(|id| services.iter().find(|s| s.id == id));
     let saved_name = saved.map(|s| s.name.clone());
-    let saved_monitored = saved.is_some_and(|s| s.check_kind.is_some());
+    let saved_monitored = saved
+        .filter(|s| s.check_kind.is_some())
+        .map(|s| s.outage_after_minutes);
     let pulses = services
         .iter()
         .filter(|service| service.check_kind.is_some())
@@ -425,7 +439,7 @@ pub async fn create(
 /// The check is read first, so a refused address or delay saves nothing.
 async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<i64, AppError> {
     let check = input.check.check()?;
-    let outage_after = input.check.outage_after()?;
+    let outage_after = outage_after_of(input, check.as_ref())?;
     let icon_name = input.icon_name();
     let service = ServiceService::create(
         pool,
@@ -436,15 +450,24 @@ async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<i64, AppError> 
     )
     .await?;
     ServiceService::set_check(pool, service.id, check.as_ref()).await?;
-    if check.is_some() {
-        ServiceRepository::set_outage_after(pool, service.id, outage_after).await?;
+    if let Some(minutes) = outage_after {
+        ServiceRepository::set_outage_after(pool, service.id, minutes).await?;
     }
     Ok(service.id)
 }
 
+/// The delay before an outage, read only for a monitored service: without
+/// monitoring the field is not sent, and the saved delay stays for later.
+fn outage_after_of(
+    input: &ServiceInput,
+    check: Option<&ServiceCheck>,
+) -> Result<Option<u8>, AppError> {
+    check.map(|_| input.check.outage_after()).transpose()
+}
+
 async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), AppError> {
     let check = input.check.check()?;
-    let outage_after = input.check.outage_after()?;
+    let outage_after = outage_after_of(input, check.as_ref())?;
     let icon_name = input.icon_name();
     ServiceService::update(
         pool,
@@ -456,9 +479,8 @@ async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), A
     )
     .await?;
     ServiceService::set_check(pool, id, check.as_ref()).await?;
-    // Without monitoring the field is not sent: the delay stays for later.
-    if check.is_some() {
-        ServiceRepository::set_outage_after(pool, id, outage_after).await?;
+    if let Some(minutes) = outage_after {
+        ServiceRepository::set_outage_after(pool, id, minutes).await?;
     }
     Ok(())
 }
