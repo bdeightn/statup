@@ -979,6 +979,10 @@ async fn a_refused_delay_is_said_under_its_own_field() {
         assert_eq!(status, StatusCode::OK, "{delay}: the form is shown again");
         assert!(body.contains(r#"id="outage-error""#), "{delay}");
         assert!(
+            body.contains(r#"aria-invalid="true" aria-describedby="outage-error""#),
+            "{delay}: the delay field is marked wrong and points at its message"
+        );
+        assert!(
             !body.contains(r#"id="check-error""#) && !body.contains(r#"id="form-error""#),
             "{delay}: the address is not blamed"
         );
