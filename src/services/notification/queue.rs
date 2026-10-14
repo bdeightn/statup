@@ -158,6 +158,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_review_is_sent_once_to_whoever_receives_incidents() {
+        let pool = test_pool().await;
+        everything(&pool).await;
+        let works = ChannelInput {
+            name: "Works".to_string(),
+            kind: ChannelKind::Slack,
+            target: "https://hooks.slack.com/services/works".to_string(),
+            locale: "fr".to_string(),
+            on_incidents: false,
+            on_maintenances: true,
+            on_publications: false,
+            on_detected: false,
+        };
+        NotificationRepository::create_channel(&pool, &works)
+            .await
+            .unwrap();
+        let author = admin(&pool).await;
+        let event = EventService::create(&pool, new_event(Kind::Incident, &author))
+            .await
+            .unwrap();
+        let resolved = Some(Lifecycle::Resolved);
+        EventService::post_update(&pool, event.id, "Fixed.", resolved, None, &author)
+            .await
+            .unwrap();
+
+        for text in ["A cable was cut.", "A cable was cut by road works."] {
+            EventService::publish_review(&pool, event.id, text, &author)
+                .await
+                .unwrap();
+        }
+
+        assert_eq!(
+            queued(&pool).await,
+            [
+                (Happening::Opened, Some(Lifecycle::Investigating), false),
+                (Happening::Closed, resolved, true),
+                (Happening::Reviewed, resolved, false),
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn a_maintenance_tells_its_announce_its_new_date_its_start_and_its_end() {
         let pool = test_pool().await;
         everything(&pool).await;

@@ -127,6 +127,12 @@ fn takes_next_update(kind: Kind, lifecycle: Option<Lifecycle>) -> bool {
     kind == Kind::Incident && lifecycle.is_some_and(Lifecycle::is_active)
 }
 
+/// A resolved incident, the one event a review is written for: an incident
+/// called off was a false alarm, and maintenance announces what is new.
+fn takes_review(kind: Kind, lifecycle: Option<Lifecycle>) -> bool {
+    kind == Kind::Incident && lifecycle == Some(Lifecycle::Resolved)
+}
+
 /// When the next update is due, else how long it has been awaited, in the
 /// words of `keys` and with their other `args`.
 fn next_update_note(
@@ -262,6 +268,11 @@ impl Event {
         takes_next_update(self.kind, self.lifecycle)
     }
 
+    /// A resolved incident, which may carry its review.
+    pub fn takes_review(&self) -> bool {
+        takes_review(self.kind, self.lifecycle)
+    }
+
     /// When the next update is due, or how long it is overdue, said after
     /// the age of the last one when there is one.
     pub fn next_update_text(&self, last_ago: Option<&str>, i18n: &I18n) -> Option<String> {
@@ -314,6 +325,8 @@ pub struct EventSummary {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub author_id: i64,
+    /// A review was published for it.
+    pub has_review: bool,
     /// Linked service names, joined with [`NAME_SEPARATOR`].
     #[sqlx(default)]
     pub service_names: String,
@@ -325,6 +338,9 @@ pub struct EventSummary {
     /// Only filled by the feed query.
     #[sqlx(default)]
     pub last_activity_at: Option<DateTime<Utc>>,
+    /// Its review as written. Only filled by the feed query.
+    #[sqlx(default)]
+    pub review_body: Option<String>,
     /// Latest posted update, sanitized HTML. Only filled by the banner query.
     #[sqlx(default)]
     pub latest_update: Option<String>,
@@ -413,9 +429,22 @@ impl EventSummary {
         self.lifecycle.map(|l| l.label_key(self.kind))
     }
 
-    /// The word at the end of a row: the progress. An announcement has none.
+    /// A resolved incident whose review was published: rows and the feed name it.
+    pub fn shows_review(&self) -> bool {
+        self.has_review && takes_review(self.kind, self.lifecycle)
+    }
+
+    /// The word at the end of a row: the progress, followed by the review
+    /// when a resolved incident has one. An announcement has none.
     pub fn row_state(&self, i18n: &I18n) -> Option<String> {
-        self.lifecycle_key().map(|key| i18n.t(key).to_string())
+        let state = i18n.t(self.lifecycle_key()?);
+        if self.shows_review() {
+            return Some(format!(
+                "{state}{SEPARATOR}{}",
+                i18n.t("events.review_flag")
+            ));
+        }
+        Some(state.to_string())
     }
 
     pub fn kind_label(&self, i18n: &I18n) -> String {

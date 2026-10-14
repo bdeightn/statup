@@ -20,6 +20,7 @@ use crate::repositories::service_repo::CHOSEN_ORDER;
 const SUMMARY_COLUMNS: &str = "e.id, e.kind, e.severity, e.planned, e.lifecycle, e.category, \
      e.title, e.description, e.planned_start, e.planned_end, e.started_at, e.ended_at, \
      e.keeps_services_up, e.next_update_at, e.created_at, e.updated_at, e.author_id, \
+     EXISTS (SELECT 1 FROM event_reviews r WHERE r.event_id = e.id) AS has_review, \
      COALESCE((SELECT GROUP_CONCAT(s.name, char(31) ORDER BY s.position, s.name COLLATE NOCASE, s.id) \
                FROM event_services es JOIN services s ON s.id = es.service_id \
                WHERE es.event_id = e.id), '') AS service_names, \
@@ -210,8 +211,9 @@ impl EventRepository {
         .await
     }
 
-    /// Newest events with their last activity time, for the Atom feed. A
-    /// posted update does not touch `events.updated_at`, so it is folded in.
+    /// Newest events with their last activity time and their review, for the
+    /// Atom feed. A posted update does not touch `events.updated_at`, so it
+    /// is folded in.
     pub async fn list_for_feed(
         pool: &DbPool,
         limit: i64,
@@ -219,7 +221,8 @@ impl EventRepository {
         sqlx::query_as::<_, EventSummary>(&format!(
             "SELECT {SUMMARY_COLUMNS}, \
                MAX(e.updated_at, COALESCE((SELECT MAX(u.created_at) FROM event_updates u \
-                   WHERE u.event_id = e.id), e.updated_at)) AS last_activity_at \
+                   WHERE u.event_id = e.id), e.updated_at)) AS last_activity_at, \
+               (SELECT r.body FROM event_reviews r WHERE r.event_id = e.id) AS review_body \
              FROM events e WHERE e.id IN ( \
                SELECT id FROM events ORDER BY created_at DESC, id DESC LIMIT ?) \
              ORDER BY e.created_at DESC, e.id DESC"

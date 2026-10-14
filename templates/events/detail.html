@@ -18,13 +18,21 @@
 
     <header class="event-head mt-6">
         <h1 class="event-title">{{ view.event.title }}</h1>
-        {% if can_edit || changelog_offer %}
+        {% if can_edit || follow_up != FollowUp::None %}
         <div class="event-actions">
-            {% if changelog_offer %}
+            {% if follow_up.is_changelog() %}
             <a href="/events/new?kind=publication&amp;after={{ view.event.id }}" class="btn btn-primary">{{ i18n.t("events.publish_changelog") }}</a>
             {% endif %}
+            {% if follow_up.is_review() %}
+            {% if view.review.is_some() %}
+            <a href="#review" class="btn btn-ghost" data-composer-open>{{ i18n.t("events.edit_review") }}</a>
+            {% else %}
+            <a href="#review" class="btn btn-primary" data-composer-open>{{ i18n.t("events.write_review") }}</a>
+            {% endif %}
+            {% endif %}
             {% if can_edit %}
-            <a href="#composer" class="btn {% if changelog_offer %}btn-ghost{% else %}btn-primary{% endif %}" data-composer-open>{{ i18n.t("events.publish_update") }}</a>
+            {# Once an incident is resolved its review comes first. #}
+            <a href="#composer" class="btn {% if follow_up != FollowUp::None %}btn-ghost{% else %}btn-primary{% endif %}" data-composer-open>{{ i18n.t("events.publish_update") }}</a>
             <a href="/events/{{ view.event.id }}/edit" class="btn btn-ghost">{{ i18n.t("events.edit") }}</a>
             {% endif %}
         </div>
@@ -32,6 +40,25 @@
     </header>
 
     <div class="event-layout">
+        {% if view.review.is_some() || follow_up.is_review() %}
+        {# A resolved incident opens on its review, at the head of the reading
+           column. It is written where it shows: without one, the card waits
+           until the form is opened. #}
+        <section class="card review-card" aria-labelledby="review-title">
+            <header class="card-head">
+                <h2 id="review-title" class="card-title">{{ i18n.t("events.review_title") }}</h2>
+            </header>
+            <div class="card-body article-body">
+                {% if let Some(review) = view.review %}
+                {% let review_actions = follow_up.is_review() %}
+                {% let review_csrf = frame.csrf_token.as_str() %}
+                {% include "events/_review.html" %}
+                {% endif %}
+                {% if follow_up.is_review() %}{% include "events/_review_form.html" %}{% endif %}
+            </div>
+        </section>
+        {% endif %}
+
         {% if view.has_facts() %}
         <aside class="card event-details" aria-labelledby="details-title">
             <header class="card-head">

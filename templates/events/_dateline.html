@@ -1,0 +1,3 @@
+{# When a text was published and, for members, by whom: an announcement's
+   and a review's. Expects `dateline` with `iso`, `time` and `author`. #}
+<p class="article-dateline"><time datetime="{{ dateline.iso }}">{{ dateline.time }}</time>{% if let Some(author) = dateline.author %}&nbsp;<span aria-hidden="true">·</span> {{ author }}{% endif %}</p>

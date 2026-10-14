@@ -5,7 +5,7 @@ use axum::http::HeaderValue;
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
-use super::detail::{Composer, detail_page, drawer_page};
+use super::detail::{Composer, ReviewForm, detail_page, drawer_page};
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
@@ -61,7 +61,17 @@ pub async fn add_update(
         Ok(()) => Ok(Redirect::to(&format!("/events/{id}?posted=1")).into_response()),
         Err(AppError::Validation(key)) => {
             let composer = input.refused(&key, &i18n);
-            let page = detail_page(&state, id, Some(&user), csrf_token.0, i18n, composer).await?;
+            let review_form = ReviewForm::default();
+            let page = detail_page(
+                &state,
+                id,
+                Some(&user),
+                csrf_token.0,
+                i18n,
+                composer,
+                review_form,
+            )
+            .await?;
             render(&page)
         }
         Err(e) => Err(e),

@@ -43,8 +43,9 @@ pub enum Subject {
     Event {
         event: Box<Event>,
         services: Vec<String>,
-        /// The update posted with the change, as stored: sanitized HTML.
-        update: Option<String>,
+        /// What was written with it, sanitized HTML: the update posted with
+        /// the change, or the review published.
+        message: Option<String>,
     },
     /// Services the checks found down, or back, in one wave: the first one
     /// leads, the others fell or came back with it.
@@ -102,14 +103,14 @@ impl Notice {
             Subject::Event {
                 event,
                 services,
-                update,
+                message,
             } => {
                 let about = AboutEvent {
                     happening,
                     lifecycle: lifecycle.or(event.lifecycle),
                     event,
                     services,
-                    update: update.as_deref(),
+                    message: message.as_deref(),
                 };
                 about.notice(origin, i18n)
             }
@@ -134,7 +135,7 @@ struct AboutEvent<'a> {
     lifecycle: Option<Lifecycle>,
     event: &'a Event,
     services: &'a [String],
-    update: Option<&'a str>,
+    message: Option<&'a str>,
 }
 
 impl AboutEvent<'_> {
@@ -191,14 +192,15 @@ impl AboutEvent<'_> {
                 (label, _) => label,
             },
             Happening::Updated if label.is_none() => Some(i18n.t("notice.update").to_string()),
+            Happening::Reviewed => Some(i18n.t("notice.review").to_string()),
             _ => label,
         }
     }
 
-    /// The message posted with the change, or what the event says when it
+    /// What was written with the change, or what the event says when it
     /// begins.
     fn text(&self) -> Option<String> {
-        if let Some(html) = self.update {
+        if let Some(html) = self.message {
             return plain_text(html);
         }
         matches!(
@@ -412,7 +414,7 @@ mod tests {
         Subject::Event {
             event: Box::new(event),
             services: vec!["Réseau".to_string(), "VPN".to_string()],
-            update: update.map(ToString::to_string),
+            message: update.map(ToString::to_string),
         }
     }
 
@@ -457,6 +459,32 @@ mod tests {
         assert_eq!(link.url, "https://status.example/events/7");
         assert_eq!(link.label, "Voir le détail");
         assert_eq!(notice.instance, "ACME");
+    }
+
+    #[test]
+    fn a_review_says_it_was_published_and_carries_its_text() {
+        let incident = event(
+            Kind::Incident,
+            Some(Severity::Critical),
+            Some(Lifecycle::Resolved),
+        );
+        let subject = about(
+            incident,
+            Some("<p>Un <strong>câble</strong> a été coupé.</p>"),
+        );
+
+        let notice = write(Happening::Reviewed, &subject, "fr");
+
+        assert_eq!(notice.mark, Mark::Restored);
+        assert_eq!(
+            notice.headline,
+            line(&["Incident majeur", "Coupure du réseau au siège"])
+        );
+        assert_eq!(
+            notice.summary.as_deref(),
+            Some(line(&["Bilan publié", "Réseau, VPN"]).as_str())
+        );
+        assert_eq!(notice.text.as_deref(), Some("Un câble a été coupé."));
     }
 
     #[test]
@@ -586,7 +614,7 @@ mod tests {
         let subject = Subject::Event {
             event: Box::new(announcement),
             services: Vec::new(),
-            update: None,
+            message: None,
         };
 
         let published = write(Happening::Published, &subject, "fr");

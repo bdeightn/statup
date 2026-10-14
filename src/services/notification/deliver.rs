@@ -13,12 +13,12 @@ use super::{
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::I18n;
-use crate::models::{Channel, Delivery};
+use crate::models::{Channel, Delivery, Happening};
 use crate::repositories::{
-    EventRepository, MemberNoticeRepository, NotificationRepository, OutageRepository,
-    ServiceRepository, SettingsRepository,
+    EventRepository, EventReviewRepository, MemberNoticeRepository, NotificationRepository,
+    OutageRepository, ServiceRepository, SettingsRepository,
 };
-use crate::services::tell_delivery_failed;
+use crate::services::{sanitize_markdown, tell_delivery_failed};
 
 pub(crate) const PAGE_ADDRESS_SETTING: &str = "page_address";
 
@@ -180,7 +180,7 @@ async fn load_subject(
     wave: &[Delivery],
 ) -> Result<Option<Subject>, AppError> {
     if let Some(event_id) = delivery.event_id {
-        return load_event(pool, event_id, delivery.update_id).await;
+        return load_event(pool, event_id, delivery).await;
     }
     if delivery.service_id.is_none() {
         return Ok(Some(Subject::Test));
@@ -202,24 +202,31 @@ async fn load_subject(
     Ok((!states.is_empty()).then_some(Subject::Service(states)))
 }
 
+/// The event as it stands, with the text that goes with the message: the
+/// update posted, or the review published. A review removed before its
+/// message left, or an incident opened again since, sends nothing.
 async fn load_event(
     pool: &DbPool,
     event_id: i64,
-    update_id: Option<i64>,
+    delivery: &Delivery,
 ) -> Result<Option<Subject>, AppError> {
     let Some(found) = EventRepository::find_with_services(pool, event_id).await? else {
         return Ok(None);
     };
-    let update = match update_id {
-        Some(update_id) => EventRepository::find_update(pool, event_id, update_id)
+    let message = match (delivery.happening, delivery.update_id) {
+        (Happening::Reviewed, _) => match EventReviewRepository::find(pool, event_id).await? {
+            Some(review) if found.event.takes_review() => Some(sanitize_markdown(&review.body)),
+            _ => return Ok(None),
+        },
+        (_, Some(update_id)) => EventRepository::find_update(pool, event_id, update_id)
             .await?
             .map(|update| update.message),
-        None => None,
+        (_, None) => None,
     };
     Ok(Some(Subject::Event {
         event: Box::new(found.event),
         services: found.services.into_iter().map(|s| s.name).collect(),
-        update,
+        message,
     }))
 }
 
@@ -655,6 +662,77 @@ mod tests {
         assert_eq!(outcomes[0].status, DeliveryStatus::Failed);
         assert_eq!(outcomes[0].failure.as_deref(), Some("gone"));
         assert_eq!(outcomes[1].status, DeliveryStatus::Sent);
+    }
+
+    /// A resolved incident with its review, and the review's message queued.
+    async fn reviewed_incident(pool: &DbPool) -> (i64, i64) {
+        let team = channel(pool, "team", "en").await;
+        let id = incident(pool, "Outage").await;
+        sqlx::query("UPDATE events SET lifecycle = 'resolved' WHERE id = ?")
+            .bind(id)
+            .execute(pool)
+            .await
+            .unwrap();
+        let author = UserRepository::find_by_email(pool, "ops@example.com")
+            .await
+            .unwrap()
+            .unwrap();
+        EventReviewRepository::save(pool, id, "A cable was cut.", author.id)
+            .await
+            .unwrap();
+        let reviewed = Notification::event(
+            Happening::Reviewed,
+            Kind::Incident,
+            id,
+            Some(Lifecycle::Resolved),
+        );
+        NotificationRepository::enqueue(pool, &reviewed, at(0))
+            .await
+            .unwrap();
+        (team, id)
+    }
+
+    async fn sends_nothing(pool: &DbPool, team: i64) {
+        let script = Arc::new(Script::default());
+        deliver_due(pool, &script, None, at(1)).await.unwrap();
+        assert_eq!(script.sent(), Vec::new());
+        let outcomes = rows(pool, team).await;
+        assert_eq!(outcomes[0].status, DeliveryStatus::Failed);
+        assert_eq!(outcomes[0].failure.as_deref(), Some("gone"));
+    }
+
+    #[tokio::test]
+    async fn a_review_goes_out_while_its_incident_stays_resolved() {
+        let pool = test_pool().await;
+        let (team, _) = reviewed_incident(&pool).await;
+        let script = Arc::new(Script::default());
+
+        deliver_due(&pool, &script, None, at(1)).await.unwrap();
+
+        assert_eq!(script.sent().len(), 1);
+        assert_eq!(rows(&pool, team).await[0].status, DeliveryStatus::Sent);
+    }
+
+    #[tokio::test]
+    async fn a_review_removed_before_its_message_leaves_sends_nothing() {
+        let pool = test_pool().await;
+        let (team, id) = reviewed_incident(&pool).await;
+        EventReviewRepository::delete(&pool, id).await.unwrap();
+
+        sends_nothing(&pool, team).await;
+    }
+
+    #[tokio::test]
+    async fn a_review_of_an_incident_opened_again_sends_nothing() {
+        let pool = test_pool().await;
+        let (team, id) = reviewed_incident(&pool).await;
+        sqlx::query("UPDATE events SET lifecycle = 'monitoring' WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sends_nothing(&pool, team).await;
     }
 
     #[tokio::test]

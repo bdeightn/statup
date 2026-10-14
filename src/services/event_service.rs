@@ -11,9 +11,9 @@ use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{
     CreateEventInput, Event, EventWithServices, Happening, Kind, Lifecycle, NextUpdate,
-    Notification, Role, Severity, UpdateEventInput, User,
+    Notification, ReviewSaved, Role, Severity, UpdateEventInput, User,
 };
-use crate::repositories::EventRepository;
+use crate::repositories::{EventRepository, EventReviewRepository};
 use crate::services::{ServiceService, notify};
 
 /// How often announced maintenances are started and completed.
@@ -179,6 +179,38 @@ impl EventService {
             return Err(AppError::Forbidden);
         }
         EventRepository::delete_update(pool, update_id).await?;
+        Ok(())
+    }
+
+    /// Publishes the review of a resolved incident, or corrects it. Only the
+    /// publication is sent: a correction stays on the page.
+    pub async fn publish_review(
+        pool: &DbPool,
+        id: i64,
+        body: &str,
+        author: &User,
+    ) -> Result<(), AppError> {
+        let event = find(pool, id).await?;
+        check_review_allowed(&event, author.role)?;
+        let body = body.trim();
+        if body.is_empty() {
+            return Err(AppError::validation("validation.review_empty"));
+        }
+        let saved = EventReviewRepository::save(pool, id, body, author.id).await?;
+        if saved == ReviewSaved::Published {
+            let notification =
+                Notification::event(Happening::Reviewed, event.kind, id, event.lifecycle);
+            notify(pool, notification).await;
+        }
+        Ok(())
+    }
+
+    /// Removes the review of a resolved incident. Nothing is sent, as for
+    /// any removal.
+    pub async fn remove_review(pool: &DbPool, id: i64, role: Role) -> Result<(), AppError> {
+        let event = find(pool, id).await?;
+        check_review_allowed(&event, role)?;
+        EventReviewRepository::delete(pool, id).await?;
         Ok(())
     }
 
@@ -379,6 +411,20 @@ fn check_modification_allowed(event: &Event, role: Role) -> Result<(), AppError>
     }
 }
 
+/// Whoever publishes writes the review of a resolved incident: the one thing
+/// an editor may still write once an incident is closed.
+pub fn can_review(event: &Event, role: Role) -> bool {
+    role.can_publish() && event.takes_review()
+}
+
+fn check_review_allowed(event: &Event, role: Role) -> Result<(), AppError> {
+    if can_review(event, role) {
+        Ok(())
+    } else {
+        Err(AppError::refused("validation.review_resolved_only"))
+    }
+}
+
 pub fn can_delete_update(event: &Event, author_id: i64, user: &User) -> bool {
     user.role.can_admin()
         || (author_id == user.id && user.role.can_publish() && is_modifiable(event))
@@ -536,6 +582,25 @@ mod tests {
         assert!(can_modify(&open, Role::Publisher));
         assert!(!can_modify(&open, Role::Reader));
         assert!(can_modify(&event(None, Kind::Publication), Role::Publisher));
+    }
+
+    #[test]
+    fn a_resolved_incident_takes_a_review_from_whoever_publishes() {
+        let resolved = event(Some(Lifecycle::Resolved), Kind::Incident);
+        assert!(can_review(&resolved, Role::Publisher));
+        assert!(can_review(&resolved, Role::Admin));
+        assert!(!can_review(&resolved, Role::Reader));
+        for lifecycle in [
+            Lifecycle::Investigating,
+            Lifecycle::Monitoring,
+            Lifecycle::Cancelled,
+        ] {
+            let incident = event(Some(lifecycle), Kind::Incident);
+            assert!(!can_review(&incident, Role::Admin), "{lifecycle:?}");
+        }
+        let work = event(Some(Lifecycle::Completed), Kind::Maintenance);
+        assert!(!can_review(&work, Role::Admin));
+        assert!(!can_review(&event(None, Kind::Publication), Role::Admin));
     }
 
     #[test]

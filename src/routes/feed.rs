@@ -51,6 +51,7 @@ struct FeedEntry {
 struct FeedEntryTemplate<'a> {
     event: &'a EventSummary,
     description_html: String,
+    review_html: Option<String>,
     updates: Vec<EventUpdateWithAuthor>,
     i18n: &'a I18n,
 }
@@ -106,7 +107,11 @@ async fn render_entries(
         .iter()
         .map(|event| {
             let updates = updates_by_event.remove(&event.id).unwrap_or_default();
-            render_entry(event, updates, i18n)
+            let review = event
+                .review_body
+                .as_deref()
+                .filter(|_| event.shows_review());
+            render_entry(event, updates, review, i18n)
         })
         .collect()
 }
@@ -149,11 +154,13 @@ fn with_cache_headers(
 fn render_entry(
     event: &EventSummary,
     updates: Vec<EventUpdateWithAuthor>,
+    review: Option<&str>,
     i18n: &I18n,
 ) -> Result<FeedEntry, AppError> {
     let content = FeedEntryTemplate {
         event,
         description_html: sanitize_markdown(&event.description),
+        review_html: review.map(sanitize_markdown),
         updates,
         i18n,
     }

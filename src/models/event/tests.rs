@@ -70,9 +70,11 @@ fn summary(kind: Kind, severity: Option<Severity>, lifecycle: Option<Lifecycle>)
         updated_at: Utc::now(),
         keeps_services_up: false,
         author_id: 1,
+        has_review: false,
         service_names: String::new(),
         service_icons: String::new(),
         last_activity_at: None,
+        review_body: None,
         latest_update: None,
         latest_update_at: None,
         next_update_at: None,
@@ -210,6 +212,30 @@ fn only_an_incident_says_its_severity_and_an_announcement_its_category() {
         i18n.t(Category::Changelog.i18n_key())
     );
     assert_eq!(note.tone(), Tone::Ink);
+}
+
+#[test]
+fn a_row_names_the_review_of_a_resolved_incident_only() {
+    let i18n = I18n::new("fr");
+    let mut resolved = summary(
+        Kind::Incident,
+        Some(Severity::Critical),
+        Some(Lifecycle::Resolved),
+    );
+    assert_eq!(resolved.row_state(&i18n).as_deref(), Some("Résolu"));
+    resolved.has_review = true;
+    assert_eq!(
+        resolved.row_state(&i18n).as_deref(),
+        Some("Résolu\u{a0}· bilan")
+    );
+    let mut reopened = summary(
+        Kind::Incident,
+        Some(Severity::Critical),
+        Some(Lifecycle::Monitoring),
+    );
+    reopened.has_review = true;
+    let watching = i18n.t(Lifecycle::Monitoring.label_key(Kind::Incident));
+    assert_eq!(reopened.row_state(&i18n).as_deref(), Some(watching));
 }
 
 #[test]

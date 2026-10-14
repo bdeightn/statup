@@ -1,5 +1,5 @@
 //! Event pages: the list and its search, the event page and its side panel,
-//! the forms, updates, state changes and templates.
+//! the forms, updates, state changes, reviews and templates.
 
 use serde::de::value::{I64Deserializer, StrDeserializer};
 use serde::{Deserialize, Deserializer};
@@ -7,12 +7,14 @@ use serde::{Deserialize, Deserializer};
 mod detail;
 mod form;
 mod list;
+mod review;
 mod templates;
 mod updates;
 
 pub use detail::{detail, drawer_content};
 pub use form::{create, edit_form, new_form, update};
 pub use list::list;
+pub use review::{publish_review, remove_review};
 pub use templates::{template_delete, template_detail, template_search};
 pub use updates::{add_update, add_update_in_panel, delete, delete_update, revert_lifecycle};
 
