@@ -359,14 +359,35 @@
         margin-bottom: 12px;
     }
 
-    /* A resolved incident opens on its review, across the page above the
-       timeline and the details, as the banner heads the dashboard. Without
-       a review the card waits for its form to be opened. */
-    .review-card {
-        margin-top: 24px;
+    /* A resolved incident opens on its review: the first card of the
+       reading column, the details beside it and the timeline under it.
+       Without a review the card waits for its form to be opened. */
+    .review-card:not(:has(.review, .review-form:target, .review-form.is-open)) {
+        display: none;
     }
 
-    .review-card:not(:has(.review, .review-form:target, .review-form.is-open)) {
+    @media (min-width: 1024px) {
+        .review-card {
+            grid-column: 1;
+            grid-row: 1;
+        }
+
+        .event-layout:has(.review, .review-form:target, .review-form.is-open) .event-story {
+            grid-row: 2;
+        }
+
+        .event-layout:has(.review, .review-form:target, .review-form.is-open) .event-details {
+            grid-row: 1 / span 2;
+        }
+    }
+
+    /* The review fills its card, as the timeline under it does. */
+    .review-card .article-text {
+        max-width: none;
+    }
+
+    /* Corrected in place: while its form is open, the form holds the text. */
+    .review-card:has(.review-form:target, .review-form.is-open) .review {
         display: none;
     }
 
@@ -399,22 +420,6 @@
     /* Written where it shows, folded until asked for. */
     .review-form:not(.is-open, :target) {
         display: none;
-    }
-
-    .review-form {
-        max-width: 72ch;
-        padding: 16px;
-        background: var(--ground);
-        border: 1px solid var(--line);
-        border-radius: 6px;
-    }
-
-    .review + .review-form {
-        margin-top: 20px;
-    }
-
-    .review-form .input {
-        background: var(--card);
     }
 
     .review-form .form-error {

@@ -1,6 +1,7 @@
 {# The review of a resolved incident, written or corrected in its card,
-   folded until asked for; a refused one opens it again. The card names it
-   for the eye, the label for screen readers. #}
+   in place of the text it holds; folded until asked for, a refused one
+   opens it again. The card names it for the eye, the label for screen
+   readers. #}
 <form id="review" class="review-form{% if review_form.error.is_some() %} is-open{% endif %}" method="post" action="/events/{{ view.event.id }}/review">
     <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
     {% if let Some(error) = review_form.error %}

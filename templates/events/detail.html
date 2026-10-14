@@ -39,26 +39,26 @@
         {% endif %}
     </header>
 
-    {% if view.review.is_some() || follow_up.is_review() %}
-    {# A resolved incident opens on its review, across the page. It is
-       written where it shows: without one, the card waits until the form
-       is opened. #}
-    <section class="card review-card" aria-labelledby="review-title">
-        <header class="card-head">
-            <h2 id="review-title" class="card-title">{{ i18n.t("events.review_title") }}</h2>
-        </header>
-        <div class="card-body article-body">
-            {% if let Some(review) = view.review %}
-            {% let review_actions = follow_up.is_review() %}
-            {% let review_csrf = frame.csrf_token.as_str() %}
-            {% include "events/_review.html" %}
-            {% endif %}
-            {% if follow_up.is_review() %}{% include "events/_review_form.html" %}{% endif %}
-        </div>
-    </section>
-    {% endif %}
-
     <div class="event-layout">
+        {% if view.review.is_some() || follow_up.is_review() %}
+        {# A resolved incident opens on its review, at the head of the reading
+           column. It is written where it shows: without one, the card waits
+           until the form is opened. #}
+        <section class="card review-card" aria-labelledby="review-title">
+            <header class="card-head">
+                <h2 id="review-title" class="card-title">{{ i18n.t("events.review_title") }}</h2>
+            </header>
+            <div class="card-body article-body">
+                {% if let Some(review) = view.review %}
+                {% let review_actions = follow_up.is_review() %}
+                {% let review_csrf = frame.csrf_token.as_str() %}
+                {% include "events/_review.html" %}
+                {% endif %}
+                {% if follow_up.is_review() %}{% include "events/_review_form.html" %}{% endif %}
+            </div>
+        </section>
+        {% endif %}
+
         {% if view.has_facts() %}
         <aside class="card event-details" aria-labelledby="details-title">
             <header class="card-head">
