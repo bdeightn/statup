@@ -510,15 +510,20 @@
     .outage-delay {
         display: block;
         font-size: var(--text-md);
-        line-height: 2.5;
+        line-height: 2.25;
         color: var(--ink);
         text-wrap: balance;
     }
 
+    /* Two digits in the line of text: smaller than a full field. */
     .outage-delay > .input {
         display: inline-block;
-        width: 3.5rem;
-        margin: 0 6px;
+        width: 2.75rem;
+        min-height: 0;
+        height: 28px;
+        margin: 0 4px;
+        padding: 0 4px;
+        font-weight: 600;
         text-align: center;
         font-variant-numeric: tabular-nums;
         vertical-align: middle;
