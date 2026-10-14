@@ -1,8 +1,12 @@
 //! Rules of the automatic checks, kept apart from the network and the
 //! database so they can be tested on their own.
 
-/// Consecutive failed checks before a service shows an outage.
-pub const FAILURES_BEFORE_OUTAGE: u8 = 3;
+/// Consecutive failed checks before a service shows an outage, unless the
+/// service sets its own: one check a minute makes it a delay in minutes.
+pub const DEFAULT_OUTAGE_AFTER: u8 = 3;
+/// Longest delay a service may set: past an hour, the checks no longer warn
+/// anyone in time.
+pub const MAX_OUTAGE_AFTER: u8 = 60;
 /// Rounds in a row skipped as Statup's own failure before they count again.
 pub const MAX_SKIPPED_ROUNDS: u8 = 5;
 /// Fewest services falling together that make a round look like Statup's
@@ -30,6 +34,8 @@ pub struct Observation {
     pub failures: u8,
     pub detected: bool,
     pub outcome: Outcome,
+    /// Failures in a row the service allows before its outage.
+    pub outage_after: u8,
 }
 
 /// Returns the new failure count and the transition for one service.
@@ -47,7 +53,7 @@ pub fn next_state(observation: Observation, silenced: bool) -> (u8, Transition) 
         return (0, transition);
     }
     let failures = observation.failures.saturating_add(1);
-    let falls = !observation.detected && !silenced && failures >= FAILURES_BEFORE_OUTAGE;
+    let falls = !observation.detected && !silenced && failures >= observation.outage_after;
     let transition = if falls {
         Transition::Down
     } else {
@@ -90,6 +96,14 @@ mod tests {
             failures,
             detected,
             outcome,
+            outage_after: DEFAULT_OUTAGE_AFTER,
+        }
+    }
+
+    fn failing_with_delay(failures: u8, outage_after: u8) -> Observation {
+        Observation {
+            outage_after,
+            ..obs(failures, false, Outcome::Failed)
         }
     }
 
@@ -106,6 +120,36 @@ mod tests {
         assert_eq!(
             next_state(obs(2, false, Outcome::Failed), false),
             (3, Transition::Down)
+        );
+    }
+
+    #[test]
+    fn a_delay_of_one_minute_falls_at_the_first_failure() {
+        assert_eq!(
+            next_state(failing_with_delay(0, 1), false),
+            (1, Transition::Down)
+        );
+    }
+
+    #[test]
+    fn a_longer_delay_waits_for_as_many_failures() {
+        for failures in 0..4 {
+            assert_eq!(
+                next_state(failing_with_delay(failures, 5), false),
+                (failures + 1, Transition::Stay)
+            );
+        }
+        assert_eq!(
+            next_state(failing_with_delay(4, 5), false),
+            (5, Transition::Down)
+        );
+    }
+
+    #[test]
+    fn a_maintenance_keeps_even_a_short_delay_quiet() {
+        assert_eq!(
+            next_state(failing_with_delay(0, 1), true),
+            (1, Transition::Stay)
         );
     }
 

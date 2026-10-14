@@ -281,6 +281,7 @@ mod tests {
             target,
             internal_cert: false,
             detected_status: None,
+            outage_after: crate::services::DEFAULT_OUTAGE_AFTER,
         }
     }
 

@@ -164,6 +164,7 @@ pub async fn run_round<P: Prober>(
                 failures: state.failures(service.id),
                 detected: service.detected_status.is_some(),
                 outcome,
+                outage_after: service.outage_after,
             };
             Some((service.id, observation))
         })
@@ -426,6 +427,27 @@ mod tests {
         let spans = OutageRepository::since(&pool, minute(0)).await.unwrap();
         assert_eq!(spans[&id][0].start, minute(1));
         assert_eq!(spans[&id][0].end, None);
+    }
+
+    #[tokio::test]
+    async fn each_service_falls_after_its_own_delay() {
+        let pool = test_pool().await;
+        let critical = checked_service(&pool, "Payroll").await;
+        let printer = checked_service(&pool, "Printer").await;
+        ServiceRepository::set_outage_after(&pool, critical, 1)
+            .await
+            .unwrap();
+        let mut state = MonitorState::default();
+
+        rounds(&pool, &mut state, Outcome::Failed, &[1]).await;
+        assert_eq!(states(&pool, critical).await.0, ServiceStatus::MajorOutage);
+        assert_eq!(states(&pool, printer).await.0, ServiceStatus::Operational);
+
+        rounds(&pool, &mut state, Outcome::Failed, &[2, 3]).await;
+        assert_eq!(states(&pool, printer).await.0, ServiceStatus::MajorOutage);
+        let spans = OutageRepository::since(&pool, minute(0)).await.unwrap();
+        assert_eq!(spans[&critical][0].start, minute(1));
+        assert_eq!(spans[&printer][0].start, minute(1));
     }
 
     #[tokio::test]

@@ -370,6 +370,7 @@ mod tests {
             check_kind: None,
             check_target: None,
             check_internal_cert: false,
+            outage_after_minutes: crate::services::DEFAULT_OUTAGE_AFTER,
             detected_status: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),

@@ -148,11 +148,23 @@ impl ServiceRepository {
     /// The services the checks watch, by id.
     pub async fn list_checked(pool: &DbPool) -> Result<Vec<CheckedService>, sqlx::Error> {
         sqlx::query_as::<_, CheckedService>(
-            "SELECT id, check_kind, check_target, check_internal_cert, detected_status \
+            "SELECT id, check_kind, check_target, check_internal_cert, detected_status, \
+                    outage_after_minutes \
              FROM services WHERE check_kind IS NOT NULL ORDER BY id",
         )
         .fetch_all(pool)
         .await
+    }
+
+    /// Saves how many minutes of failed checks make an outage. Unlike a
+    /// changed check, it leaves an outage under way as it is.
+    pub async fn set_outage_after(pool: &DbPool, id: i64, minutes: u8) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE services SET outage_after_minutes = ? WHERE id = ?")
+            .bind(minutes)
+            .bind(id)
+            .execute(pool)
+            .await?;
+        Ok(())
     }
 
     /// Saves what to check. A changed check drops what the old one detected
@@ -448,6 +460,47 @@ mod tests {
         assert_eq!(checked[0].target, "10.0.0.1:443");
         assert!(checked[0].internal_cert);
         assert_eq!(checked[0].detected_status, None);
+    }
+
+    #[tokio::test]
+    async fn the_outage_delay_stays_between_one_minute_and_an_hour() {
+        let pool = test_pool().await;
+        let svc = create(&pool, "Mail", "mail").await;
+        assert_eq!(svc.outage_after_minutes, 3);
+        for refused in [0, 61] {
+            let saved = ServiceRepository::set_outage_after(&pool, svc.id, refused).await;
+            assert!(saved.is_err(), "{refused}");
+        }
+        ServiceRepository::set_outage_after(&pool, svc.id, 60)
+            .await
+            .unwrap();
+        let svc = ServiceRepository::find_by_id(&pool, svc.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(svc.outage_after_minutes, 60);
+    }
+
+    #[tokio::test]
+    async fn changing_the_outage_delay_keeps_a_detected_outage() {
+        let pool = test_pool().await;
+        let svc = create(&pool, "Wiki", "wiki").await;
+        ServiceRepository::set_check(&pool, svc.id, Some(&web("https://wiki.example")))
+            .await
+            .unwrap();
+        ServiceRepository::mark_detected_down(&pool, svc.id, at(9))
+            .await
+            .unwrap();
+
+        ServiceRepository::set_outage_after(&pool, svc.id, 15)
+            .await
+            .unwrap();
+        assert_eq!(
+            detected(&pool, svc.id).await,
+            Some(ServiceStatus::MajorOutage)
+        );
+        let checked = ServiceRepository::list_checked(&pool).await.unwrap();
+        assert_eq!(checked[0].outage_after, 15);
     }
 
     #[tokio::test]
