@@ -505,6 +505,25 @@
         min-width: 0;
     }
 
+    /* The delay before an outage: a sentence with its number inside, that
+       wraps like text on a narrow form. */
+    .outage-delay {
+        display: block;
+        font-size: var(--text-md);
+        line-height: 2.5;
+        color: var(--ink);
+        text-wrap: balance;
+    }
+
+    .outage-delay > .input {
+        display: inline-block;
+        width: 3.5rem;
+        margin: 0 6px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        vertical-align: middle;
+    }
+
     /* A host, its port (five digits) and the button. */
     .check-target-port {
         display: grid;

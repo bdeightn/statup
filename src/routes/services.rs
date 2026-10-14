@@ -8,7 +8,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
-use super::checks::{CheckFields, CheckInput};
+use super::checks::{CheckFields, CheckInput, OUTAGE_AFTER_INVALID, OutageDelay};
 use super::{Frame, members_only, render};
 use crate::db::DbPool;
 use crate::error::AppError;
@@ -21,7 +21,9 @@ use crate::models::{
 };
 use crate::modules::services::{LONG_DAYS, ServiceRow, Strip, service_history, strips};
 use crate::repositories::{EventRepository, ServiceRepository};
-use crate::services::{IconService, LastCheck, ServiceService, put_problems_first};
+use crate::services::{
+    DEFAULT_OUTAGE_AFTER, IconService, LastCheck, ServiceService, put_problems_first,
+};
 use crate::state::AppState;
 
 #[derive(Template)]
@@ -245,18 +247,24 @@ impl ServiceFormData {
             name: String::new(),
             description: String::new(),
             status: ServiceStatus::Operational,
-            check: CheckFields::default(),
+            check: CheckFields {
+                outage_after: Some(OutageDelay::new(DEFAULT_OUTAGE_AFTER.to_string())),
+                ..CheckFields::default()
+            },
         }
     }
 
     /// An edited service as saved.
     fn from_service(service: Service) -> Self {
         Self {
-            check: CheckFields::from_saved(
-                service.check_kind,
-                service.check_target.as_deref(),
-                service.check_internal_cert,
-            ),
+            check: CheckFields {
+                outage_after: Some(OutageDelay::new(service.outage_after_minutes.to_string())),
+                ..CheckFields::from_saved(
+                    service.check_kind,
+                    service.check_target.as_deref(),
+                    service.check_internal_cert,
+                )
+            },
             name: service.name,
             description: service.description.unwrap_or_default(),
             status: service.status,
@@ -305,7 +313,10 @@ impl ServiceInput {
             icon_id: self.icon_id(),
             icon_name: self.icon_name(),
             form: ServiceFormData {
-                check: self.check.fields(),
+                check: CheckFields {
+                    outage_after: Some(self.check.typed_outage_after()),
+                    ..self.check.fields()
+                },
                 name: self.name,
                 description: self.description,
                 status,
@@ -335,14 +346,22 @@ async fn render_form(
             .is_some_and(|service| !service.has_history),
         None => false,
     };
-    let (error, name_error, check_error) = place_error(page.error_key.as_deref(), &i18n);
+    let mut form = page.form;
+    let mut error_key = page.error_key.as_deref();
+    if error_key == Some(OUTAGE_AFTER_INVALID)
+        && let Some(delay) = form.check.outage_after.as_mut()
+    {
+        delay.error = Some(i18n.t(OUTAGE_AFTER_INVALID).to_string());
+        error_key = None;
+    }
+    let (error, name_error, check_error) = place_error(error_key, &i18n);
     render(&ServiceFormTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
         error,
         name_error,
         check_error,
         edit_id: page.edit_id,
-        form: page.form,
+        form,
         selected_icon_id: page.icon_id.filter(|_| selected_icon_url.is_some()),
         selected_icon_url,
         selected_icon_name: page.icon_name,
@@ -403,9 +422,10 @@ pub async fn create(
     }
 }
 
-/// The check is read first, so a refused address saves nothing.
+/// The check is read first, so a refused address or delay saves nothing.
 async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<i64, AppError> {
     let check = input.check.check()?;
+    let outage_after = input.check.outage_after()?;
     let icon_name = input.icon_name();
     let service = ServiceService::create(
         pool,
@@ -416,11 +436,15 @@ async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<i64, AppError> 
     )
     .await?;
     ServiceService::set_check(pool, service.id, check.as_ref()).await?;
+    if check.is_some() {
+        ServiceRepository::set_outage_after(pool, service.id, outage_after).await?;
+    }
     Ok(service.id)
 }
 
 async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), AppError> {
     let check = input.check.check()?;
+    let outage_after = input.check.outage_after()?;
     let icon_name = input.icon_name();
     ServiceService::update(
         pool,
@@ -431,7 +455,12 @@ async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), A
         icon_name.as_deref(),
     )
     .await?;
-    ServiceService::set_check(pool, id, check.as_ref()).await
+    ServiceService::set_check(pool, id, check.as_ref()).await?;
+    // Without monitoring the field is not sent: the delay stays for later.
+    if check.is_some() {
+        ServiceRepository::set_outage_after(pool, id, outage_after).await?;
+    }
+    Ok(())
 }
 
 pub async fn edit_form(
