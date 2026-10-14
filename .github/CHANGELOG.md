@@ -2,7 +2,7 @@
 
 All notable changes to Statup are listed here. The project is pre-v1: until 1.0, a minor version may change the interface or the database, and the README asks you to back up before upgrading.
 
-## Unreleased
+## 0.5.0, 2026-10-14
 
 - An incident can say when its next update is due: when declaring it or posting an update, write a delay ("30 min", "1 h") or a time ("14:30"). Its page and side panel say it after the age of the last update ("last update 12 min ago, next due at 14:30"), and the status banner gives it its own line under the incident ("update due at 14:30", then "update due 20 min ago" once the time has passed without news). A service's state reads larger in the banner. A delay is offered again with the following update, so a steady rhythm needs no retyping; resolving the incident drops it. The database is upgraded on start.
 - The library that cleans the text of updates moves to its latest major version, which fixes two flaws in options Statup never turns on (SVG animations and style attributes).
