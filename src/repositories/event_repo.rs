@@ -20,6 +20,7 @@ use crate::repositories::service_repo::CHOSEN_ORDER;
 const SUMMARY_COLUMNS: &str = "e.id, e.kind, e.severity, e.planned, e.lifecycle, e.category, \
      e.title, e.description, e.planned_start, e.planned_end, e.started_at, e.ended_at, \
      e.keeps_services_up, e.next_update_at, e.created_at, e.updated_at, e.author_id, \
+     EXISTS (SELECT 1 FROM event_reviews r WHERE r.event_id = e.id) AS has_review, \
      COALESCE((SELECT GROUP_CONCAT(s.name, char(31) ORDER BY s.position, s.name COLLATE NOCASE, s.id) \
                FROM event_services es JOIN services s ON s.id = es.service_id \
                WHERE es.event_id = e.id), '') AS service_names, \

@@ -348,6 +348,7 @@ mod tests {
             updated_at: Utc::now(),
             keeps_services_up: false,
             author_id: 1,
+            has_review: false,
             service_names: services.to_string(),
             service_icons: String::new(),
             last_activity_at: None,
