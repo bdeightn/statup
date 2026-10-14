@@ -8,7 +8,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
-use super::checks::{CheckFields, CheckInput, OUTAGE_AFTER_INVALID, OutageDelay};
+use super::checks::{CheckFields, CheckInput, OUTAGE_AFTER_INVALID};
 use super::{Frame, members_only, render};
 use crate::db::DbPool;
 use crate::error::AppError;
@@ -16,8 +16,8 @@ use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::is_htmx;
 use crate::middleware::{CsrfToken, HtmlForm, OptionalUser, RequirePublisher};
 use crate::models::{
-    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, Service, ServiceCheck,
-    ServiceStatus, User, find_builtin_icon,
+    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, Service, ServiceStatus, User,
+    find_builtin_icon,
 };
 use crate::modules::services::{LONG_DAYS, ServiceRow, Strip, service_history, strips};
 use crate::repositories::{EventRepository, ServiceRepository};
@@ -200,6 +200,7 @@ struct ServiceFormTemplate {
     error: Option<String>,
     name_error: Option<String>,
     check_error: Option<String>,
+    outage_error: Option<String>,
     edit_id: Option<i64>,
     form: ServiceFormData,
     selected_icon_id: Option<i64>,
@@ -262,7 +263,7 @@ impl ServiceFormData {
             description: String::new(),
             status: ServiceStatus::Operational,
             check: CheckFields {
-                outage_after: Some(OutageDelay::new(DEFAULT_OUTAGE_AFTER.to_string())),
+                outage_after: Some(DEFAULT_OUTAGE_AFTER.to_string()),
                 ..CheckFields::default()
             },
         }
@@ -272,7 +273,7 @@ impl ServiceFormData {
     fn from_service(service: Service) -> Self {
         Self {
             check: CheckFields {
-                outage_after: Some(OutageDelay::new(service.outage_after_minutes.to_string())),
+                outage_after: Some(service.outage_after_minutes.to_string()),
                 ..CheckFields::from_saved(
                     service.check_kind,
                     service.check_target.as_deref(),
@@ -327,10 +328,7 @@ impl ServiceInput {
             icon_id: self.icon_id(),
             icon_name: self.icon_name(),
             form: ServiceFormData {
-                check: CheckFields {
-                    outage_after: Some(self.check.typed_outage_after()),
-                    ..self.check.fields()
-                },
+                check: self.check.fields_and_delay(),
                 name: self.name,
                 description: self.description,
                 status,
@@ -360,16 +358,16 @@ async fn render_form(
             .is_some_and(|service| !service.has_history),
         None => false,
     };
-    let mut form = page.form;
-    let error_key = place_delay_error(&mut form.check, page.error_key.as_deref(), &i18n);
-    let (error, name_error, check_error) = place_error(error_key, &i18n);
+    let (error, name_error, check_error, outage_error) =
+        place_error(page.error_key.as_deref(), &i18n);
     render(&ServiceFormTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
         error,
         name_error,
         check_error,
+        outage_error,
         edit_id: page.edit_id,
-        form,
+        form: page.form,
         selected_icon_id: page.icon_id.filter(|_| selected_icon_url.is_some()),
         selected_icon_url,
         selected_icon_name: page.icon_name,
@@ -381,34 +379,30 @@ async fn render_form(
     })
 }
 
-/// A refused delay is said under the delay; any other refusal is left to
-/// [`place_error`].
-fn place_delay_error<'a>(
-    check: &mut CheckFields,
-    key: Option<&'a str>,
-    i18n: &I18n,
-) -> Option<&'a str> {
-    if key != Some(OUTAGE_AFTER_INVALID) {
-        return key;
-    }
-    let delay = check.outage_after.as_mut()?;
-    delay.error = Some(i18n.t(OUTAGE_AFTER_INVALID).to_string());
-    None
-}
+/// One message per place a refusal can be said: above the form, under the
+/// name, under the address to check, under the delay.
+type PlacedError = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
 
 /// A refusal is said under its field when it has one: the name, the
-/// address to check; anything else above the form.
-fn place_error(key: Option<&str>, i18n: &I18n) -> (Option<String>, Option<String>, Option<String>) {
+/// address to check, the delay; anything else above the form.
+fn place_error(key: Option<&str>, i18n: &I18n) -> PlacedError {
     let Some(key) = key else {
-        return (None, None, None);
+        return (None, None, None, None);
     };
     let message = Some(i18n.t(key).to_string());
     if key.starts_with("validation.service_name_") {
-        (None, message, None)
+        (None, message, None, None)
     } else if key.starts_with("validation.check_") {
-        (None, None, message)
+        (None, None, message, None)
+    } else if key == OUTAGE_AFTER_INVALID {
+        (None, None, None, message)
     } else {
-        (message, None, None)
+        (message, None, None, None)
     }
 }
 
@@ -447,8 +441,7 @@ pub async fn create(
 
 /// The check is read first, so a refused address or delay saves nothing.
 async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<i64, AppError> {
-    let check = input.check.check()?;
-    let outage_after = outage_after_of(input, check.as_ref())?;
+    let monitoring = input.check.monitoring()?;
     let icon_name = input.icon_name();
     let service = ServiceService::create(
         pool,
@@ -458,35 +451,12 @@ async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<i64, AppError> 
         icon_name.as_deref(),
     )
     .await?;
-    save_monitoring(pool, service.id, check.as_ref(), outage_after).await?;
+    ServiceService::set_monitoring(pool, service.id, monitoring.as_ref()).await?;
     Ok(service.id)
 }
 
-/// The delay before an outage, read only for a monitored service: without
-/// monitoring the field is not sent, and the saved delay stays for later.
-fn outage_after_of(
-    input: &ServiceInput,
-    check: Option<&ServiceCheck>,
-) -> Result<Option<u8>, AppError> {
-    check.map(|_| input.check.outage_after()).transpose()
-}
-
-async fn save_monitoring(
-    pool: &DbPool,
-    id: i64,
-    check: Option<&ServiceCheck>,
-    outage_after: Option<u8>,
-) -> Result<(), AppError> {
-    ServiceService::set_check(pool, id, check).await?;
-    if let Some(minutes) = outage_after {
-        ServiceRepository::set_outage_after(pool, id, minutes).await?;
-    }
-    Ok(())
-}
-
 async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), AppError> {
-    let check = input.check.check()?;
-    let outage_after = outage_after_of(input, check.as_ref())?;
+    let monitoring = input.check.monitoring()?;
     let icon_name = input.icon_name();
     ServiceService::update(
         pool,
@@ -497,7 +467,7 @@ async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), A
         icon_name.as_deref(),
     )
     .await?;
-    save_monitoring(pool, id, check.as_ref(), outage_after).await
+    ServiceService::set_monitoring(pool, id, monitoring.as_ref()).await
 }
 
 pub async fn edit_form(

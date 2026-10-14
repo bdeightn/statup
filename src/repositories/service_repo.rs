@@ -500,7 +500,7 @@ mod tests {
             Some(ServiceStatus::MajorOutage)
         );
         let checked = ServiceRepository::list_checked(&pool).await.unwrap();
-        assert_eq!(checked[0].outage_after, 15);
+        assert_eq!(checked[0].outage_after_minutes, 15);
     }
 
     #[tokio::test]

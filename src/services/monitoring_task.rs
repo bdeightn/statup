@@ -164,7 +164,7 @@ pub async fn run_round<P: Prober>(
                 failures: state.failures(service.id),
                 detected: service.detected_status.is_some(),
                 outcome,
-                outage_after: service.outage_after,
+                outage_after: service.outage_after_minutes,
             };
             Some((service.id, observation))
         })

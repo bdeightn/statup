@@ -187,6 +187,8 @@ struct ServicesStepTemplate {
     /// The shared monitoring block reads it; a refusal here is said above
     /// the step, with the name of its service.
     check_error: Option<String>,
+    /// The shared block asks for it; the first launch has no delay field.
+    outage_error: Option<String>,
     i18n: I18n,
 }
 
@@ -332,6 +334,7 @@ async fn render_services_step(
         custom: refusal.custom,
         check_fields: refusal.check,
         check_error: None,
+        outage_error: None,
         i18n,
     })
 }

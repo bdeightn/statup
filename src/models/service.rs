@@ -135,8 +135,7 @@ pub struct CheckedService {
     pub internal_cert: bool,
     pub detected_status: Option<ServiceStatus>,
     /// Minutes of failed checks before the service shows an outage.
-    #[sqlx(rename = "outage_after_minutes")]
-    pub outage_after: u8,
+    pub outage_after_minutes: u8,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]

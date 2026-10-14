@@ -27,22 +27,9 @@ pub struct CheckFields {
     pub host: String,
     pub port: String,
     pub internal_cert: bool,
-    /// The delay before an outage, on a service's page only: the first
+    /// The minutes before an outage, on a service's page only: the first
     /// launch keeps the default.
-    pub outage_after: Option<OutageDelay>,
-}
-
-/// The delay field as typed, and why it was refused.
-#[derive(Debug, Clone)]
-pub struct OutageDelay {
-    pub value: String,
-    pub error: Option<String>,
-}
-
-impl OutageDelay {
-    pub fn new(value: String) -> Self {
-        Self { value, error: None }
-    }
+    pub outage_after: Option<String>,
 }
 
 impl CheckFields {
@@ -106,14 +93,17 @@ impl CheckInput {
         }
     }
 
-    /// The delay as typed, for a form that shows it again.
-    pub fn typed_outage_after(&self) -> OutageDelay {
-        OutageDelay::new(self.outage_after.clone())
+    /// The fields as typed with the delay, for a service's page.
+    pub fn fields_and_delay(&self) -> CheckFields {
+        CheckFields {
+            outage_after: Some(self.outage_after.clone()),
+            ..self.fields()
+        }
     }
 
     /// Minutes of failed checks before an outage; an empty field, or a form
     /// without it, keeps the default.
-    pub fn outage_after(&self) -> Result<u8, AppError> {
+    fn outage_after(&self) -> Result<u8, AppError> {
         let typed = self.outage_after.trim();
         if typed.is_empty() {
             return Ok(DEFAULT_OUTAGE_AFTER);
@@ -125,9 +115,9 @@ impl CheckInput {
             .ok_or_else(|| AppError::validation(OUTAGE_AFTER_INVALID))
     }
 
-    /// What to test and the delay the result announces; nothing without
-    /// monitoring.
-    fn tested(&self) -> Result<Option<(ServiceCheck, u8)>, AppError> {
+    /// What to check and the minutes before an outage; nothing without
+    /// monitoring, and then the delay field is not read at all.
+    pub fn monitoring(&self) -> Result<Option<(ServiceCheck, u8)>, AppError> {
         let Some(check) = self.check()? else {
             return Ok(None);
         };
@@ -219,7 +209,7 @@ pub async fn test_check(
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<CheckInput>,
 ) -> Result<Response, AppError> {
-    let (check, outage_after) = match input.tested() {
+    let (check, outage_after) = match input.monitoring() {
         Ok(Some(tested)) => tested,
         Ok(None) => return Err(AppError::validation("error.invalid_data")),
         Err(AppError::Validation(key)) => {

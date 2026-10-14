@@ -918,7 +918,7 @@ async fn each_service_keeps_the_delay_typed_for_it() {
     let (status, _, _) = app.post_form("/services/new", &csrf, &fields("15")).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
     let checked = ServiceRepository::list_checked(&app.pool).await.unwrap();
-    assert_eq!(checked[0].outage_after, 15);
+    assert_eq!(checked[0].outage_after_minutes, 15);
     let id = checked[0].id;
 
     let (_, list) = app.get(&format!("/services?saved={id}")).await;
