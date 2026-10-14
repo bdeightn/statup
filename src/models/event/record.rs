@@ -334,7 +334,7 @@ pub struct EventSummary {
     /// split by [`ICON_SEPARATOR`].
     #[sqlx(default)]
     pub service_icons: String,
-    /// Latest of the event's own update time and its last posted update.
+    /// Latest of the event's own update time, its last posted update and its review.
     /// Only filled by the feed query.
     #[sqlx(default)]
     pub last_activity_at: Option<DateTime<Utc>>,
@@ -426,11 +426,16 @@ impl EventSummary {
         self.lifecycle.map(|l| l.label_key(self.kind))
     }
 
+    /// A resolved incident whose review was published: rows and the feed name it.
+    pub fn shows_review(&self) -> bool {
+        self.has_review && takes_review(self.kind, self.lifecycle)
+    }
+
     /// The word at the end of a row: the progress, followed by the review
     /// when a resolved incident has one. An announcement has none.
     pub fn row_state(&self, i18n: &I18n) -> Option<String> {
         let state = i18n.t(self.lifecycle_key()?);
-        if self.has_review && takes_review(self.kind, self.lifecycle) {
+        if self.shows_review() {
             return Some(format!(
                 "{state}{SEPARATOR}{}",
                 i18n.t("events.review_flag")

@@ -14,7 +14,7 @@ use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::OptionalUser;
 use crate::models::{EventSummary, EventUpdateWithAuthor};
-use crate::repositories::EventRepository;
+use crate::repositories::{EventRepository, EventReviewRepository};
 use crate::services::sanitize_markdown;
 use crate::state::AppState;
 
@@ -51,6 +51,7 @@ struct FeedEntry {
 struct FeedEntryTemplate<'a> {
     event: &'a EventSummary,
     description_html: String,
+    review_html: Option<String>,
     updates: Vec<EventUpdateWithAuthor>,
     i18n: &'a I18n,
 }
@@ -102,11 +103,19 @@ async fn render_entries(
     let ids: Vec<i64> = events.iter().map(|e| e.id).collect();
     let mut updates_by_event =
         group_by_event(EventRepository::list_updates_for_events(&state.pool, &ids).await?);
+    let reviews: HashMap<i64, String> = EventReviewRepository::bodies_for(&state.pool, &ids)
+        .await?
+        .into_iter()
+        .collect();
     events
         .iter()
         .map(|event| {
             let updates = updates_by_event.remove(&event.id).unwrap_or_default();
-            render_entry(event, updates, i18n)
+            let review = reviews
+                .get(&event.id)
+                .filter(|_| event.shows_review())
+                .map(String::as_str);
+            render_entry(event, updates, review, i18n)
         })
         .collect()
 }
@@ -149,11 +158,13 @@ fn with_cache_headers(
 fn render_entry(
     event: &EventSummary,
     updates: Vec<EventUpdateWithAuthor>,
+    review: Option<&str>,
     i18n: &I18n,
 ) -> Result<FeedEntry, AppError> {
     let content = FeedEntryTemplate {
         event,
         description_html: sanitize_markdown(&event.description),
+        review_html: review.map(sanitize_markdown),
         updates,
         i18n,
     }

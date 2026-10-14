@@ -2654,3 +2654,18 @@ async fn visitors_read_the_report_without_its_author() {
     assert!(page.contains(REPORT));
     assert!(!page.contains("Publisher"));
 }
+
+#[tokio::test]
+async fn the_feed_carries_the_report_without_its_author() {
+    let app = TestApp::spawn_public().await;
+    app.setup_publisher().await;
+    let (_, id) = resolved_incident(&app).await;
+    write_report(&app, id, REPORT).await;
+
+    let (status, body) = app.get("/feed").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains(REPORT));
+    assert!(body.contains("&#60;h4&#62;Bilan&#60;/h4&#62;"));
+    assert!(!body.contains("Publisher"));
+}

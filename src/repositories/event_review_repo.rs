@@ -1,6 +1,8 @@
 //! Reviews of resolved incidents: one per incident, published, corrected
 //! and removed.
 
+use sqlx::{QueryBuilder, Sqlite};
+
 use crate::db::DbPool;
 use crate::models::{EventReview, ReviewSaved};
 
@@ -54,6 +56,25 @@ impl EventReviewRepository {
         } else {
             ReviewSaved::Published
         })
+    }
+
+    /// The review texts of several events in one query, as `(event_id, body)`.
+    pub async fn bodies_for(
+        pool: &DbPool,
+        event_ids: &[i64],
+    ) -> Result<Vec<(i64, String)>, sqlx::Error> {
+        if event_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut qb = QueryBuilder::<Sqlite>::new(
+            "SELECT event_id, body FROM event_reviews WHERE event_id IN (",
+        );
+        let mut ids = qb.separated(", ");
+        for id in event_ids {
+            ids.push_bind(*id);
+        }
+        qb.push(")");
+        qb.build_query_as::<(i64, String)>().fetch_all(pool).await
     }
 
     pub async fn delete(pool: &DbPool, event_id: i64) -> Result<(), sqlx::Error> {
@@ -137,6 +158,44 @@ mod tests {
         assert_eq!(
             review.published_at.to_rfc3339(),
             "2026-10-01T09:00:00+00:00"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_corrected_review_is_the_feed_activity_and_its_text_is_found() {
+        let pool = test_pool().await;
+        let jane = member(&pool, "jane@example.com", "Jane").await;
+        let reviewed = incident(&pool, jane).await;
+        let bare = incident(&pool, jane).await;
+        EventReviewRepository::save(&pool, reviewed, "A disk filled up.", jane)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE events SET updated_at = '2026-10-01 09:00:00'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE event_reviews SET updated_at = '2026-10-02 09:00:00'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let feed = EventRepository::list_for_feed(&pool, 10).await.unwrap();
+        let activity = feed
+            .iter()
+            .find(|e| e.id == reviewed)
+            .unwrap()
+            .last_activity_at;
+        assert_eq!(
+            activity.map(|at| at.to_rfc3339()),
+            Some("2026-10-02T09:00:00+00:00".to_string())
+        );
+        let bodies = EventReviewRepository::bodies_for(&pool, &[reviewed, bare])
+            .await
+            .unwrap();
+        assert_eq!(bodies, vec![(reviewed, "A disk filled up.".to_string())]);
+        assert_eq!(
+            EventReviewRepository::bodies_for(&pool, &[]).await.unwrap(),
+            Vec::<(i64, String)>::new()
         );
     }
 
