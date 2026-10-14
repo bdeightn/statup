@@ -130,7 +130,7 @@ A `POST` with a JSON body, version 1:
 }
 ```
 
-- `happening`: `opened`, `updated`, `rescheduled`, `started`, `closed`, `published`, `service_down`, `service_up` or `test`.
+- `happening`: `opened`, `updated`, `rescheduled`, `started`, `closed`, `published`, `reviewed`, `service_down`, `service_up` or `test`. `reviewed` is the report written once an incident is resolved, sent once; `message.text` holds its start.
 - `event`: `kind` is `incident`, `maintenance` or `publication`; `severity` is `minor` or `critical`; `category` is `changelog` or `info`; `state` is the state the event moved to. It is `null` for an outage the checks found, which fills `services` instead, one entry per service of the wave: `[{"name": "Mail", "down_since": "2026-10-07T08:57:00Z"}]`. When the message is about one service alone, `service` holds that same entry; it is `null` for a wave.
 - `message`: the text the chat tools receive, in the language of the destination; `mark` is `outage`, `degraded`, `maintenance`, `restored` or `plain`.
 - Dates are in UTC. A later version adds fields without changing these.

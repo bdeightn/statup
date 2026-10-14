@@ -11,7 +11,7 @@ use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{
     CreateEventInput, Event, EventWithServices, Happening, Kind, Lifecycle, NextUpdate,
-    Notification, Role, Severity, UpdateEventInput, User,
+    Notification, ReviewSaved, Role, Severity, UpdateEventInput, User,
 };
 use crate::repositories::{EventRepository, EventReviewRepository};
 use crate::services::{ServiceService, notify};
@@ -182,7 +182,8 @@ impl EventService {
         Ok(())
     }
 
-    /// Publishes the review of a resolved incident, or corrects it.
+    /// Publishes the review of a resolved incident, or corrects it. Only the
+    /// publication is sent: a correction stays on the page.
     pub async fn publish_review(
         pool: &DbPool,
         id: i64,
@@ -195,7 +196,12 @@ impl EventService {
         if body.is_empty() {
             return Err(AppError::validation("validation.review_empty"));
         }
-        EventReviewRepository::save(pool, id, body, author.id).await?;
+        let saved = EventReviewRepository::save(pool, id, body, author.id).await?;
+        if saved == ReviewSaved::Published {
+            let notification =
+                Notification::event(Happening::Reviewed, event.kind, id, event.lifecycle);
+            notify(pool, notification).await;
+        }
         Ok(())
     }
 

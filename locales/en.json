@@ -839,6 +839,7 @@
   "notice.ends": "due to end {day}, {time} ({zone})",
   "notice.after": "{state} after {duration}",
   "notice.update": "Update",
+  "notice.review": "Report published",
   "notice.service_down": "{service} is not answering",
   "notice.service_up": "{service} is answering again",
   "notice.services_down": "{count} services are not answering",

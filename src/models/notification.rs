@@ -188,6 +188,8 @@ pub enum Happening {
     Closed,
     /// An announcement published.
     Published,
+    /// The review of a resolved incident published.
+    Reviewed,
     /// The checks found a service down.
     ServiceDown,
     /// A service the checks found down answers again.
@@ -230,6 +232,7 @@ impl Happening {
             Self::Started => "started",
             Self::Closed => "closed",
             Self::Published => "published",
+            Self::Reviewed => "reviewed",
             Self::ServiceDown => "service_down",
             Self::ServiceUp => "service_up",
             Self::Test => "test",

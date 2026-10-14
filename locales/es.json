@@ -839,6 +839,7 @@
   "notice.ends": "fin prevista el {day} a las {time} ({zone})",
   "notice.after": "{state} tras {duration}",
   "notice.update": "Actualización",
+  "notice.review": "Informe publicado",
   "notice.service_down": "{service} no responde",
   "notice.service_up": "{service} vuelve a responder",
   "notice.services_down": "{count} servicios no responden",

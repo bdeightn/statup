@@ -191,6 +191,7 @@ impl AboutEvent<'_> {
                 (label, _) => label,
             },
             Happening::Updated if label.is_none() => Some(i18n.t("notice.update").to_string()),
+            Happening::Reviewed => Some(i18n.t("notice.review").to_string()),
             _ => label,
         }
     }
@@ -457,6 +458,32 @@ mod tests {
         assert_eq!(link.url, "https://status.example/events/7");
         assert_eq!(link.label, "Voir le détail");
         assert_eq!(notice.instance, "ACME");
+    }
+
+    #[test]
+    fn a_review_says_it_was_published_and_carries_its_text() {
+        let incident = event(
+            Kind::Incident,
+            Some(Severity::Critical),
+            Some(Lifecycle::Resolved),
+        );
+        let subject = about(
+            incident,
+            Some("<p>Un <strong>câble</strong> a été coupé.</p>"),
+        );
+
+        let notice = write(Happening::Reviewed, &subject, "fr");
+
+        assert_eq!(notice.mark, Mark::Restored);
+        assert_eq!(
+            notice.headline,
+            line(&["Incident majeur", "Coupure du réseau au siège"])
+        );
+        assert_eq!(
+            notice.summary.as_deref(),
+            Some(line(&["Bilan publié", "Réseau, VPN"]).as_str())
+        );
+        assert_eq!(notice.text.as_deref(), Some("Un câble a été coupé."));
     }
 
     #[test]

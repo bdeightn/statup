@@ -2,7 +2,7 @@
 //! and removed.
 
 use crate::db::DbPool;
-use crate::models::EventReview;
+use crate::models::{EventReview, ReviewSaved};
 
 pub struct EventReviewRepository;
 
@@ -19,24 +19,41 @@ impl EventReviewRepository {
     }
 
     /// Publishes the review of `event_id`, or corrects the one it has: a
-    /// correction keeps who published it and when.
+    /// correction keeps who published it and when. Of two members saving at
+    /// once, one publishes and the other corrects.
     pub async fn save(
         pool: &DbPool,
         event_id: i64,
         body: &str,
         author_id: i64,
-    ) -> Result<(), sqlx::Error> {
-        sqlx::query(
+    ) -> Result<ReviewSaved, sqlx::Error> {
+        let mut tx = pool.begin().await?;
+        let inserted = sqlx::query(
             "INSERT INTO event_reviews (event_id, body, author_id) VALUES (?, ?, ?) \
-             ON CONFLICT (event_id) DO UPDATE SET body = excluded.body, \
-             updated_at = datetime('now')",
+             ON CONFLICT (event_id) DO NOTHING",
         )
         .bind(event_id)
         .bind(body)
         .bind(author_id)
-        .execute(pool)
-        .await?;
-        Ok(())
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+        if inserted == 0 {
+            sqlx::query(
+                "UPDATE event_reviews SET body = ?, updated_at = datetime('now') \
+                 WHERE event_id = ?",
+            )
+            .bind(body)
+            .bind(event_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(if inserted == 0 {
+            ReviewSaved::Corrected
+        } else {
+            ReviewSaved::Published
+        })
     }
 
     pub async fn delete(pool: &DbPool, event_id: i64) -> Result<(), sqlx::Error> {
@@ -96,17 +113,21 @@ mod tests {
                 .is_none()
         );
 
-        EventReviewRepository::save(&pool, id, "A disk filled up.", jane)
+        let first = EventReviewRepository::save(&pool, id, "A disk filled up.", jane)
             .await
             .unwrap();
         sqlx::query("UPDATE event_reviews SET published_at = '2026-10-01 09:00:00'")
             .execute(&pool)
             .await
             .unwrap();
-        EventReviewRepository::save(&pool, id, "A log disk filled up.", paul)
+        let second = EventReviewRepository::save(&pool, id, "A log disk filled up.", paul)
             .await
             .unwrap();
 
+        assert_eq!(
+            (first, second),
+            (ReviewSaved::Published, ReviewSaved::Corrected)
+        );
         let review = EventReviewRepository::find(&pool, id)
             .await
             .unwrap()
