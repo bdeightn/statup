@@ -43,7 +43,7 @@ It is a status page you host yourself. Whoever runs a service posts, once, what 
 
 - **The answer first**: a banner says what is wrong, what is affected and since when, above every service and its last 30 days.
 - **Runs on its own**: a service follows the incident that names it, and planned work starts and ends at the times announced.
-- **Notices first**: every minute, Statup checks that a site or a server answers, and shows an outage after three failed checks.
+- **Notices first**: every minute, Statup checks that a site or a server answers, and shows an outage after three minutes without an answer, or the delay set for that service.
 - **Quick to publish**: dated updates and reusable templates; an outage spotted by the checks is declared in one click.
 - **Tells people where they are**: each incident, maintenance and announcement posted to Microsoft Teams, Slack, Google Chat, Discord or Mattermost, to phones through ntfy, by email, or to any tool through a webhook, in the language of each destination.
 - **Easy to follow**: search and filters, a side panel to read without leaving the list, and an Atom feed for feed readers.

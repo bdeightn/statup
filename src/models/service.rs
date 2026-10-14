@@ -134,6 +134,8 @@ pub struct CheckedService {
     #[sqlx(rename = "check_internal_cert")]
     pub internal_cert: bool,
     pub detected_status: Option<ServiceStatus>,
+    /// Minutes of failed checks before the service shows an outage.
+    pub outage_after_minutes: u8,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -152,6 +154,8 @@ pub struct Service {
     pub check_kind: Option<CheckKind>,
     pub check_target: Option<String>,
     pub check_internal_cert: bool,
+    /// Minutes of failed checks before the service shows an outage.
+    pub outage_after_minutes: u8,
     /// What the checks found, while the service does not answer.
     pub detected_status: Option<ServiceStatus>,
     pub created_at: chrono::DateTime<chrono::Utc>,

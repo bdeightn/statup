@@ -8,7 +8,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
-use super::checks::{CheckFields, CheckInput};
+use super::checks::{CheckFields, CheckInput, OUTAGE_AFTER_INVALID};
 use super::{Frame, members_only, render};
 use crate::db::DbPool;
 use crate::error::AppError;
@@ -21,7 +21,9 @@ use crate::models::{
 };
 use crate::modules::services::{LONG_DAYS, ServiceRow, Strip, service_history, strips};
 use crate::repositories::{EventRepository, ServiceRepository};
-use crate::services::{IconService, LastCheck, ServiceService, put_problems_first};
+use crate::services::{
+    DEFAULT_OUTAGE_AFTER, IconService, LastCheck, ServiceService, put_problems_first,
+};
 use crate::state::AppState;
 
 #[derive(Template)]
@@ -35,8 +37,9 @@ struct ServiceListTemplate {
     previous: Option<ServiceStatus>,
     saved_id: Option<i64>,
     saved_name: Option<String>,
-    /// The saved service is monitored: the notice says what that means.
-    saved_monitored: bool,
+    /// The delay of the saved service, when monitored: the notice says
+    /// what that means.
+    saved_monitored: Option<u8>,
     /// What the last check of each monitored service found.
     pulses: HashMap<i64, Pulse>,
     /// Each service's last ninety days, drawn small on its row.
@@ -55,6 +58,17 @@ impl ServiceListTemplate {
     #[allow(clippy::trivially_copy_pass_by_ref)]
     fn is_saved(&self, id: &i64) -> bool {
         self.saved_id == Some(*id)
+    }
+
+    /// What saving did, and for a monitored service, when it shows an outage.
+    fn saved_notice(&self) -> String {
+        match self.saved_monitored {
+            Some(minutes) => self.i18n.tf(
+                "services.saved_monitored_notice",
+                &[("minutes", &minutes.to_string())],
+            ),
+            None => self.i18n.t("services.saved_notice").to_string(),
+        }
     }
 
     #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -142,7 +156,9 @@ async fn render_list(
         .saved
         .and_then(|id| services.iter().find(|s| s.id == id));
     let saved_name = saved.map(|s| s.name.clone());
-    let saved_monitored = saved.is_some_and(|s| s.check_kind.is_some());
+    let saved_monitored = saved
+        .filter(|s| s.check_kind.is_some())
+        .map(|s| s.outage_after_minutes);
     let pulses = services
         .iter()
         .filter(|service| service.check_kind.is_some())
@@ -184,6 +200,7 @@ struct ServiceFormTemplate {
     error: Option<String>,
     name_error: Option<String>,
     check_error: Option<String>,
+    outage_error: Option<String>,
     edit_id: Option<i64>,
     form: ServiceFormData,
     selected_icon_id: Option<i64>,
@@ -245,18 +262,24 @@ impl ServiceFormData {
             name: String::new(),
             description: String::new(),
             status: ServiceStatus::Operational,
-            check: CheckFields::default(),
+            check: CheckFields {
+                outage_after: Some(DEFAULT_OUTAGE_AFTER.to_string()),
+                ..CheckFields::default()
+            },
         }
     }
 
     /// An edited service as saved.
     fn from_service(service: Service) -> Self {
         Self {
-            check: CheckFields::from_saved(
-                service.check_kind,
-                service.check_target.as_deref(),
-                service.check_internal_cert,
-            ),
+            check: CheckFields {
+                outage_after: Some(service.outage_after_minutes.to_string()),
+                ..CheckFields::from_saved(
+                    service.check_kind,
+                    service.check_target.as_deref(),
+                    service.check_internal_cert,
+                )
+            },
             name: service.name,
             description: service.description.unwrap_or_default(),
             status: service.status,
@@ -305,7 +328,7 @@ impl ServiceInput {
             icon_id: self.icon_id(),
             icon_name: self.icon_name(),
             form: ServiceFormData {
-                check: self.check.fields(),
+                check: self.check.fields_and_delay(),
                 name: self.name,
                 description: self.description,
                 status,
@@ -335,12 +358,14 @@ async fn render_form(
             .is_some_and(|service| !service.has_history),
         None => false,
     };
-    let (error, name_error, check_error) = place_error(page.error_key.as_deref(), &i18n);
+    let (error, name_error, check_error, outage_error) =
+        place_error(page.error_key.as_deref(), &i18n);
     render(&ServiceFormTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
         error,
         name_error,
         check_error,
+        outage_error,
         edit_id: page.edit_id,
         form: page.form,
         selected_icon_id: page.icon_id.filter(|_| selected_icon_url.is_some()),
@@ -354,19 +379,30 @@ async fn render_form(
     })
 }
 
+/// One message per place a refusal can be said: above the form, under the
+/// name, under the address to check, under the delay.
+type PlacedError = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
 /// A refusal is said under its field when it has one: the name, the
-/// address to check; anything else above the form.
-fn place_error(key: Option<&str>, i18n: &I18n) -> (Option<String>, Option<String>, Option<String>) {
+/// address to check, the delay; anything else above the form.
+fn place_error(key: Option<&str>, i18n: &I18n) -> PlacedError {
     let Some(key) = key else {
-        return (None, None, None);
+        return (None, None, None, None);
     };
     let message = Some(i18n.t(key).to_string());
     if key.starts_with("validation.service_name_") {
-        (None, message, None)
+        (None, message, None, None)
     } else if key.starts_with("validation.check_") {
-        (None, None, message)
+        (None, None, message, None)
+    } else if key == OUTAGE_AFTER_INVALID {
+        (None, None, None, message)
     } else {
-        (message, None, None)
+        (message, None, None, None)
     }
 }
 
@@ -403,9 +439,9 @@ pub async fn create(
     }
 }
 
-/// The check is read first, so a refused address saves nothing.
+/// The check is read first, so a refused address or delay saves nothing.
 async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<i64, AppError> {
-    let check = input.check.check()?;
+    let monitoring = input.check.monitoring()?;
     let icon_name = input.icon_name();
     let service = ServiceService::create(
         pool,
@@ -415,12 +451,12 @@ async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<i64, AppError> 
         icon_name.as_deref(),
     )
     .await?;
-    ServiceService::set_check(pool, service.id, check.as_ref()).await?;
+    ServiceService::set_monitoring(pool, service.id, monitoring.as_ref()).await?;
     Ok(service.id)
 }
 
 async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), AppError> {
-    let check = input.check.check()?;
+    let monitoring = input.check.monitoring()?;
     let icon_name = input.icon_name();
     ServiceService::update(
         pool,
@@ -431,7 +467,7 @@ async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), A
         icon_name.as_deref(),
     )
     .await?;
-    ServiceService::set_check(pool, id, check.as_ref()).await
+    ServiceService::set_monitoring(pool, id, monitoring.as_ref()).await
 }
 
 pub async fn edit_form(

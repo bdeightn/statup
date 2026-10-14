@@ -830,7 +830,7 @@ async fn testing_a_check_says_why_it_fails_and_saves_nothing() {
     assert!(body.contains(r#"data-tone="crit""#), "a failure is red");
     assert!(body.contains("Port fermé"), "the reason is said in words");
     assert!(
-        !body.contains("Après 3 échecs"),
+        !body.contains("Sans réponse pendant"),
         "a failure says nothing of the rule"
     );
     assert!(body.contains("Détail technique"), "the raw error follows");
@@ -857,6 +857,7 @@ async fn testing_an_open_port_says_it_answers() {
                 ("check_kind", "tcp"),
                 ("check_host", "127.0.0.1"),
                 ("check_port", &app.addr.port().to_string()),
+                ("check_outage_after", "15"),
             ],
         )
         .await;
@@ -865,8 +866,141 @@ async fn testing_an_open_port_says_it_answers() {
     assert!(body.contains(r#"data-tone="ok""#));
     assert!(body.contains("Le port accepte la connexion"));
     assert!(
-        body.contains("Après 3 échecs de suite, il passera en panne"),
-        "an answer says what the monitoring will do"
+        body.contains("Sans réponse pendant 15 min, il passera en panne"),
+        "an answer says what the monitoring will do, with the delay typed"
+    );
+}
+
+#[tokio::test]
+async fn testing_with_a_wrong_delay_says_so() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let csrf = app.csrf_from("/services/new").await;
+
+    let (status, body, _) = app
+        .post_form(
+            "/services/check-test",
+            &csrf,
+            &[
+                ("check_kind", "tcp"),
+                ("check_host", "127.0.0.1"),
+                ("check_port", &app.addr.port().to_string()),
+                ("check_outage_after", "90"),
+            ],
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains(r#"class="field-error""#));
+    assert!(body.contains("Saisissez un nombre de minutes entre 1 et 60"));
+}
+
+#[tokio::test]
+async fn each_service_keeps_the_delay_typed_for_it() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let csrf = app.csrf_from("/services/new").await;
+    let (_, form) = app.get("/services/new").await;
+    assert!(
+        form.contains(r#"name="check_outage_after""#) && form.contains(r#"value="3""#),
+        "a new service offers the delay, three minutes by default"
+    );
+
+    let fields = |delay: &'static str| {
+        [
+            ("name", "Imprimante"),
+            ("check_kind", "tcp"),
+            ("check_host", "10.0.0.7"),
+            ("check_port", "9100"),
+            ("check_outage_after", delay),
+        ]
+    };
+    let (status, _, _) = app.post_form("/services/new", &csrf, &fields("15")).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let checked = ServiceRepository::list_checked(&app.pool).await.unwrap();
+    assert_eq!(checked[0].outage_after_minutes, 15);
+    let id = checked[0].id;
+
+    let (_, list) = app.get(&format!("/services?saved={id}")).await;
+    assert!(
+        list.contains("sans réponse pendant 15 min"),
+        "the notice gives the service's own delay"
+    );
+    let (_, form) = app.get(&format!("/services/{id}/edit")).await;
+    assert!(form.contains(r#"value="15""#), "the saved delay is shown");
+
+    let edit = format!("/services/{id}/edit");
+    let (status, _, _) = app.post_form(&edit, &csrf, &fields(" ")).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        app.service(id).await.outage_after_minutes,
+        3,
+        "empty means the default"
+    );
+
+    app.post_form(&edit, &csrf, &fields("20")).await;
+    app.post_form(
+        &edit,
+        &csrf,
+        &[
+            ("name", "Imprimante"),
+            ("check_kind", "none"),
+            ("check_outage_after", "left over"),
+        ],
+    )
+    .await;
+    assert_eq!(
+        app.service(id).await.outage_after_minutes,
+        20,
+        "turning the monitoring off keeps the delay, whatever its box holds"
+    );
+}
+
+#[tokio::test]
+async fn a_refused_delay_is_said_under_its_own_field() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let csrf = app.csrf_from("/services/new").await;
+
+    for delay in ["0", "61", "abc"] {
+        let (status, body, _) = app
+            .post_form(
+                "/services/new",
+                &csrf,
+                &[
+                    ("name", "Paie"),
+                    ("check_kind", "http"),
+                    ("check_url", "https://paie.example.com"),
+                    ("check_outage_after", delay),
+                ],
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::OK, "{delay}: the form is shown again");
+        assert!(body.contains(r#"id="outage-error""#), "{delay}");
+        assert!(
+            body.contains(r#"aria-invalid="true" aria-describedby="outage-error""#),
+            "{delay}: the delay field is marked wrong and points at its message"
+        );
+        assert!(
+            !body.contains(r#"id="check-error""#) && !body.contains(r#"id="form-error""#),
+            "{delay}: the address is not blamed"
+        );
+        assert!(
+            !body.contains(r#"aria-invalid="true" aria-describedby="check-error""#),
+            "{delay}: the address field is not marked wrong"
+        );
+        assert!(
+            body.contains(&format!(r#"value="{delay}""#)),
+            "{delay}: the typed delay stays"
+        );
+    }
+    assert!(
+        ServiceRepository::list_all(&app.pool)
+            .await
+            .unwrap()
+            .is_empty(),
+        "a refused delay saves no service"
     );
 }
 

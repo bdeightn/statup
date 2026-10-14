@@ -105,6 +105,20 @@ impl ServiceService {
         Ok(())
     }
 
+    /// Saves what to check and, for a monitored service, the minutes before
+    /// its outage; without monitoring the saved delay stays for later.
+    pub async fn set_monitoring(
+        pool: &DbPool,
+        service_id: i64,
+        monitoring: Option<&(ServiceCheck, u8)>,
+    ) -> Result<(), AppError> {
+        Self::set_check(pool, service_id, monitoring.map(|(check, _)| check)).await?;
+        if let Some((_, minutes)) = monitoring {
+            ServiceRepository::set_outage_after(pool, service_id, *minutes).await?;
+        }
+        Ok(())
+    }
+
     pub async fn recalculate_many(pool: &DbPool, service_ids: &[i64]) -> Result<(), AppError> {
         for id in service_ids {
             Self::recalculate_status(pool, *id).await?;

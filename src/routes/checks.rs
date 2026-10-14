@@ -11,7 +11,13 @@ use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{HtmlForm, RequirePublisher};
 use crate::models::{CheckKind, ServiceCheck, Tone};
-use crate::services::{CHECK_TIMEOUT, Finding, Outcome, Probes, Report, target_allowed};
+use crate::services::{
+    CHECK_TIMEOUT, DEFAULT_OUTAGE_AFTER, Finding, MAX_OUTAGE_AFTER, Outcome, Probes, Report,
+    target_allowed,
+};
+
+/// A delay outside one minute to an hour, said under its own field.
+pub const OUTAGE_AFTER_INVALID: &str = "validation.outage_after_invalid";
 
 /// What the monitoring fields show.
 #[derive(Debug, Clone, Default)]
@@ -21,6 +27,9 @@ pub struct CheckFields {
     pub host: String,
     pub port: String,
     pub internal_cert: bool,
+    /// The minutes before an outage, on a service's page only: the first
+    /// launch keeps the default.
+    pub outage_after: Option<String>,
 }
 
 impl CheckFields {
@@ -67,6 +76,8 @@ pub struct CheckInput {
     port: String,
     #[serde(default, rename = "check_internal_cert")]
     internal_cert: Option<String>,
+    #[serde(default, rename = "check_outage_after")]
+    outage_after: String,
 }
 
 impl CheckInput {
@@ -78,7 +89,39 @@ impl CheckInput {
             host: self.host.clone(),
             port: self.port.clone(),
             internal_cert: self.internal_cert.is_some(),
+            outage_after: None,
         }
+    }
+
+    /// The fields as typed with the delay, for a service's page.
+    pub fn fields_and_delay(&self) -> CheckFields {
+        CheckFields {
+            outage_after: Some(self.outage_after.clone()),
+            ..self.fields()
+        }
+    }
+
+    /// Minutes of failed checks before an outage; an empty field, or a form
+    /// without it, keeps the default.
+    fn outage_after(&self) -> Result<u8, AppError> {
+        let typed = self.outage_after.trim();
+        if typed.is_empty() {
+            return Ok(DEFAULT_OUTAGE_AFTER);
+        }
+        typed
+            .parse::<u8>()
+            .ok()
+            .filter(|minutes| (1..=MAX_OUTAGE_AFTER).contains(minutes))
+            .ok_or_else(|| AppError::validation(OUTAGE_AFTER_INVALID))
+    }
+
+    /// What to check and the minutes before an outage; nothing without
+    /// monitoring, and then the delay field is not read at all.
+    pub fn monitoring(&self) -> Result<Option<(ServiceCheck, u8)>, AppError> {
+        let Some(check) = self.check()? else {
+            return Ok(None);
+        };
+        Ok(Some((check, self.outage_after()?)))
     }
 
     pub fn check(&self) -> Result<Option<ServiceCheck>, AppError> {
@@ -166,8 +209,8 @@ pub async fn test_check(
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<CheckInput>,
 ) -> Result<Response, AppError> {
-    let check = match input.check() {
-        Ok(Some(check)) => check,
+    let (check, outage_after) = match input.monitoring() {
+        Ok(Some(tested)) => tested,
         Ok(None) => return Err(AppError::validation("error.invalid_data")),
         Err(AppError::Validation(key)) => {
             let message = i18n.t(&key).to_string();
@@ -184,8 +227,9 @@ pub async fn test_check(
     let probes = Probes::new(CHECK_TIMEOUT).map_err(anyhow::Error::from)?;
     let report = probes.examine(&check).await;
     let (tone, message) = verdict(&report, &i18n);
+    let minutes = outage_after.to_string();
     let rule = (report.outcome() == Outcome::Answered)
-        .then(|| i18n.t("services.check_result_rule").to_string());
+        .then(|| i18n.tf("services.check_result_rule", &[("minutes", &minutes)]));
     render(&CheckResultFragment {
         tone: Some(tone.as_str()),
         message,
