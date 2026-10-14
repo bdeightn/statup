@@ -11,11 +11,11 @@ use super::form::MaintenanceChoice;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, OptionalUser};
-use crate::models::{Event, Kind, Lifecycle, Service, ServiceTag, User, delay_text};
-use crate::repositories::EventRepository;
+use crate::models::{Event, EventReview, Kind, Lifecycle, Service, ServiceTag, User, delay_text};
+use crate::repositories::{EventRepository, EventReviewRepository};
 use crate::routes::timeline::{self, TimelineEntry};
 use crate::routes::{Frame, members_only, render};
-use crate::services::{EventService, can_modify, sanitize_markdown};
+use crate::services::{EventService, can_modify, can_review, sanitize_markdown};
 use crate::state::AppState;
 
 pub struct TransitionOption {
@@ -48,19 +48,75 @@ impl Composer {
     }
 }
 
+/// What a closed event offers whoever publishes: after a maintenance, the
+/// announcement of what is new; after an incident, its review to write,
+/// correct or remove.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FollowUp {
+    None,
+    Changelog,
+    Review,
+}
+
+impl FollowUp {
+    fn of(event: &Event, user: Option<&User>) -> Self {
+        let Some(user) = user else {
+            return Self::None;
+        };
+        if can_review(event, user.role) {
+            Self::Review
+        } else if user.role.can_publish()
+            && event.kind == Kind::Maintenance
+            && event.lifecycle == Some(Lifecycle::Completed)
+        {
+            Self::Changelog
+        } else {
+            Self::None
+        }
+    }
+
+    pub fn is_changelog(self) -> bool {
+        self == Self::Changelog
+    }
+
+    pub fn is_review(self) -> bool {
+        self == Self::Review
+    }
+}
+
+/// What the review form holds when it is shown again.
+#[derive(Default)]
+pub struct ReviewForm {
+    pub body: String,
+    pub error: Option<String>,
+}
+
+impl ReviewForm {
+    /// A fresh form holds the review as written, to correct it.
+    fn prefilled(mut self, view: &EventView) -> Self {
+        if self.error.is_none() {
+            self.body = view
+                .review
+                .as_ref()
+                .map(|review| review.body.clone())
+                .unwrap_or_default();
+        }
+        self
+    }
+}
+
 #[derive(Template)]
 #[template(path = "events/detail.html")]
 pub(super) struct EventDetailTemplate {
     frame: Frame,
     view: EventView,
     can_edit: bool,
-    /// A finished maintenance offers a publisher the announcement of what
-    /// is new after it.
-    changelog_offer: bool,
+    follow_up: FollowUp,
     transitions: Vec<TransitionOption>,
     revert_label: Option<String>,
     published_notice: bool,
     composer: Composer,
+    review_form: ReviewForm,
     i18n: I18n,
 }
 
@@ -86,7 +142,31 @@ pub struct EventView {
     pub state: Option<StateLine>,
     /// An announcement reads as a text, its updates after it.
     pub article: Option<TimelineEntry>,
+    /// A resolved incident reads its review first, its timeline after it.
+    pub review: Option<ReviewView>,
     pub timeline: Vec<TimelineEntry>,
+}
+
+/// The review of a resolved incident, dated and, for members, signed.
+pub struct ReviewView {
+    pub time: String,
+    pub iso: String,
+    pub author: Option<String>,
+    pub html: String,
+    /// As its author wrote it, for the form that corrects it.
+    pub body: String,
+}
+
+impl ReviewView {
+    fn new(review: EventReview, user: Option<&User>, i18n: &I18n) -> Self {
+        Self {
+            time: i18n.format_datetime(&review.published_at),
+            iso: review.published_at.to_rfc3339(),
+            author: user.map(|_| review.author_name),
+            html: sanitize_markdown(&review.body),
+            body: review.body,
+        }
+    }
 }
 
 impl EventView {
@@ -150,14 +230,31 @@ async fn load_view(
         .then(|| timeline.iter().position(|entry| entry.update_id.is_none()))
         .flatten()
         .map(|opening| timeline.remove(opening));
+    let review = load_review(state, &ews.event, user, i18n).await?;
     Ok(EventView {
         follows,
         article,
+        review,
         state: state_line(&ews.event, last_posted, i18n),
         event: ews.event,
         services: ews.services,
         timeline,
     })
+}
+
+/// The review of a resolved incident; none for any other event, nor for an
+/// incident an administrator opened again.
+async fn load_review(
+    state: &AppState,
+    event: &Event,
+    user: Option<&User>,
+    i18n: &I18n,
+) -> Result<Option<ReviewView>, AppError> {
+    if !event.takes_review() {
+        return Ok(None);
+    }
+    let review = EventReviewRepository::find(&state.pool, event.id).await?;
+    Ok(review.map(|review| ReviewView::new(review, user, i18n)))
 }
 
 async fn author_name(state: &AppState, author_id: i64, i18n: &I18n) -> Result<String, AppError> {
@@ -244,14 +341,18 @@ pub async fn detail(
         csrf_token.0,
         i18n,
         Composer::default(),
+        ReviewForm::default(),
     )
     .await?;
     render(&EventDetailTemplate {
-        published_notice: query.published.is_some() && page.can_edit,
+        published_notice: query.published.is_some()
+            && (page.can_edit || page.follow_up.is_review()),
         ..page
     })
 }
 
+/// The event's page, with what the author had typed in the form that was
+/// refused, `composer` or `review_form`.
 pub(super) async fn detail_page(
     state: &AppState,
     id: i64,
@@ -259,15 +360,14 @@ pub(super) async fn detail_page(
     csrf_token: String,
     i18n: I18n,
     composer: Composer,
+    review_form: ReviewForm,
 ) -> Result<EventDetailTemplate, AppError> {
     let view = load_view(state, id, user, &i18n).await?;
     let composer = composer.prefilled(&view.event);
+    let review_form = review_form.prefilled(&view);
     let can_edit = user.is_some_and(|u| can_modify(&view.event, u.role));
-    let changelog_offer = user.is_some_and(|u| u.role.can_publish())
-        && view.event.kind == Kind::Maintenance
-        && view.event.lifecycle == Some(Lifecycle::Completed);
     Ok(EventDetailTemplate {
-        changelog_offer,
+        follow_up: FollowUp::of(&view.event, user),
         frame: Frame::load(&state.pool, user, csrf_token, &i18n).await?,
         transitions: transition_options(&view.event, composer.lifecycle, &i18n),
         revert_label: revert_label(&view.event, &i18n),
@@ -275,6 +375,7 @@ pub(super) async fn detail_page(
         can_edit,
         view,
         composer,
+        review_form,
         i18n,
     })
 }

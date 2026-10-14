@@ -540,12 +540,15 @@
         count.hidden = set === 0;
     }
 
-    // The composer opens by its anchor; the cursor goes straight to it.
+    // A form folded under its anchor, the composer or the review, opens by
+    // it; the cursor goes straight to its text.
     function onComposerOpen(target) {
-        if (!target.closest("[data-composer-open]")) return false;
+        const link = target.closest("[data-composer-open]");
+        if (!link) return false;
         window.setTimeout(() => {
-            const message = document.getElementById("message");
-            if (message) message.focus();
+            const form = document.querySelector(link.getAttribute("href"));
+            const text = form && form.querySelector("textarea");
+            if (text) text.focus();
         }, 0);
         return true;
     }

@@ -359,6 +359,68 @@
         margin-bottom: 12px;
     }
 
+    /* A resolved incident reads its review the same way, its date beside
+       the way to remove it. */
+    .review-dateline {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 16px;
+    }
+
+    .review-remove {
+        margin-left: auto;
+    }
+
+    /* Removing it is rare: under a pointer the action shows over the
+       review only; a touch screen keeps it in sight. */
+    @media (hover: hover) {
+        .review-remove {
+            opacity: 0;
+            transition: opacity 150ms var(--ease-out);
+        }
+
+        .review:hover .review-remove,
+        .review:focus-within .review-remove {
+            opacity: 1;
+        }
+    }
+
+    /* Written where it shows, folded until asked for. */
+    .review-form:not(.is-open, :target) {
+        display: none;
+    }
+
+    .review-form {
+        max-width: 72ch;
+        margin-bottom: 24px;
+        padding: 16px;
+        background: var(--ground);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+    }
+
+    .review + .review-form {
+        margin-top: 20px;
+        margin-bottom: 0;
+    }
+
+    .review-form .input {
+        background: var(--card);
+    }
+
+    .review-form .form-error {
+        margin-bottom: 12px;
+    }
+
+    .review-buttons {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 16px;
+        margin-top: 12px;
+    }
+
     .rich-text > * + * {
         margin-top: 10px;
     }

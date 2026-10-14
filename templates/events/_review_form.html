@@ -1,0 +1,16 @@
+{# The review of a resolved incident, written or corrected where it shows,
+   folded until asked for; a refused one opens it again. #}
+<form id="review" class="review-form{% if review_form.error.is_some() %} is-open{% endif %}" method="post" action="/events/{{ view.event.id }}/review">
+    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+    {% if let Some(error) = review_form.error %}
+    <div id="review-error" class="form-error" role="alert"><p>{{ error }}</p></div>
+    {% endif %}
+    <label for="review-body" class="field-label">{{ i18n.t("events.review_label") }}</label>
+    <textarea id="review-body" name="body" class="input" rows="8"
+              placeholder="{{ i18n.t("events.review_placeholder") }}"{% if review_form.error.is_some() %} aria-invalid="true" aria-describedby="review-error review-hint"{% else %} aria-describedby="review-hint"{% endif %}>{{ review_form.body }}</textarea>
+    <p id="review-hint" class="field-hint mt-1">{{ i18n.t("events.formatting_hint") }}</p>
+    <div class="review-buttons">
+        <a href="#updates-title" class="text-action">{{ i18n.t("common.cancel") }}</a>
+        <button type="submit" class="btn btn-primary">{% if view.review.is_some() %}{{ i18n.t("events.review_save") }}{% else %}{{ i18n.t("events.review_publish") }}{% endif %}</button>
+    </div>
+</form>

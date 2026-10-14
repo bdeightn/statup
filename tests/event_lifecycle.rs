@@ -2489,3 +2489,168 @@ async fn resolving_an_incident_drops_its_next_update() {
     assert!(!body.contains(NEXT_UPDATE_NOTE));
     assert!(!body.contains("mise à jour attendue"));
 }
+
+const REPORT: &str = "Un disque plein a arrêté la paie. On surveille désormais sa place.";
+
+/// An incident declared by the signed-in publisher and resolved at once.
+async fn resolved_incident(app: &TestApp) -> (String, i64) {
+    let service = app.create_service("Paie").await;
+    let path = app
+        .create_incident(
+            "Panne de la paie",
+            "La paie ne répond plus.",
+            "critical",
+            &[service],
+        )
+        .await;
+    let id = event_id_from_path(&path);
+    let (status, _, _) = app
+        .post_form_with_header_csrf(
+            &format!("/events/{id}/updates"),
+            &[("lifecycle", "resolved"), ("message", "La paie répond.")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    (format!("/events/{id}"), id)
+}
+
+async fn write_report(app: &TestApp, id: i64, body: &str) -> (StatusCode, String, Option<String>) {
+    app.post_form_with_header_csrf(&format!("/events/{id}/review"), &[("body", body)])
+        .await
+}
+
+#[tokio::test]
+async fn an_editor_writes_the_report_of_a_resolved_incident() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let (path, id) = resolved_incident(&app).await;
+    let (_, before) = app.get(&path).await;
+    assert!(before.contains("Écrire le bilan"));
+
+    let (status, _, location) = write_report(&app, id, REPORT).await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        location.as_deref(),
+        Some(&*format!("/events/{id}?published=1"))
+    );
+    let (_, page) = app.get(&format!("{path}?published=1")).await;
+    assert!(page.contains("Publié, visible dès maintenant."));
+    assert!(page.contains("Modifier le bilan"));
+    assert!(!page.contains("Écrire le bilan"));
+    let report = page.find(REPORT).expect("the report is on the page");
+    let timeline = page.find("Chronologie").expect("the timeline follows");
+    assert!(report < timeline, "the report comes before the timeline");
+    let (_, panel) = app.get(&format!("/events/{id}/drawer")).await;
+    assert!(panel.contains(REPORT));
+    let (_, list) = app.get("/events").await;
+    assert!(list.contains("Résolu\u{a0}· bilan"));
+}
+
+#[tokio::test]
+async fn a_correction_replaces_the_report() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let (path, id) = resolved_incident(&app).await;
+    write_report(&app, id, REPORT).await;
+
+    let (status, _, _) = write_report(&app, id, "Un disque de journaux plein.").await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let (_, page) = app.get(&path).await;
+    assert!(page.contains("Un disque de journaux plein."));
+    assert!(!page.contains(REPORT));
+}
+
+#[tokio::test]
+async fn an_empty_report_comes_back_in_its_open_form() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let (_, id) = resolved_incident(&app).await;
+
+    let (status, body, _) = write_report(&app, id, "   ").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("Écrivez le bilan avant de le publier."));
+    assert!(body.contains("class=\"review-form is-open\""));
+    let (_, list) = app.get("/events").await;
+    assert!(!list.contains("· bilan"), "nothing was saved");
+}
+
+#[tokio::test]
+async fn a_report_waits_for_the_incident_to_be_resolved() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let path = app
+        .create_incident("Panne du VPN", "Le VPN ne répond plus.", "minor", &[])
+        .await;
+    let id = event_id_from_path(&path);
+    let (_, page) = app.get(&path).await;
+    assert!(!page.contains("Écrire le bilan"));
+
+    let (status, _, _) = write_report(&app, id, REPORT).await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn readers_cannot_write_a_report() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let (path, id) = resolved_incident(&app).await;
+    app.post_form_with_header_csrf("/logout", &[]).await;
+    app.create_user(
+        "reader@example.com",
+        "reader_pass_1234",
+        "Reader",
+        Role::Reader,
+    )
+    .await;
+    app.login("reader@example.com", "reader_pass_1234").await;
+    let (_, page) = app.get(&path).await;
+    assert!(!page.contains("Écrire le bilan"));
+
+    let (status, _, _) = write_report(&app, id, REPORT).await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn a_removed_report_leaves_the_page_and_the_list() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let (path, id) = resolved_incident(&app).await;
+    write_report(&app, id, REPORT).await;
+
+    let (status, _, location) = app
+        .post_form_with_header_csrf(&format!("/events/{id}/review/delete"), &[])
+        .await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(location.as_deref(), Some(&*path));
+    let (_, page) = app.get(&path).await;
+    assert!(!page.contains(REPORT));
+    assert!(page.contains("Écrire le bilan"));
+    let (_, list) = app.get("/events").await;
+    assert!(!list.contains("· bilan"));
+}
+
+#[tokio::test]
+async fn visitors_read_the_report_without_its_author() {
+    let app = TestApp::spawn_public().await;
+    app.setup_publisher().await;
+    let (path, id) = resolved_incident(&app).await;
+    write_report(&app, id, REPORT).await;
+    let (_, signed_in) = app.get(&path).await;
+    assert!(
+        signed_in.contains("·</span> Publisher"),
+        "members see who wrote it"
+    );
+
+    let (status, _, _) = app.post_form_with_header_csrf("/logout", &[]).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let (_, page) = app.get(&path).await;
+
+    assert!(page.contains(REPORT));
+    assert!(!page.contains("Publisher"));
+}

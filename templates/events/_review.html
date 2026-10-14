@@ -1,0 +1,21 @@
+{# The review of a resolved incident, dated and signed for members, its
+   text a size up as an announcement's. Shared by the page, which may
+   remove it, and the side panel. Expects `review`, `review_actions` and
+   `review_csrf`. #}
+<div class="review">
+    <div class="review-dateline">
+        <p class="article-dateline"><time datetime="{{ review.iso }}">{{ review.time }}</time>{% if let Some(author) = review.author %}&nbsp;<span aria-hidden="true">·</span> {{ author }}{% endif %}</p>
+        {% if review_actions %}
+        <form class="review-remove" method="post" action="/events/{{ view.event.id }}/review/delete" data-confirm>
+            <input type="hidden" name="csrf_token" value="{{ review_csrf }}">
+            <button type="button" class="text-action text-action-danger" data-confirm-open>{{ i18n.t("events.review_remove") }}</button>
+            <div class="confirm" role="group" aria-label="{{ i18n.t("events.review_remove_aria") }}" aria-describedby="review-remove-q" data-confirm-box hidden>
+                <span id="review-remove-q" class="confirm-text">{{ i18n.t("events.review_remove_question") }}</span>
+                <button type="button" class="confirm-cancel" data-confirm-cancel>{{ i18n.t("common.cancel") }}</button>
+                <button type="submit" class="confirm-go" data-danger>{{ i18n.t("events.review_remove") }}</button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+    <div class="rich-text article-text">{{ review.html|safe }}</div>
+</div>

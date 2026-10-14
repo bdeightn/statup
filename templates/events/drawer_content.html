@@ -17,6 +17,15 @@
     </section>
     {% endif %}
 
+    {% if let Some(review) = view.review %}
+    <section class="drawer-section" aria-labelledby="drawer-review-title">
+        <h3 id="drawer-review-title" class="label">{{ i18n.t("events.review_title") }}</h3>
+        {% let review_actions = false %}
+        {% let review_csrf = csrf_token.as_str() %}
+        {% include "events/_review.html" %}
+    </section>
+    {% endif %}
+
     {% if view.article.is_none() || can_edit || !view.timeline.is_empty() %}
     <section class="drawer-section" aria-labelledby="drawer-timeline-title">
         <h3 id="drawer-timeline-title" class="label">{% if view.article.is_some() %}{{ i18n.t("timeline.updates") }}{% else %}{{ i18n.t("timeline.title") }}{% endif %}</h3>
