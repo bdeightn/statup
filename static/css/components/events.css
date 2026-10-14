@@ -359,8 +359,18 @@
         margin-bottom: 12px;
     }
 
-    /* A resolved incident reads its review the same way, its date beside
-       the way to remove it. */
+    /* A resolved incident opens on its review, across the page above the
+       timeline and the details, as the banner heads the dashboard. Without
+       a review the card waits for its form to be opened. */
+    .review-card {
+        margin-top: 24px;
+    }
+
+    .review-card:not(:has(.review, .review-form:target, .review-form.is-open)) {
+        display: none;
+    }
+
+    /* Its date beside the way to remove it. */
     .review-dateline {
         display: flex;
         flex-wrap: wrap;
@@ -393,7 +403,6 @@
 
     .review-form {
         max-width: 72ch;
-        margin-bottom: 24px;
         padding: 16px;
         background: var(--ground);
         border: 1px solid var(--line);
@@ -402,7 +411,6 @@
 
     .review + .review-form {
         margin-top: 20px;
-        margin-bottom: 0;
     }
 
     .review-form .input {

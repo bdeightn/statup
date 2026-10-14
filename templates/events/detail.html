@@ -39,6 +39,25 @@
         {% endif %}
     </header>
 
+    {% if view.review.is_some() || follow_up.is_review() %}
+    {# A resolved incident opens on its review, across the page. It is
+       written where it shows: without one, the card waits until the form
+       is opened. #}
+    <section class="card review-card" aria-labelledby="review-title">
+        <header class="card-head">
+            <h2 id="review-title" class="card-title">{{ i18n.t("events.review_title") }}</h2>
+        </header>
+        <div class="card-body article-body">
+            {% if let Some(review) = view.review %}
+            {% let review_actions = follow_up.is_review() %}
+            {% let review_csrf = frame.csrf_token.as_str() %}
+            {% include "events/_review.html" %}
+            {% endif %}
+            {% if follow_up.is_review() %}{% include "events/_review_form.html" %}{% endif %}
+        </div>
+    </section>
+    {% endif %}
+
     <div class="event-layout">
         {% if view.has_facts() %}
         <aside class="card event-details" aria-labelledby="details-title">
@@ -62,23 +81,11 @@
                 {% if can_edit || !view.timeline.is_empty() %}
                 <h3 class="label article-updates">{{ i18n.t("timeline.updates") }}</h3>
                 {% endif %}
-            {% else if let Some(review) = view.review %}
-            <header class="card-head">
-                <h2 id="updates-title" class="card-title">{{ i18n.t("events.review_title") }}</h2>
-            </header>
-            <div class="card-body article-body">
-                {% let review_actions = follow_up.is_review() %}
-                {% let review_csrf = frame.csrf_token.as_str() %}
-                {% include "events/_review.html" %}
-                {% if follow_up.is_review() %}{% include "events/_review_form.html" %}{% endif %}
-                <h3 class="label article-updates">{{ i18n.t("timeline.title") }}</h3>
             {% else %}
             <header class="card-head">
                 <h2 id="updates-title" class="card-title">{{ i18n.t("timeline.title") }}</h2>
             </header>
             <div class="card-body">
-                {# Written at the head of the story, where it will show. #}
-                {% if follow_up.is_review() %}{% include "events/_review_form.html" %}{% endif %}
             {% endif %}
                 {% if can_edit %}
                 {# Folded until asked for, at the head of the timeline where the
