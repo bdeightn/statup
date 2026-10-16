@@ -1,3 +1,13 @@
+# The manifests with the version of Statup blanked out: a release only bumps
+# it, and the dependencies built below stay in the layer cache.
+FROM alpine:3.21 AS manifests
+
+WORKDIR /app
+
+COPY Cargo.toml Cargo.lock ./
+
+RUN sed -i '/^name = "statup"$/,/^version = /s/^version = .*/version = "0.0.0"/' Cargo.toml Cargo.lock
+
 # Binary
 FROM rust:1.93-alpine AS builder
 
@@ -5,7 +15,7 @@ RUN apk add --no-cache musl-dev
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock ./
+COPY --from=manifests /app/Cargo.toml /app/Cargo.lock ./
 
 # Builds the dependencies alone, for the layer cache. The stub is not the
 # crate, so this step may fail without consequence: it only warms the cache.
@@ -13,6 +23,8 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs && \
     (cargo build --release --locked || true) && \
     rm -rf src
 
+# The real manifests, for the version the app shows.
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY templates ./templates
 COPY locales ./locales
