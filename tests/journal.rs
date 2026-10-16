@@ -377,3 +377,83 @@ async fn too_many_failed_sign_ins_are_kept_once_even_in_the_essential_capture() 
         [Some("127.0.0.1".into())]
     );
 }
+
+#[tokio::test]
+async fn the_lines_are_exported_as_a_spreadsheet_file() {
+    let app = spawn_with_admin().await;
+    let mut line = NewJournalEntry::new(JournalKind::AppError);
+    line.subject = Some("Database is locked".into());
+    JournalRepository::add(&app.pool, &line).await.unwrap();
+
+    let response = app.get_response("/admin/journal/export").await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let headers = response.headers();
+    assert_eq!(headers["content-type"], "text/csv; charset=utf-8");
+    let disposition = headers["content-disposition"].to_str().unwrap();
+    assert!(disposition.starts_with("attachment; filename=\"journal-"));
+    assert!(disposition.ends_with(".csv\""));
+    assert_eq!(headers["cache-control"], "no-store");
+    let body = response.text().await.unwrap();
+    assert!(body.starts_with('\u{FEFF}'));
+    assert!(body.contains("Date et heure,Type,Essentiel,Membre,"));
+    assert!(body.contains("Erreur\u{a0}: Database is locked"));
+    assert!(body.contains("\r\n"));
+}
+
+#[tokio::test]
+async fn the_export_follows_the_filters() {
+    let app = spawn_with_admin().await;
+    let mut line = NewJournalEntry::new(JournalKind::AppError);
+    line.subject = Some("Database is locked".into());
+    JournalRepository::add(&app.pool, &line).await.unwrap();
+
+    let (_, all) = app.get("/admin/journal/export").await;
+    let (_, members) = app.get("/admin/journal/export?category=members").await;
+
+    assert!(all.contains("Database is locked"));
+    assert!(!members.contains("Database is locked"));
+}
+
+#[tokio::test]
+async fn the_export_shields_a_cell_that_starts_like_a_formula() {
+    let app = spawn_with_admin().await;
+    let mut line = NewJournalEntry::new(JournalKind::MemberAdded);
+    line.actor_name = Some("=Mallory".into());
+    line.detail = Some("=HYPERLINK(\"x\")".into());
+    JournalRepository::add(&app.pool, &line).await.unwrap();
+
+    let (_, body) = app.get("/admin/journal/export").await;
+
+    assert!(body.contains(",'=Mallory,"));
+    assert!(body.contains("\"'=HYPERLINK(\"\"x\"\")\""));
+}
+
+#[tokio::test]
+async fn an_editor_cannot_export_the_journal() {
+    let app = TestApp::spawn().await;
+    app.create_user(
+        "editor@test.com",
+        "editor_password_12",
+        "Editor",
+        Role::Publisher,
+    )
+    .await;
+    app.login("editor@test.com", "editor_password_12").await;
+
+    let (status, _) = app.get("/admin/journal/export").await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn the_page_offers_the_export_under_the_current_filters() {
+    let app = spawn_with_admin().await;
+    let mut line = NewJournalEntry::new(JournalKind::AppError);
+    line.subject = Some("Database is locked".into());
+    JournalRepository::add(&app.pool, &line).await.unwrap();
+
+    let (_, body) = app.get("/admin/journal?category=system&page=1").await;
+
+    assert!(body.contains("href=\"/admin/journal/export?category=system\""));
+}

@@ -1,6 +1,8 @@
 //! The Journal page of the administrators: what was kept, its search, and
 //! what the journal captures and for how long.
 
+mod csv_export;
+
 use std::fmt::Write as _;
 
 use askama::Template;
@@ -23,8 +25,11 @@ use crate::models::{
 use crate::repositories::{JournalRepository, NewJournalEntry, UserRepository};
 use crate::state::AppState;
 
+pub use csv_export::export;
+
 const PAGE_SIZE: i64 = 50;
 const MAX_PAGE: i64 = 10_000;
+const EXPORT_LIMIT: i64 = 10_000;
 
 #[derive(Deserialize, Default)]
 pub struct JournalQuery {
@@ -77,6 +82,15 @@ impl JournalQuery {
         }
     }
 
+    /// Every line under the filters, newest first, up to the export cap.
+    fn export_filters(&self) -> JournalFilters {
+        JournalFilters {
+            limit: EXPORT_LIMIT,
+            offset: 0,
+            ..self.filters()
+        }
+    }
+
     fn has_filters(&self) -> bool {
         self.query().is_some() || self.refinements() > 0
     }
@@ -94,26 +108,38 @@ impl JournalQuery {
         .count()
     }
 
-    /// Query string of the current filters, ready for a `page=` parameter.
-    fn page_link_base(&self) -> String {
-        let mut url = String::from("/admin/journal?");
-        let pairs = [
+    /// The current filters as query pairs, each followed by `&`, so that a
+    /// parameter can be appended.
+    fn filter_pairs(&self) -> String {
+        let mut pairs = String::new();
+        let values = [
             ("category", self.category().map(|c| c.as_str().to_string())),
             ("actor_id", self.actor_id.map(|id| id.to_string())),
             ("q", self.query()),
             ("from", self.from.clone()),
             ("to", self.to.clone()),
         ];
-        for (name, value) in pairs {
+        for (name, value) in values {
             if let Some(value) = value {
                 let encoded = percent_encoding::utf8_percent_encode(
                     &value,
                     percent_encoding::NON_ALPHANUMERIC,
                 );
-                let _ = write!(url, "{name}={encoded}&");
+                let _ = write!(pairs, "{name}={encoded}&");
             }
         }
-        url
+        pairs
+    }
+
+    /// Query string of the current filters, ready for a `page=` parameter.
+    fn page_link_base(&self) -> String {
+        format!("/admin/journal?{}", self.filter_pairs())
+    }
+
+    /// Where the lines under the current filters are downloaded.
+    fn export_url(&self) -> String {
+        let pairs = self.filter_pairs();
+        format!("/admin/journal/export?{}", pairs.trim_end_matches('&'))
     }
 }
 
@@ -126,6 +152,7 @@ pub struct JournalResults {
     pub page_label: String,
     pub has_next: bool,
     pub page_link_base: String,
+    pub export_url: String,
     pub has_filters: bool,
 }
 
@@ -230,6 +257,7 @@ async fn load_results(
         page_label: i18n.tf("common.page_n", &[("n", &query.page().to_string())]),
         has_next,
         page_link_base: query.page_link_base(),
+        export_url: query.export_url(),
         has_filters: query.has_filters(),
     })
 }
@@ -338,6 +366,16 @@ mod tests {
         let q = query(&[("category", ""), ("actor_id", ""), ("q", "  ")]);
         assert!(!q.has_filters());
         assert_eq!(q.page_link_base(), "/admin/journal?");
+    }
+
+    #[test]
+    fn the_export_link_keeps_the_filters_and_drops_the_page() {
+        let q = query(&[("page", "3"), ("category", "members"), ("q", "a b")]);
+        assert_eq!(
+            q.export_url(),
+            "/admin/journal/export?category=members&q=a%20b"
+        );
+        assert_eq!(query(&[]).export_url(), "/admin/journal/export?");
     }
 
     #[test]

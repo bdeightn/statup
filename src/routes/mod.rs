@@ -230,6 +230,7 @@ fn admin_routes() -> Router<AppState> {
         .route("/admin/settings", get(admin::settings_page))
         .route("/admin/settings/logo/remove", post(admin::remove_logo))
         .route("/admin/journal", get(journal::page))
+        .route("/admin/journal/export", get(journal::export))
         .route("/admin/journal/settings", post(journal::save_settings))
         .route("/admin/users", get(admin::users_list))
         .route("/admin/users/new", post(admin::add_member))
