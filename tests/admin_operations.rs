@@ -423,6 +423,33 @@ async fn a_disabled_accounts_email_is_still_taken() {
 }
 
 #[tokio::test]
+async fn icons_and_arranging_each_have_one_way_in() {
+    let (app, _admin_id) = spawn_with_admin().await;
+
+    let (_, body) = app.get("/admin/settings").await;
+    assert!(
+        !body.contains("/?arrange=1"),
+        "arranging opens from the dashboard only"
+    );
+    assert!(
+        !body.contains(r#"href="/icons""#),
+        "icons belong with the services"
+    );
+
+    let (_, body) = app.get("/services").await;
+    assert!(
+        body.contains(r#"href="/icons""#),
+        "the services page leads to the icons"
+    );
+
+    let (_, body) = app.get("/icons").await;
+    assert!(
+        body.contains(r#"href="/services" class="back-link""#),
+        "the icons page leads back to the services, open to editors"
+    );
+}
+
+#[tokio::test]
 async fn only_an_admin_opens_arranging_from_the_dashboard() {
     let (app, _admin_id) = spawn_with_admin().await;
     let (status, body) = app.get("/").await;

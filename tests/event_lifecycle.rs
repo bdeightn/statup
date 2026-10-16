@@ -1405,8 +1405,17 @@ async fn detail_page_says_an_incident_is_still_ongoing() {
     assert_eq!(status, StatusCode::SEE_OTHER);
     assert_eq!(
         location.as_deref(),
-        Some(format!("/events/{event_id}?posted=1").as_str()),
+        Some(format!("/events/{event_id}?published=1").as_str()),
         "back on the event, where the update lights up once"
+    );
+    let (_, body) = app.get(&format!("/events/{event_id}?published=1")).await;
+    assert!(
+        body.contains("Publié, visible dès maintenant."),
+        "the editor sees the update went out"
+    );
+    assert!(
+        body.contains("seul un administrateur peut encore le modifier"),
+        "a closed incident tells the editor why its buttons are gone"
     );
 
     let (_, body) = app.get(&path).await;
@@ -2236,11 +2245,17 @@ async fn publishing_from_a_template_counts_its_usage() {
 }
 
 #[tokio::test]
-async fn deleting_a_template_goes_back_to_the_form_or_answers_htmx() {
+async fn a_template_is_removed_from_the_menu_of_a_new_event() {
     let app = TestApp::spawn().await;
     app.setup_publisher().await;
     let first = publish_incident_as_template(&app, "Payment gateway down").await;
-    let second = publish_incident_as_template(&app, "Mail relay down").await;
+    publish_incident_as_template(&app, "Mail relay down").await;
+
+    let (_, body) = app.get("/events/new").await;
+    assert!(
+        body.contains(&format!(r#"action="/events/templates/{first}/delete""#)),
+        "each template in the menu can be removed"
+    );
 
     let (status, _, location) = app
         .post_form_with_header_csrf(&format!("/events/templates/{first}/delete"), &[])
@@ -2252,21 +2267,11 @@ async fn deleting_a_template_goes_back_to_the_form_or_answers_htmx() {
             .await
             .is_none()
     );
-
-    let csrf = app.csrf_from("/").await;
-    let resp = app
-        .client
-        .post(app.url(&format!("/events/templates/{second}/delete")))
-        .header("x-csrf-token", &csrf)
-        .header("hx-request", "true")
-        .send()
-        .await
-        .expect("POST request failed");
-    assert_eq!(resp.status(), StatusCode::OK, "htmx removes the suggestion");
     assert!(
         template_id_by_title(&app, "Mail relay down")
             .await
-            .is_none()
+            .is_some(),
+        "only that one goes"
     );
 
     let (status, _, _) = app

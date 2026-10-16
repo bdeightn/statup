@@ -16,7 +16,7 @@
                 <p class="first-step-what">{{ i18n.t("banner.step_services") }}</p>
                 <p class="first-step-why">{{ i18n.t("banner.step_services_hint") }}</p>
             </div>
-            <a href="/services/new" class="btn btn-primary">{{ i18n.t("banner.step_services_action") }}</a>
+            <a href="/services/new" class="btn btn-primary">{{ i18n.t("services.new") }}</a>
         </li>
         <li class="first-step">
             <span class="first-step-num" aria-hidden="true">3</span>
@@ -25,7 +25,7 @@
                 <p class="first-step-why">
                     <label for="page-address">{{ i18n.t("banner.step_share_address") }}</label>
                     <input id="page-address" class="first-step-address" type="text" value="{{ address }}" size="{{ address.chars().count() }}" readonly data-select-on-focus data-fit-text>.
-                    {{ i18n.t("banner.step_share_hint") }}
+                    <a href="/admin/settings" class="link">{{ i18n.t("banner.step_share_hint") }}</a>
                 </p>
             </div>
             <button type="button" class="btn btn-ghost" data-copy="#page-address" data-copied="{{ i18n.t("banner.address_copied") }}">{{ i18n.t("banner.copy_address") }}</button>

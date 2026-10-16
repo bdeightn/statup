@@ -12,7 +12,7 @@ use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::no_store;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
 use crate::models::{Role, User, check_display_name};
-use crate::repositories::{IconRepository, NotificationRepository, UserRepository};
+use crate::repositories::{NotificationRepository, UserRepository};
 use crate::services::{AuthService, CURRENT_VERSION, LogoService, NewerRelease, SettingsService};
 use crate::state::AppState;
 
@@ -32,7 +32,6 @@ struct SettingsPageTemplate {
     zones: Vec<&'static str>,
     users_count: i64,
     admins_count: i64,
-    icons_count: i64,
     notifications_count: i64,
     /// A newer published version, once the daily check finds one.
     newer: Option<NewerRelease>,
@@ -77,11 +76,6 @@ impl SettingsPageTemplate {
     fn newer_notice(&self, release: &NewerRelease) -> String {
         self.i18n
             .tf("admin.version_newer", &[("version", &release.version)])
-    }
-
-    fn icons_label(&self) -> String {
-        let count = usize::try_from(self.icons_count).unwrap_or(0);
-        self.i18n.plural("admin.icons", count)
     }
 
     fn notifications_label(&self) -> String {
@@ -272,7 +266,6 @@ async fn render_settings(
         zones: clock::zone_names(),
         users_count: UserRepository::count_all(&state.pool).await?,
         admins_count: UserRepository::count_admins(&state.pool).await?,
-        icons_count: IconRepository::count(&state.pool).await?,
         notifications_count: NotificationRepository::count_channels(&state.pool).await?,
         newer: state.update.newer(),
         i18n,

@@ -304,11 +304,6 @@
         }
     }
 
-    /* The buttons the arrange mode sets aside, and Done while it is open. */
-    .page-actions > [hidden] {
-        display: none;
-    }
-
     /* A phone stacks every block on one column: nothing to arrange there. */
     @media (max-width: 767px) {
         .page-actions .arrange-open {

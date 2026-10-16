@@ -5,7 +5,7 @@
         <div class="card-actions">
             <a href="/subscribe" class="card-action card-follow">{% call ui::feed_icon() %}{% endcall %}{{ i18n.t("dashboard.follow") }}</a>
             {% if !groups.is_empty() %}
-            <a href="/events" class="card-action">{{ i18n.t("dashboard.view_all") }}</a>
+            <a href="/events" class="card-action">{{ i18n.t("dashboard.view_all") }}<span class="sr-only">, {{ i18n.t("dashboard.activity") }}</span></a>
             {% endif %}
         </div>
     </header>

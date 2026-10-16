@@ -43,13 +43,6 @@ impl IconRepository {
             .await
     }
 
-    pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
-        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM icons")
-            .fetch_one(pool)
-            .await?;
-        Ok(row.0)
-    }
-
     /// Every (icon id, service name) pair, so the library can say which
     /// service wears which icon.
     pub async fn service_names_by_icon(pool: &DbPool) -> Result<Vec<(i64, String)>, sqlx::Error> {

@@ -91,6 +91,8 @@
         </form>
     </section>
     {% endif %}
+    {% else if edit_id.is_some() %}
+    <p class="field-hint">{{ i18n.t("services.kept_for_history") }}</p>
     {% endif %}
 </div>
 {% endblock %}

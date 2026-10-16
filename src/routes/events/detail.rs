@@ -345,8 +345,7 @@ pub async fn detail(
     )
     .await?;
     render(&EventDetailTemplate {
-        published_notice: query.published.is_some()
-            && (page.can_edit || page.follow_up.is_review()),
+        published_notice: query.published.is_some() && page.frame.can_publish,
         ..page
     })
 }

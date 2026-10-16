@@ -38,6 +38,9 @@
         </div>
         {% endif %}
     </header>
+    {% if frame.can_publish && !can_edit %}
+    <p class="field-hint mt-2">{{ i18n.t("validation.event_closed_admin_only") }}</p>
+    {% endif %}
 
     <div class="event-layout">
         {% if view.review.is_some() || follow_up.is_review() %}

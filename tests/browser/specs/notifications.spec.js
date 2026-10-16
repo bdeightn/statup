@@ -30,11 +30,11 @@ test("an admin adds a destination, tests it, and finds it listed", async ({ page
         const name = `Tableau n8n ${testInfo.project.name}`;
 
         await page.goto("/admin/settings");
-        await page.getByRole("link", { name: "Gérer les notifications" }).click();
+        await page.getByRole("link", { name: "Gérer les alertes" }).click();
         await expect(page).toHaveURL(/\/admin\/notifications$/);
 
         const form = page.locator("form[data-destination-form]");
-        if (!(await form.isVisible())) await page.getByText("Ajouter une destination").click();
+        if (!(await form.isVisible())) await page.getByText("Ajouter un canal").click();
         await page.getByRole("combobox", { name: "Outil" }).click();
         await page.getByRole("option", { name: "Autre outil (webhook)" }).click();
         await expect(form.getByText("Statup y envoie un JSON")).toBeVisible();

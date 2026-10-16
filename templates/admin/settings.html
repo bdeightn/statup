@@ -54,20 +54,6 @@
                     </a>
                 </li>
                 <li>
-                    <a href="/icons" class="card manage-tile">
-                        <span class="manage-tile-name">{{ i18n.t("admin.section_icons") }}{% call ui::chevron_right() %}{% endcall %}</span>
-                        <span class="manage-tile-meta">{{ self.icons_label() }}</span>
-                        <span class="manage-tile-action">{{ i18n.t("admin.icons_manage") }}</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="/?arrange=1" class="card manage-tile">
-                        <span class="manage-tile-name">{{ i18n.t("admin.section_dashboard") }}{% call ui::chevron_right() %}{% endcall %}</span>
-                        <span class="manage-tile-meta">{{ i18n.t("admin.dashboard_help") }}</span>
-                        <span class="manage-tile-action">{{ i18n.t("admin.dashboard_arrange") }}</span>
-                    </a>
-                </li>
-                <li>
                     {% if let Some(release) = newer %}
                     <a href="{{ release.url }}" class="card manage-tile" rel="noopener">
                         <span class="manage-tile-name">{{ i18n.t("admin.version") }}{% call ui::chevron_right() %}{% endcall %}</span>
