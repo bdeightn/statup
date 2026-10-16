@@ -19,18 +19,17 @@
     {% for day in results.days %}
     <h2 class="log-day">{{ day.label }}</h2>
     <ul class="log-list">
-        {% for entry in day.items %}
+        {% for row in day.items %}
         <li>
             <div class="log-row">
-            <span class="log-time">{{ i18n.format_time(entry.created_at) }}</span>
+            <span class="log-time">{{ i18n.format_time(row.entry.created_at) }}</span>
             <span class="log-body">
                 <span class="log-head">
-                    {% call ui::kind_chip(i18n.t(entry.kind.category().label_key()), entry.kind.tone().as_str()) %}{% endcall %}
-                    <span class="log-title">{{ entry.sentence(i18n) }}</span>
+                    {% call ui::kind_chip(i18n.t(row.entry.kind.category().label_key()), row.entry.kind.tone().as_str()) %}{% endcall %}
+                    <span class="log-title">{{ row.entry.sentence(i18n) }}</span>
                 </span>
-                {% let facts = entry.facts() %}
-                {% if !facts.is_empty() %}
-                <span class="log-sub journal-facts">{% for fact in facts %}{% if !loop.first %}&nbsp;<span aria-hidden="true">·</span> {% endif %}{{ fact }}{% endfor %}</span>
+                {% if !row.facts.is_empty() %}
+                <span class="log-sub journal-facts">{% for fact in row.facts %}{% if !loop.first %}&nbsp;<span aria-hidden="true">·</span> {% endif %}{{ fact }}{% endfor %}</span>
                 {% endif %}
             </span>
             </div>

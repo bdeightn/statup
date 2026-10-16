@@ -414,7 +414,7 @@ fn last_send(
     LastSend::Trouble("crit", text)
 }
 
-fn reason_of(code: Option<&str>, i18n: &I18n) -> String {
+pub(crate) fn reason_of(code: Option<&str>, i18n: &I18n) -> String {
     code.and_then(Failure::from_code).map_or_else(
         || i18n.t("notifications.failure_unknown").to_string(),
         |failure| failure_text(failure, i18n),

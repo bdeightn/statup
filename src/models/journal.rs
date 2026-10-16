@@ -312,15 +312,6 @@ impl JournalEntry {
             ],
         )
     }
-
-    /// The facts under the sentence: the detail, then the address.
-    pub fn facts(&self) -> Vec<&str> {
-        [self.detail.as_deref(), self.ip.as_deref()]
-            .into_iter()
-            .flatten()
-            .filter(|fact| !fact.is_empty())
-            .collect()
-    }
 }
 
 /// What the Journal page is narrowed to.

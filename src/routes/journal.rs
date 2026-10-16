@@ -2,6 +2,7 @@
 //! what the journal captures and for how long.
 
 mod csv_export;
+mod facts;
 
 use askama::Template;
 use axum::extract::{Query, State};
@@ -9,6 +10,7 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
+use self::facts::{JournalRow, rows};
 use super::events::deserialize_blank_as_none;
 use super::page::query_pairs;
 use super::{Frame, render};
@@ -18,9 +20,7 @@ use crate::i18n::{I18n, Locale};
 use crate::journal;
 use crate::middleware::headers::is_htmx;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
-use crate::models::{
-    DayGroup, JournalCategory, JournalEntry, JournalFilters, JournalKind, User, group_by_day,
-};
+use crate::models::{DayGroup, JournalCategory, JournalFilters, JournalKind, User, group_by_day};
 use crate::repositories::{JournalRepository, NewJournalEntry, UserRepository};
 use crate::state::AppState;
 
@@ -133,7 +133,7 @@ impl JournalQuery {
 
 /// The part of the page that the filters refresh.
 pub struct JournalResults {
-    pub days: Vec<DayGroup<JournalEntry>>,
+    pub days: Vec<DayGroup<JournalRow>>,
     pub total: i64,
     pub count_label: String,
     pub page: i64,
@@ -237,7 +237,7 @@ async fn load_results(
     let has_next = entries.len() > page_size;
     entries.truncate(page_size);
     Ok(JournalResults {
-        days: group_by_day(entries, i18n, |entry| &entry.created_at),
+        days: group_by_day(rows(entries, i18n), i18n, |row| &row.entry.created_at),
         total,
         count_label: i18n.plural("journal.count", usize::try_from(total).unwrap_or(0)),
         page: query.page(),
