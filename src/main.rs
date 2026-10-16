@@ -14,6 +14,7 @@ use tokio::task::{AbortHandle, JoinError};
 
 use statup::config::{Config, init_logging};
 use statup::db::{self, DbPool};
+use statup::journal::spawn_journal_writer;
 use statup::middleware::rate_limit::RateLimit;
 use statup::routes::create_router;
 use statup::services::{
@@ -34,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let config = Config::from_env().context("invalid configuration")?;
-    init_logging(config.log_level);
+    let journal_inbox = init_logging(config.log_level);
     statup::init_asset_versions();
     tracing::info!("Statup starting on {}", config.bind_addr());
     warn_on_plain_proxy(&config);
@@ -46,6 +47,7 @@ async fn main() -> anyhow::Result<()> {
         .context("cannot create the session store")?;
     let rate_limit = RateLimit::new(config.client_ip_source())?;
     let mut tasks = spawn_background_tasks(&pool, &rate_limit, &state);
+    tasks.push(spawn_journal_writer(pool.clone(), journal_inbox));
     if config.update_check {
         tasks.push(spawn_update_check(Arc::clone(&state.update)));
     }

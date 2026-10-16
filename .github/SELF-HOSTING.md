@@ -49,8 +49,17 @@ Every setting is optional. Write the ones you change in a `.env` file next to `d
 | `PORT` | `3000` | Listen port |
 | `SESSION_EXPIRY` | `3600` | Seconds a sign-in form stays valid. Once signed in, a session lasts 30 days without a visit with "Stay signed in", 24 hours otherwise |
 | `DB_MAX_CONNECTIONS` | `10` | Database pool size |
-| `LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` or `off` |
+| `LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` or `off`. Sets what the server output shows; the Journal keeps its lines whatever the level |
 | `RUST_LOG` | unset | Finer log filter, e.g. `statup=debug,tower_http=info`. Replaces `LOG_LEVEL` when set |
+
+## Journal
+
+**Settings → Journal**, for administrators, lists what happened, day by day, and the server output (`docker compose logs`) shows the same lines in English.
+
+- **Essential**, the default, keeps the large changes and the real problems: services added, changed or deleted, settings, alert channels, members added, their role or their account changed, an event deleted, an outage detected and its end, a message to an alert channel given up, sign-ins blocked after too many attempts, and the app's errors.
+- **Detailed** keeps everything from the moment it is chosen: sign-ins and refused attempts, password resets, events published and updated, each failed check, each message sent.
+- Lines are kept 90 days by default, from 1 to 365, under **Change**. Nobody can edit or delete a line; only the retention removes them. **Export** downloads the lines shown, filters included, as a spreadsheet.
+- Sign-in lines keep the client address, read like the rest of the app (see `TRUST_PROXY_HEADERS`). No password, reset link, webhook address or anything after the host of a checked address is ever written.
 
 ## Monitoring
 

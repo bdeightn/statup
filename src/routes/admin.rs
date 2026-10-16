@@ -5,15 +5,15 @@ use axum::extract::{Multipart, Path, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
-use super::setup::{GeneralInput, apply_general, read_general};
+use super::setup::{GeneralInput, apply_general, read_general, record_settings_saved};
 use super::{Frame, render};
 use crate::clock;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::no_store;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
-use crate::models::{Role, User, check_display_name};
-use crate::repositories::{NotificationRepository, UserRepository};
+use crate::models::{JournalKind, Role, User, check_display_name};
+use crate::repositories::{NewJournalEntry, NotificationRepository, UserRepository};
 use crate::services::{AuthService, CURRENT_VERSION, LogoService, NewerRelease};
 use crate::state::AppState;
 
@@ -34,6 +34,8 @@ struct SettingsPageTemplate {
     users_count: i64,
     admins_count: i64,
     notifications_count: i64,
+    /// What the journal captures and for how long.
+    journal_label: String,
     /// A newer published version, once the daily check finds one.
     newer: Option<NewerRelease>,
     i18n: I18n,
@@ -272,6 +274,7 @@ async fn render_settings(
         users_count: UserRepository::count_all(&state.pool).await?,
         admins_count: UserRepository::count_admins(&state.pool).await?,
         notifications_count: NotificationRepository::count_channels(&state.pool).await?,
+        journal_label: super::journal::tile_label(state, &i18n).await,
         newer: state.update.newer(),
         i18n,
     })
@@ -371,7 +374,12 @@ pub async fn add_member(
 ) -> Result<Response, AppError> {
     match create_member(&state, &input).await {
         Ok(created) => {
-            tracing::info!(admin_id = admin.id, "Member added");
+            NewJournalEntry::new(JournalKind::MemberAdded)
+                .by(&admin)
+                .about(&created.name)
+                .with_detail(input.role.as_str())
+                .record(&state.pool)
+                .await;
             show_password(&state, &admin, csrf_token, i18n, created).await
         }
         Err(AppError::Validation(key)) => {
@@ -402,7 +410,6 @@ async fn create_member(
         .parse()
         .map_err(|_| AppError::validation("validation.invalid_role"))?;
     let (user, password) = AuthService::add_member(&state.pool, &input.email, &name, role).await?;
-    tracing::info!(new_user_id = user.id, "Temporary password issued");
     Ok(CreatedAccount {
         name: user.display_name,
         email: user.email,
@@ -439,11 +446,11 @@ async fn issue_reset(
         return Err(AppError::validation("validation.cannot_reset_self"));
     }
     let (user, password) = AuthService::reset_member_password(&state.pool, user_id).await?;
-    tracing::info!(
-        admin_id = admin.id,
-        target_user_id = user.id,
-        "Temporary password issued"
-    );
+    NewJournalEntry::new(JournalKind::MemberPasswordReset)
+        .by(admin)
+        .about(&user.display_name)
+        .record(&state.pool)
+        .await;
     Ok(CreatedAccount {
         name: user.display_name,
         email: user.email,
@@ -483,19 +490,19 @@ async fn apply_role(
     if user_id == admin.id {
         return Err(AppError::validation("validation.cannot_change_own_role"));
     }
-    UserRepository::find_by_id(&state.pool, user_id)
+    let target = UserRepository::find_by_id(&state.pool, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
     if !UserRepository::update_role(&state.pool, user_id, new_role).await? {
         return Err(AppError::validation("validation.last_admin"));
     }
 
-    tracing::info!(
-        admin_id = admin.id,
-        target_user_id = user_id,
-        new_role = new_role.as_str(),
-        "Role updated"
-    );
+    NewJournalEntry::new(JournalKind::MemberRoleChanged)
+        .by(admin)
+        .about(&target.display_name)
+        .with_detail(new_role.as_str())
+        .record(&state.pool)
+        .await;
     Ok(())
 }
 
@@ -529,13 +536,16 @@ async fn apply_toggle(state: &AppState, admin: &User, user_id: i64) -> Result<()
         return Err(AppError::validation("validation.last_active_admin"));
     }
 
-    let action = if new_active { "enabled" } else { "disabled" };
-    tracing::info!(
-        admin_id = admin.id,
-        target_user_id = user_id,
-        action,
-        "User active status changed"
-    );
+    let kind = if new_active {
+        JournalKind::MemberEnabled
+    } else {
+        JournalKind::MemberDisabled
+    };
+    NewJournalEntry::new(kind)
+        .by(admin)
+        .about(&target.display_name)
+        .record(&state.pool)
+        .await;
     Ok(())
 }
 
@@ -556,13 +566,10 @@ pub async fn save_settings(
         }
         Err(e) => return Err(e),
     };
+    let changed = input.changed_fields(&state);
     match apply_general(&state, &input).await {
         Ok(()) => {
-            tracing::info!(
-                admin_id = admin.id,
-                public_mode = input.access == "everyone",
-                "Settings saved"
-            );
+            record_settings_saved(&state, &admin, &changed).await;
             Ok(Redirect::to("/admin/settings?saved=1").into_response())
         }
         Err(AppError::Validation(key)) => {
@@ -578,6 +585,9 @@ pub async fn remove_logo(
     State(state): State<AppState>,
 ) -> Result<Response, AppError> {
     LogoService::remove(&state.pool, &state.upload_dir).await?;
-    tracing::info!(admin_id = admin.id, "Logo removed");
+    NewJournalEntry::new(JournalKind::LogoRemoved)
+        .by(&admin)
+        .record(&state.pool)
+        .await;
     Ok(Redirect::to("/admin/settings?logo=removed").into_response())
 }

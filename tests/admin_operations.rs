@@ -622,6 +622,8 @@ async fn instance_name_too_long_is_refused_in_the_page() {
 /// Who can see the page is saved with the rest of the card, and only then.
 #[tokio::test]
 async fn public_access_is_saved_with_the_card() {
+    // Saves the general settings, which the brand tests read.
+    let _brand = BRAND.lock().await;
     let (app, _admin_id) = spawn_with_admin().await;
 
     let (_, body) = app.get("/admin/settings").await;
@@ -1008,6 +1010,8 @@ async fn a_service_left_out_of_the_card_comes_back_when_it_is_down() {
 
 #[tokio::test]
 async fn switching_language_after_any_form_lands_on_a_page() {
+    // Saves the general settings, which the brand tests read.
+    let _brand = BRAND.lock().await;
     let (app, admin_id) = spawn_with_admin().await;
     for action in [
         format!("/admin/users/{admin_id}/reset-password"),

@@ -57,7 +57,7 @@
     <div class="reveal-row{% if !self.check().is("none") %} is-open{% endif %}" data-for-check="http tcp">
         <label class="outage-delay">
             <span>{{ i18n.t("services.check_outage_before") }}</span>
-            <input id="check_outage_after" name="check_outage_after" type="text" class="input" inputmode="numeric" autocomplete="off" maxlength="2"
+            <input id="check_outage_after" name="check_outage_after" type="text" class="inline-number" inputmode="numeric" autocomplete="off" maxlength="2"
                    value="{{ minutes }}" placeholder="{{ crate::services::DEFAULT_OUTAGE_AFTER }}"
                    {% if outage_error.is_some() %}aria-invalid="true" aria-describedby="outage-error" autofocus{% endif %}>
             <span>{{ i18n.t("services.check_outage_unit") }}</span>

@@ -8,8 +8,8 @@ use serde::Deserialize;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::RequirePublisher;
-use crate::models::{Category, Severity};
-use crate::repositories::EventTemplateRepository;
+use crate::models::{Category, JournalKind, Severity};
+use crate::repositories::{EventTemplateRepository, NewJournalEntry};
 use crate::routes::render;
 use crate::services::EventTemplateService;
 use crate::state::AppState;
@@ -64,10 +64,18 @@ pub async fn template_detail(
 
 /// Removed from the template menu of a new event, which opens again.
 pub async fn template_delete(
-    _publisher: RequirePublisher,
+    RequirePublisher(user): RequirePublisher,
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
+    let template = EventTemplateRepository::find_by_id(&state.pool, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
     EventTemplateService::delete(&state.pool, id).await?;
+    NewJournalEntry::new(JournalKind::TemplateDeleted)
+        .by(&user)
+        .about(&template.title)
+        .record(&state.pool)
+        .await;
     Ok(Redirect::to("/events/new").into_response())
 }

@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::I18n;
-use crate::models::{ActivityKind, DayGroup, group_by_day};
+use crate::models::{ActivityKind, DayGroup, EventSummary, group_by_day};
 use crate::repositories::EventRepository;
 
 use super::{ColumnWidth, Module, ModuleOption, ModuleRenderContext, render_template};
@@ -19,7 +19,7 @@ pub struct RecentActivityModule;
 #[derive(Template)]
 #[template(path = "modules/recent_activity.html")]
 struct RecentActivityTemplate {
-    groups: Vec<DayGroup>,
+    groups: Vec<DayGroup<EventSummary>>,
     i18n: I18n,
 }
 
@@ -45,7 +45,7 @@ impl Module for RecentActivityModule {
         let kinds = shown_kinds(ctx.hidden);
         let events = EventRepository::list_recent_activity(ctx.pool, LIMIT, &kinds).await?;
         let template = RecentActivityTemplate {
-            groups: group_by_day(events, ctx.i18n),
+            groups: group_by_day(events, ctx.i18n, |event| &event.created_at),
             i18n: ctx.i18n.clone(),
         };
         render_template(self.id(), &template)

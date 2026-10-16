@@ -5,6 +5,7 @@ mod event_repo;
 mod event_review_repo;
 mod event_template_repo;
 mod icon_repo;
+mod journal_repo;
 mod member_notice_repo;
 mod notification_repo;
 mod outage_repo;
@@ -18,6 +19,7 @@ pub use event_repo::*;
 pub use event_review_repo::*;
 pub use event_template_repo::*;
 pub use icon_repo::*;
+pub use journal_repo::*;
 pub use member_notice_repo::*;
 pub use notification_repo::*;
 pub use outage_repo::*;
@@ -25,3 +27,11 @@ pub use password_reset_repo::*;
 pub use service_repo::*;
 pub use settings_repo::*;
 pub use user_repo::*;
+
+/// A search for `50%` looks for the sign, not for anything.
+pub(crate) fn escape_like(words: &str) -> String {
+    words
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}

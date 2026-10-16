@@ -1,10 +1,13 @@
 //! What every page needs around its content: the masthead, the footer and
 //! the token htmx sends back with its requests.
 
+use std::fmt::Write as _;
+
 use askama::Template;
 use axum::http::HeaderMap;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use chrono::Utc;
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 
 use crate::clock;
 use crate::db::DbPool;
@@ -15,6 +18,19 @@ use crate::models::User;
 use crate::routes::notices::{Bell, bell};
 use crate::services::EventService;
 use crate::state::AppState;
+
+/// The filters that are set, as `name=value&` pairs with the values encoded,
+/// so that a parameter can be appended.
+pub fn query_pairs(pairs: &[(&str, Option<String>)]) -> String {
+    let mut query = String::new();
+    for (name, value) in pairs {
+        if let Some(value) = value {
+            let encoded = utf8_percent_encode(value, NON_ALPHANUMERIC);
+            let _ = write!(query, "{name}={encoded}&");
+        }
+    }
+    query
+}
 
 /// Anonymous visitors read only while the pages are open to everyone; the
 /// others are sent to the sign-in page. A background request is told to

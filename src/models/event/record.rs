@@ -535,27 +535,31 @@ pub struct Countdown {
     pub minutes: i64,
 }
 
-/// Events of one day, in the instance time zone.
-pub struct DayGroup {
+/// The items of one day, in the instance time zone.
+pub struct DayGroup<T> {
     pub label: String,
-    pub events: Vec<EventSummary>,
+    pub items: Vec<T>,
 }
 
-/// Groups events by day, keeping their order. Expects newest first.
-pub fn group_by_day(events: Vec<EventSummary>, i18n: &I18n) -> Vec<DayGroup> {
-    let mut groups: Vec<DayGroup> = Vec::new();
+/// Groups items by day of `at`, keeping their order. Expects newest first.
+pub fn group_by_day<T>(
+    items: Vec<T>,
+    i18n: &I18n,
+    at: impl Fn(&T) -> &DateTime<Utc>,
+) -> Vec<DayGroup<T>> {
+    let mut groups: Vec<DayGroup<T>> = Vec::new();
     let mut current = None;
-    for event in events {
-        let date = clock::local_date(&event.created_at);
+    for item in items {
+        let date = clock::local_date(at(&item));
         if current != Some(date) {
             groups.push(DayGroup {
                 label: i18n.date_label(&date),
-                events: Vec::new(),
+                items: Vec::new(),
             });
             current = Some(date);
         }
         if let Some(last) = groups.last_mut() {
-            last.events.push(event);
+            last.items.push(item);
         }
     }
     groups

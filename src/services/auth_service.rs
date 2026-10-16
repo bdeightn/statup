@@ -89,7 +89,6 @@ impl AuthService {
         Self::check_new_password(password, confirmation)?;
         let hash = Self::hash_password(password).await?;
         UserRepository::update_password(pool, user_id, &hash).await?;
-        tracing::info!(user_id, "Password changed by its owner");
         Ok(hash)
     }
 
@@ -259,35 +258,66 @@ impl AuthService {
         Ok(())
     }
 
-    /// Authenticate an active account by email and password.
+    /// Authenticate an active account by email and password. A refusal is
+    /// returned with its reason, for the caller to journal with the address.
     ///
     /// An unknown account costs a decoy hash, so the response time does not
     /// tell whether the email exists.
-    pub async fn login(pool: &DbPool, email: &str, password: &str) -> Result<User, AppError> {
+    pub async fn login(
+        pool: &DbPool,
+        email: &str,
+        password: &str,
+    ) -> Result<Result<User, SignInRefusal>, AppError> {
         let Some(user) = UserRepository::find_by_email(pool, email.trim()).await? else {
             Self::hash_password(TIMING_DECOY).await?;
-            tracing::warn!("Failed login attempt: unknown account");
-            return Err(invalid_credentials());
+            return Ok(Err(SignInRefusal::UnknownAccount));
         };
 
         if !Self::verify_password(password, &user.password_hash).await? {
-            tracing::warn!(user_id = user.id, "Failed login attempt: wrong password");
-            return Err(invalid_credentials());
+            return Ok(Err(SignInRefusal::WrongPassword(user)));
         }
         if user.must_change_password
             && UserRepository::temporary_password_expired(pool, user.id).await?
         {
-            tracing::info!(
-                user_id = user.id,
-                "Sign-in refused: temporary password expired"
-            );
-            return Err(AppError::validation(
-                "validation.temporary_password_expired",
-            ));
+            return Ok(Err(SignInRefusal::TemporaryPasswordExpired(user)));
         }
+        Ok(Ok(user))
+    }
+}
 
-        tracing::info!(user_id = user.id, "User logged in");
-        Ok(user)
+/// Why a sign-in was turned down.
+#[derive(Debug)]
+pub enum SignInRefusal {
+    UnknownAccount,
+    WrongPassword(User),
+    TemporaryPasswordExpired(User),
+}
+
+impl SignInRefusal {
+    /// The message the person reads. A wrong password and an unknown account
+    /// read the same, so the page does not tell which emails exist.
+    pub fn message_key(&self) -> &'static str {
+        match self {
+            Self::UnknownAccount | Self::WrongPassword(_) => "validation.invalid_credentials",
+            Self::TemporaryPasswordExpired(_) => "validation.temporary_password_expired",
+        }
+    }
+
+    /// The account the attempt was for, when it exists.
+    pub fn account(&self) -> Option<&User> {
+        match self {
+            Self::UnknownAccount => None,
+            Self::WrongPassword(user) | Self::TemporaryPasswordExpired(user) => Some(user),
+        }
+    }
+
+    /// The reason, in English, for the journal.
+    pub fn reason(&self) -> &'static str {
+        match self {
+            Self::UnknownAccount => "unknown account",
+            Self::WrongPassword(_) => "wrong password",
+            Self::TemporaryPasswordExpired(_) => "temporary password expired",
+        }
     }
 }
 
@@ -329,10 +359,6 @@ fn is_domain_label(label: &str) -> bool {
 
 fn email_taken() -> AppError {
     AppError::validation("validation.email_taken")
-}
-
-fn invalid_credentials() -> AppError {
-    AppError::validation("validation.invalid_credentials")
 }
 
 /// The existence check and the insert are two statements: an account
@@ -536,24 +562,27 @@ mod tests {
         let (member, password) = AuthService::add_member(&pool, "m@x.com", "Member", Role::Reader)
             .await
             .unwrap();
-        assert!(
-            AuthService::login(&pool, "m@x.com", &password)
-                .await
-                .is_ok()
-        );
+        assert!(matches!(
+            AuthService::login(&pool, "m@x.com", &password).await,
+            Ok(Ok(_))
+        ));
 
         expire_now(&pool, member.id).await;
         let refused = AuthService::login(&pool, "m@x.com", &password).await;
-        assert!(
-            matches!(refused, Err(AppError::Validation(key)) if key == "validation.temporary_password_expired")
-        );
+        assert!(matches!(
+            refused,
+            Ok(Err(SignInRefusal::TemporaryPasswordExpired(_)))
+        ));
 
         let issued = AuthService::reset_member_password(&pool, member.id)
             .await
             .unwrap()
             .1;
         assert!(
-            AuthService::login(&pool, "m@x.com", &issued).await.is_ok(),
+            matches!(
+                AuthService::login(&pool, "m@x.com", &issued).await,
+                Ok(Ok(_))
+            ),
             "a new one works"
         );
 
@@ -589,20 +618,18 @@ mod tests {
     async fn login_refuses_disabled_accounts() {
         let pool = test_pool().await;
         let user = own_account(&pool, "off@x.com", "Off").await.unwrap();
-        assert!(
-            AuthService::login(&pool, "off@x.com", "a_password_123")
-                .await
-                .is_ok()
-        );
+        assert!(matches!(
+            AuthService::login(&pool, "off@x.com", "a_password_123").await,
+            Ok(Ok(_))
+        ));
 
         UserRepository::set_active(&pool, user.id, false)
             .await
             .unwrap();
 
-        assert!(
-            AuthService::login(&pool, "off@x.com", "a_password_123")
-                .await
-                .is_err()
-        );
+        assert!(matches!(
+            AuthService::login(&pool, "off@x.com", "a_password_123").await,
+            Ok(Err(SignInRefusal::UnknownAccount))
+        ));
     }
 }

@@ -127,6 +127,7 @@ pub struct ServiceCheck {
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct CheckedService {
     pub id: i64,
+    pub name: String,
     #[sqlx(rename = "check_kind")]
     pub kind: CheckKind,
     #[sqlx(rename = "check_target")]

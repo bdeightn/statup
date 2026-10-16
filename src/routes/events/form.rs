@@ -10,12 +10,12 @@ use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
 use crate::models::{
-    Category, CreateEventInput, Event, EventWithServices, Kind, Lifecycle, NextUpdate, SEPARATOR,
-    Service, Severity, UpdateEventInput, User,
+    Category, CreateEventInput, Event, EventWithServices, JournalKind, Kind, Lifecycle, NextUpdate,
+    SEPARATOR, Service, Severity, UpdateEventInput, User,
 };
 use crate::repositories::{
-    CreateTemplateInput, EventRepository, EventTemplateRepository, OutageRepository,
-    ServiceRepository,
+    CreateTemplateInput, EventRepository, EventTemplateRepository, NewJournalEntry,
+    OutageRepository, ServiceRepository,
 };
 use crate::routes::{Frame, render};
 use crate::services::{EventService, EventTemplateService, can_modify, read_next_update};
@@ -483,6 +483,11 @@ pub async fn create(
     };
     match created {
         Ok(event) => {
+            NewJournalEntry::new(JournalKind::EventCreated)
+                .by(&user)
+                .about(&event.title)
+                .record(&state.pool)
+                .await;
             after_create(&state, &user, &input, kind).await;
             Ok(Redirect::to(&format!("/events/{}?published=1", event.id)).into_response())
         }
@@ -514,8 +519,15 @@ async fn after_create(state: &AppState, user: &User, input: &EventInput, kind: K
         category: input.category(kind),
         created_by: user.id,
     };
-    if let Err(e) = EventTemplateService::create(&state.pool, template).await {
-        tracing::warn!(error = %e, "Failed to save event template");
+    match EventTemplateService::create(&state.pool, template).await {
+        Ok(saved) => {
+            NewJournalEntry::new(JournalKind::TemplateSaved)
+                .by(user)
+                .about(&saved.title)
+                .record(&state.pool)
+                .await;
+        }
+        Err(e) => tracing::warn!(error = %e, "Failed to save event template"),
     }
 }
 
@@ -558,8 +570,16 @@ pub async fn update(
         service_ids: input.service_ids.clone(),
         follows_event_id: input.follows_event_id,
     };
+    let title = changes.title.clone();
     match EventService::update(&state.pool, id, changes, user.role).await {
-        Ok(()) => Ok(Redirect::to(&format!("/events/{id}")).into_response()),
+        Ok(()) => {
+            NewJournalEntry::new(JournalKind::EventEdited)
+                .by(&user)
+                .about(&title)
+                .record(&state.pool)
+                .await;
+            Ok(Redirect::to(&format!("/events/{id}")).into_response())
+        }
         Err(AppError::Validation(key)) => {
             let mut form = EventFormData::from_input(input, kind, planned);
             form.start_locked = kind == Kind::Maintenance && event.started_at.is_some();

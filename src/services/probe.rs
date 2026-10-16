@@ -42,6 +42,22 @@ pub struct Report {
     pub elapsed: Duration,
 }
 
+impl Finding {
+    /// Why a check failed, in English, for the journal.
+    pub fn words(self) -> String {
+        match self {
+            Self::Answered { .. } => "answered".into(),
+            Self::Refused => "connection refused".into(),
+            Self::TimedOut => "no answer in time".into(),
+            Self::NameNotFound => "name not found".into(),
+            Self::Certificate => "certificate refused".into(),
+            Self::ServerError(status) => format!("server error {status}"),
+            Self::TooManyRedirects => "too many redirects".into(),
+            Self::Unreachable => "unreachable".into(),
+        }
+    }
+}
+
 impl Report {
     /// Whether the service answered, whatever the reason it did not.
     pub fn outcome(&self) -> Outcome {
@@ -100,12 +116,7 @@ impl Prober for Probes {
             target: service.target.clone(),
             internal_cert: service.internal_cert,
         };
-        let report = self.examine(&check).await;
-        if report.outcome() == Outcome::Failed {
-            // The target stays out of the logs: it may carry a token.
-            tracing::debug!(finding = ?report.finding, detail = report.detail.as_deref(), "Check failed");
-        }
-        report
+        self.examine(&check).await
     }
 }
 
@@ -277,6 +288,7 @@ mod tests {
     fn checked(kind: CheckKind, target: String) -> CheckedService {
         CheckedService {
             id: 1,
+            name: "Intranet".into(),
             kind,
             target,
             internal_cert: false,

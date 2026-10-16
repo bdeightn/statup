@@ -14,7 +14,8 @@ use crate::i18n::{I18n, Locale};
 use crate::middleware::csrf::renew_token;
 use crate::middleware::headers::no_store;
 use crate::middleware::{AuthUser, CsrfToken, HtmlForm};
-use crate::models::User;
+use crate::models::{JournalKind, User};
+use crate::repositories::NewJournalEntry;
 use crate::services::AuthService;
 use crate::session::{rotate_id, stamp_credential};
 use crate::state::AppState;
@@ -128,6 +129,10 @@ pub async fn update(
     );
     match changed.await {
         Ok(hash) => {
+            NewJournalEntry::new(JournalKind::OwnPasswordChanged)
+                .by(&user)
+                .record(&state.pool)
+                .await;
             reopen_session(&session, &hash).await?;
             Ok(Redirect::to("/").into_response())
         }

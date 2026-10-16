@@ -148,7 +148,7 @@ impl ServiceRepository {
     /// The services the checks watch, by id.
     pub async fn list_checked(pool: &DbPool) -> Result<Vec<CheckedService>, sqlx::Error> {
         sqlx::query_as::<_, CheckedService>(
-            "SELECT id, check_kind, check_target, check_internal_cert, detected_status, \
+            "SELECT id, name, check_kind, check_target, check_internal_cert, detected_status, \
                     outage_after_minutes \
              FROM services WHERE check_kind IS NOT NULL ORDER BY id",
         )

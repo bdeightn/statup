@@ -676,6 +676,20 @@
     document.addEventListener("submit", (event) => {
         if (event.target instanceof HTMLFormElement) delete event.target.dataset.unsaved;
     });
+    // A menu closed without saving forgets what was changed in its forms.
+    document.addEventListener(
+        "toggle",
+        (event) => {
+            const menu = event.target;
+            if (!(menu instanceof HTMLDetailsElement) || menu.open) return;
+            if (!menu.hasAttribute("data-more-actions")) return;
+            menu.querySelectorAll("form[data-warn-unsaved]").forEach((form) => {
+                form.reset();
+                delete form.dataset.unsaved;
+            });
+        },
+        true,
+    );
     window.addEventListener("beforeunload", (event) => {
         if (document.querySelector("form[data-warn-unsaved][data-unsaved]")) event.preventDefault();
     });
