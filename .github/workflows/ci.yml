@@ -107,17 +107,43 @@ jobs:
             tests/browser/test-results/
           retention-days: 14
 
+  # Built on each platform the release publishes, on a runner of its kind,
+  # with the same cache as the release: once this has run on main, the
+  # release build finds every layer ready.
   docker:
-    name: Docker image builds
+    name: Docker image builds (${{ matrix.platform }})
     if: ${{ !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+        with:
+          fetch-depth: 0
+      # On main, only when what the image is made from has changed: the pull
+      # request built it already. If the comparison fails, it builds.
+      - id: changes
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if git diff --quiet "$BEFORE" HEAD -- Dockerfile .dockerignore docker-compose.yml Cargo.toml Cargo.lock; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changes.outputs.skip != 'true'
+        uses: docker/setup-buildx-action@v3
+      # Pull requests read the cache of main without writing their own.
+      - if: steps.changes.outputs.skip != 'true'
+        uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: ${{ matrix.platform }}
           push: false
           tags: statup:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.runner }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope={0}', matrix.runner) || '' }}

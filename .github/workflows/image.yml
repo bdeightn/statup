@@ -46,8 +46,9 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          # Written by the CI on main. A tag cannot share what it would write
+          # with the next one, so it only reads.
           cache-from: type=gha,scope=${{ matrix.runner }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.runner }}
       - name: Keep the digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
