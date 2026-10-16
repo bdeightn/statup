@@ -6,7 +6,7 @@ use sqlx::{QueryBuilder, Sqlite};
 
 use crate::clock;
 use crate::db::DbPool;
-use crate::models::JournalKind;
+use crate::models::{JournalEntry, JournalFilters, JournalKind};
 
 /// A line to write; its family and importance follow from its kind.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +62,33 @@ impl JournalRepository {
         Ok(())
     }
 
+    /// One page of lines, newest first.
+    pub async fn list_page(
+        pool: &DbPool,
+        filters: &JournalFilters,
+    ) -> Result<Vec<JournalEntry>, sqlx::Error> {
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT id, kind, category, actor_name, subject, detail, ip, created_at \
+             FROM journal_entries",
+        );
+        push_filters(&mut query, filters);
+        query
+            .push(" ORDER BY created_at DESC, id DESC LIMIT ")
+            .push_bind(filters.limit)
+            .push(" OFFSET ")
+            .push_bind(filters.offset);
+        query.build_query_as().fetch_all(pool).await
+    }
+
+    pub async fn count_filtered(
+        pool: &DbPool,
+        filters: &JournalFilters,
+    ) -> Result<i64, sqlx::Error> {
+        let mut query = QueryBuilder::<Sqlite>::new("SELECT COUNT(*) FROM journal_entries");
+        push_filters(&mut query, filters);
+        query.build_query_scalar().fetch_one(pool).await
+    }
+
     /// Forgets the lines written before `before`.
     pub async fn purge(pool: &DbPool, before: DateTime<Utc>) -> Result<u64, sqlx::Error> {
         let done = sqlx::query("DELETE FROM journal_entries WHERE created_at < ?")
@@ -70,6 +97,41 @@ impl JournalRepository {
             .await?;
         Ok(done.rows_affected())
     }
+}
+
+fn push_filters(query: &mut QueryBuilder<'_, Sqlite>, filters: &JournalFilters) {
+    query.push(" WHERE 1 = 1");
+    if let Some(category) = filters.category {
+        query.push(" AND category = ").push_bind(category);
+    }
+    if let Some(actor_id) = filters.actor_id {
+        query.push(" AND actor_id = ").push_bind(actor_id);
+    }
+    if let Some(from) = filters.from {
+        query.push(" AND created_at >= ").push_bind(clock::db(from));
+    }
+    if let Some(to) = filters.to {
+        query.push(" AND created_at <= ").push_bind(clock::db(to));
+    }
+    if let Some(words) = filters.q.as_deref() {
+        let pattern = format!("%{}%", escape_like(words));
+        query
+            .push(" AND (subject LIKE ")
+            .push_bind(pattern.clone())
+            .push(" ESCAPE '\\' OR detail LIKE ")
+            .push_bind(pattern.clone())
+            .push(" ESCAPE '\\' OR actor_name LIKE ")
+            .push_bind(pattern)
+            .push(" ESCAPE '\\')");
+    }
+}
+
+/// A search for `50%` looks for the sign, not for anything.
+fn escape_like(words: &str) -> String {
+    words
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 #[cfg(test)]
@@ -108,6 +170,52 @@ mod tests {
                 ),
                 ("app_warning".into(), "system".into(), false, None),
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn the_list_is_narrowed_by_family_and_words() {
+        let pool = test_pool().await;
+        let mut locked = NewJournalEntry::new(JournalKind::AppError);
+        locked.subject = Some("Database is locked".into());
+        let mut percent = NewJournalEntry::new(JournalKind::AppWarning);
+        percent.subject = Some("Disk at 95% full".into());
+        JournalRepository::add_all(&pool, &[locked, percent])
+            .await
+            .unwrap();
+        let filters = |q: &str| JournalFilters {
+            q: Some(q.into()),
+            limit: 10,
+            ..JournalFilters::default()
+        };
+
+        let found = JournalRepository::list_page(&pool, &filters("LOCKED"))
+            .await
+            .unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kind, JournalKind::AppError);
+        assert_eq!(
+            JournalRepository::count_filtered(&pool, &filters("5%"))
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            JournalRepository::count_filtered(&pool, &filters("_"))
+                .await
+                .unwrap(),
+            0
+        );
+        let members = JournalFilters {
+            category: Some(crate::models::JournalCategory::Members),
+            limit: 10,
+            ..JournalFilters::default()
+        };
+        assert_eq!(
+            JournalRepository::count_filtered(&pool, &members)
+                .await
+                .unwrap(),
+            0
         );
     }
 

@@ -16,7 +16,13 @@
         border-bottom: 0;
     }
 
-    /* The one save of a card of settings, under its last row. */
+    /* The one save of a card of settings, part of its last row rather
+       than a row of its own. */
+    .set-row:has(+ .set-foot) {
+        padding-bottom: 0;
+        border-bottom: 0;
+    }
+
     .set-foot {
         display: flex;
         justify-content: flex-end;

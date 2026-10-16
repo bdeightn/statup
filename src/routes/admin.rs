@@ -34,6 +34,8 @@ struct SettingsPageTemplate {
     users_count: i64,
     admins_count: i64,
     notifications_count: i64,
+    /// What the journal captures and for how long.
+    journal_label: String,
     /// A newer published version, once the daily check finds one.
     newer: Option<NewerRelease>,
     i18n: I18n,
@@ -272,6 +274,7 @@ async fn render_settings(
         users_count: UserRepository::count_all(&state.pool).await?,
         admins_count: UserRepository::count_admins(&state.pool).await?,
         notifications_count: NotificationRepository::count_channels(&state.pool).await?,
+        journal_label: super::journal::tile_label(state, &i18n).await,
         newer: state.update.newer(),
         i18n,
     })

@@ -7,15 +7,9 @@ use std::time::Duration;
 use chrono::Utc;
 use tokio::task::AbortHandle;
 
-use super::{JournalInbox, TARGET};
+use super::{JournalInbox, TARGET, captures_details, retention_days};
 use crate::db::DbPool;
-use crate::repositories::{JournalRepository, NewJournalEntry, SettingsRepository};
-
-/// How many days a line is kept, unless an administrator chose otherwise.
-pub const DEFAULT_RETENTION_DAYS: i64 = 90;
-
-/// The setting that holds the retention, in days.
-pub const RETENTION_SETTING: &str = "journal_retention_days";
+use crate::repositories::{JournalRepository, NewJournalEntry};
 
 const BATCH: usize = 64;
 const PURGE_INTERVAL: Duration = Duration::from_secs(60 * 60);
@@ -36,6 +30,9 @@ async fn run(pool: DbPool, mut inbox: JournalInbox) {
                         Ok(next) => batch.push(next),
                         Err(_) => break,
                     }
+                }
+                if !captures_details(&pool).await {
+                    batch.retain(|entry| entry.kind.is_essential());
                 }
                 write(&pool, &batch).await;
                 report_dropped(&inbox);
@@ -68,14 +65,4 @@ async fn forget_old(pool: &DbPool) {
         }
         Err(error) => tracing::warn!(target: TARGET, %error, "Old journal lines not forgotten"),
     }
-}
-
-/// The retention chosen on the Journal page, or the default.
-async fn retention_days(pool: &DbPool) -> i64 {
-    SettingsRepository::get(pool, RETENTION_SETTING)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(DEFAULT_RETENTION_DAYS)
 }

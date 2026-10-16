@@ -8,12 +8,15 @@
 mod layer;
 mod writer;
 
+use std::ops::RangeInclusive;
+
 use crate::db::DbPool;
+use crate::error::AppError;
 use crate::models::User;
-use crate::repositories::{JournalRepository, NewJournalEntry};
+use crate::repositories::{JournalRepository, NewJournalEntry, SettingsRepository};
 
 pub use layer::{JournalInbox, JournalLayer, journal_layer};
-pub use writer::{DEFAULT_RETENTION_DAYS, RETENTION_SETTING, spawn_journal_writer};
+pub use writer::spawn_journal_writer;
 
 /// The target of the lines [`record`] writes to the server output, which
 /// [`JournalLayer`] leaves alone so that nothing is kept twice.
@@ -21,6 +24,49 @@ pub const TARGET: &str = "statup::journal";
 
 /// A detail longer than this is cut.
 const DETAIL_LIMIT: usize = 1000;
+
+/// Whether every line is kept, or only the large changes and the problems.
+const DETAILED_SETTING: &str = "journal_detailed";
+
+/// How many days a line is kept.
+const RETENTION_SETTING: &str = "journal_retention_days";
+pub const DEFAULT_RETENTION_DAYS: i64 = 90;
+pub const RETENTION_RANGE: RangeInclusive<i64> = 1..=365;
+
+/// Whether an administrator asked for every line, not only the essential
+/// ones. Read at each line, so a change applies at once.
+pub async fn captures_details(pool: &DbPool) -> bool {
+    matches!(
+        SettingsRepository::get(pool, DETAILED_SETTING).await,
+        Ok(Some(value)) if value == "true"
+    )
+}
+
+/// How many days the lines are kept.
+pub async fn retention_days(pool: &DbPool) -> i64 {
+    SettingsRepository::get(pool, RETENTION_SETTING)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|value| value.parse().ok())
+        .filter(|days| RETENTION_RANGE.contains(days))
+        .unwrap_or(DEFAULT_RETENTION_DAYS)
+}
+
+/// Saves what the journal captures and how long it keeps it.
+pub async fn save_settings(pool: &DbPool, detailed: bool, days: i64) -> Result<(), AppError> {
+    if !RETENTION_RANGE.contains(&days) {
+        return Err(AppError::validation("validation.journal_retention_range"));
+    }
+    SettingsRepository::set(
+        pool,
+        DETAILED_SETTING,
+        if detailed { "true" } else { "false" },
+    )
+    .await?;
+    SettingsRepository::set(pool, RETENTION_SETTING, &days.to_string()).await?;
+    Ok(())
+}
 
 impl NewJournalEntry {
     /// The member who did it, named as they were at the time.
@@ -56,6 +102,9 @@ impl NewJournalEntry {
 /// Writes a line to the server output and keeps it for the Journal page.
 /// A line that cannot be kept never fails the action it records.
 pub async fn record(pool: &DbPool, mut entry: NewJournalEntry) {
+    if !entry.kind.is_essential() && !captures_details(pool).await {
+        return;
+    }
     entry.detail = entry.detail.as_deref().map(scrub);
     write_line(&entry);
     if let Err(error) = JournalRepository::add(pool, &entry).await {
@@ -162,6 +211,33 @@ mod tests {
         let cut = scrub(&long);
         assert_eq!(cut.chars().count(), DETAIL_LIMIT + 1);
         assert!(cut.ends_with('…'));
+    }
+
+    #[tokio::test]
+    async fn a_minor_line_waits_for_the_detailed_capture() {
+        let pool = test_pool().await;
+        let count = || async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM journal_entries")
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        };
+
+        record(&pool, NewJournalEntry::new(JournalKind::AppWarning)).await;
+        assert_eq!(count().await, 0);
+
+        save_settings(&pool, true, 30).await.unwrap();
+        record(&pool, NewJournalEntry::new(JournalKind::AppWarning)).await;
+        assert_eq!(count().await, 1);
+        assert_eq!(retention_days(&pool).await, 30);
+    }
+
+    #[tokio::test]
+    async fn a_retention_outside_its_range_is_refused() {
+        let pool = test_pool().await;
+        assert!(save_settings(&pool, false, 0).await.is_err());
+        assert!(save_settings(&pool, false, 366).await.is_err());
+        assert_eq!(retention_days(&pool).await, DEFAULT_RETENTION_DAYS);
     }
 
     #[tokio::test]

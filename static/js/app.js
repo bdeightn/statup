@@ -676,6 +676,20 @@
     document.addEventListener("submit", (event) => {
         if (event.target instanceof HTMLFormElement) delete event.target.dataset.unsaved;
     });
+    // A settings panel closed without saving forgets what was changed.
+    document.addEventListener(
+        "toggle",
+        (event) => {
+            const panel = event.target;
+            if (!(panel instanceof HTMLDetailsElement) || panel.open) return;
+            if (!panel.hasAttribute("data-reset-on-close")) return;
+            const form = panel.querySelector("form");
+            if (!form) return;
+            form.reset();
+            delete form.dataset.unsaved;
+        },
+        true,
+    );
     window.addEventListener("beforeunload", (event) => {
         if (document.querySelector("form[data-warn-unsaved][data-unsaved]")) event.preventDefault();
     });

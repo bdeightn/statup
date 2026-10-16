@@ -820,6 +820,195 @@
         color: var(--muted);
     }
 
+    /* What the journal keeps, one grey line beside the title. */
+    .journal-summary {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: var(--text-sm);
+        color: var(--muted);
+    }
+
+    .journal-edit {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        color: var(--ink);
+        cursor: pointer;
+    }
+
+    .journal-edit:hover,
+    .journal-menu[open] > .journal-edit {
+        text-decoration: underline;
+        text-decoration-color: var(--line-strong);
+        text-underline-offset: 3px;
+    }
+
+    /* Its settings, in a panel over the page: one left edge for the
+       headings, the checks and the days, 16px all around, the save across
+       the foot. */
+    .journal-menu > .journal-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        width: 300px;
+        padding: 16px;
+        color: var(--ink);
+    }
+
+    .journal-panel-label {
+        margin: 0 0 8px;
+        font-size: var(--text-xs);
+        font-weight: 500;
+        color: var(--muted);
+    }
+
+    .journal-options {
+        display: grid;
+        gap: 2px;
+        margin: 0 -8px;
+    }
+
+    .journal-option {
+        display: grid;
+        grid-template-columns: 16px minmax(0, 1fr);
+        column-gap: 8px;
+        padding: 8px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .journal-option:hover {
+        background: var(--hover);
+    }
+
+    .journal-option:has(:focus-visible) {
+        outline: 2px solid var(--focus);
+        outline-offset: -2px;
+    }
+
+    /* The choice in force carries the check, as a menu marks its item. */
+    .journal-option::before {
+        content: "";
+        grid-row: 1;
+        align-self: center;
+        width: 10px;
+        height: 6px;
+        border-bottom: 2px solid currentColor;
+        border-left: 2px solid currentColor;
+        transform: translateY(-2px) rotate(-45deg);
+        opacity: 0;
+    }
+
+    .journal-option:has(:checked)::before {
+        opacity: 1;
+    }
+
+    .journal-option-name {
+        grid-column: 2;
+        font-size: var(--text-sm);
+        font-weight: 600;
+    }
+
+    .journal-option-text {
+        grid-column: 2;
+        font-size: var(--text-xs);
+        color: var(--muted);
+    }
+
+    /* The days on one line, as a settings row: the word at the left,
+       the value at the right, its number typed in place. */
+    .journal-menu .journal-retention {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 16px -16px 0;
+        padding: 16px 16px 0;
+        font-size: var(--text-sm);
+        border-top: 1px solid var(--line);
+    }
+
+    .journal-days {
+        color: var(--muted);
+    }
+
+    /* A number typed in a line of text: no box, a dotted underline that
+       turns solid while it is typed. */
+    .inline-number {
+        width: 3.5ch;
+        padding: 0 2px;
+        font: inherit;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+        color: var(--ink);
+        background: none;
+        border: 0;
+        border-bottom: 1px dashed var(--edge-input);
+        border-radius: 0;
+        transition: border-color 150ms ease, background-color 150ms ease;
+    }
+
+    .inline-number:hover {
+        border-bottom-color: var(--focus);
+    }
+
+    .inline-number:focus {
+        outline: none;
+        background: var(--hover);
+        border-bottom: 1px solid var(--focus);
+    }
+
+    .inline-number[aria-invalid="true"] {
+        border-bottom-color: var(--sem-crit-text);
+    }
+
+    .journal-save {
+        width: 100%;
+        margin-top: 16px;
+    }
+
+    .journal-panel > .field-error {
+        margin: 0 0 12px;
+    }
+
+    /* On a phone the line sits under the title, at the left: the panel
+       opens from its start rather than from "Change". */
+    @media (max-width: 639px) {
+        .journal-summary {
+            position: relative;
+        }
+
+        .journal-summary > .journal-menu {
+            position: static;
+        }
+
+        .journal-menu > .journal-panel {
+            right: auto;
+            left: 0;
+            max-width: calc(100vw - 32px);
+        }
+    }
+
+    /* A journal line is read, not opened: no hover, and its facts wrap
+       under the sentence in plain text. */
+    .journal-row:hover {
+        background: none;
+    }
+
+    .journal-row:hover .log-title {
+        text-decoration: none;
+    }
+
+    .journal-facts {
+        display: block;
+        margin-top: 4px;
+        font-size: var(--text-sm);
+        color: var(--muted);
+        overflow-wrap: anywhere;
+    }
+
     .search-hit {
         font-weight: 700;
         color: inherit;

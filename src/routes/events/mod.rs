@@ -20,7 +20,7 @@ pub use updates::{add_update, add_update_in_panel, delete, delete_update, revert
 
 /// A field left blank means none. A filled one is read as text, or as a
 /// number when the field holds one, since a form sends everything as text.
-fn deserialize_blank_as_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+pub(crate) fn deserialize_blank_as_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,

@@ -1,0 +1,115 @@
+{% extends "_layout.html" %}
+{% import "components/macros.html" as ui %}
+
+{% block title %}{{ i18n.t("journal.title") }} | {{ crate::brand_name() }}{% endblock %}
+{% block section %}admin{% endblock %}
+
+{% block htmx %}{% include "components/htmx.html" %}{% endblock %}
+
+{% block scripts %}
+<script src="{{ crate::asset("js/custom-select.js") }}" defer></script>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+    <header class="page-head">
+        <div>
+            <a href="/admin/settings" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("admin.back_to_settings") }}</a>
+            <h1 class="page-title">{{ i18n.t("journal.title") }}</h1>
+        </div>
+        {# What the journal keeps, said in one grey line; its settings
+           fold under "Change", in a panel over the page. #}
+        <div class="journal-summary">
+            <span>{{ capture.summary }}&nbsp;<span aria-hidden="true">·</span> {{ capture.kept }}&nbsp;<span aria-hidden="true">·</span></span>
+            <details class="more-actions journal-menu" data-more-actions data-reset-on-close{% if capture.open %} open{% endif %}>
+                <summary class="journal-edit">{{ i18n.t("journal.edit") }}{% call ui::caret_icon() %}{% endcall %}</summary>
+                <form class="more-actions-menu journal-panel" method="post" action="/admin/journal/settings" data-warn-unsaved>
+                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                    {% if let Some(message) = capture.error %}
+                    <p id="form-error" class="field-error" role="alert">{{ message }}</p>
+                    {% endif %}
+                    <p id="capture-label" class="journal-panel-label">{{ i18n.t("journal.capture") }}</p>
+                    <div class="journal-options" role="radiogroup" aria-labelledby="capture-label">
+                        <label class="journal-option">
+                            <input type="radio" name="capture" value="essential" class="sr-only"{% if !capture.detailed %} checked{% endif %}>
+                            <span class="journal-option-name">{{ i18n.t("journal.capture_essential") }}</span>
+                            <span class="journal-option-text">{{ i18n.t("journal.essential_text") }}</span>
+                        </label>
+                        <label class="journal-option">
+                            <input type="radio" name="capture" value="detailed" class="sr-only"{% if capture.detailed %} checked{% endif %}>
+                            <span class="journal-option-name">{{ i18n.t("journal.capture_detailed") }}</span>
+                            <span class="journal-option-text">{{ i18n.t("journal.detailed_text") }}</span>
+                        </label>
+                    </div>
+                    <label class="journal-retention">
+                        <span>{{ i18n.t("journal.retention") }}</span>
+                        <span class="journal-days">
+                            <input name="retention_days" type="text" class="inline-number" inputmode="numeric" autocomplete="off" maxlength="3"
+                                   value="{{ capture.retention_days }}" placeholder="{{ crate::journal::DEFAULT_RETENTION_DAYS }}"
+                                   {% if capture.error.is_some() %}aria-invalid="true" aria-describedby="form-error"{% endif %}>
+                            {{ i18n.t("journal.retention_unit") }}
+                        </span>
+                    </label>
+                    <button type="submit" class="btn btn-primary journal-save">{{ i18n.t("common.save") }}</button>
+                </form>
+            </details>
+        </div>
+    </header>
+
+    {% if capture.saved %}
+    <div class="form-notice mb-5" role="status"><p>{{ i18n.t("journal.saved") }}</p></div>
+    {% endif %}
+
+    {% if results.total > 0 || results.has_filters %}
+    <form class="filters" role="search" method="get" action="/admin/journal"
+          hx-get="/admin/journal" hx-target="#journal-results" hx-swap="innerHTML" hx-push-url="true" hx-sync="this:replace"
+          hx-trigger="submit, change, input changed delay:400ms from:#q, search from:#q"
+          data-results-live="#journal-live">
+        <div class="field filters-search">
+            <label for="q" class="field-label">{{ i18n.t("journal.search") }}</label>
+            <input id="q" name="q" type="search" class="input" autocomplete="off"
+                   value="{{ query.query().unwrap_or_default() }}"
+                   placeholder="{{ i18n.t("journal.search_placeholder") }}">
+        </div>
+        <button type="button" class="btn btn-ghost filters-toggle" data-filters-toggle aria-expanded="{{ self.refinements() > 0 }}" aria-controls="filters-more">
+            {{ i18n.t("events.filters") }}
+            <span class="unread filters-count" data-filters-count{% if self.refinements() == 0 %} hidden{% endif %}>{{ self.refinements() }}</span>
+        </button>
+        <div id="filters-more" class="filters-more{% if self.refinements() > 0 %} is-open{% endif %}">
+        <div class="field">
+            <label for="category" class="field-label">{{ i18n.t("journal.category") }}</label>
+            <select id="category" name="category" class="input" data-custom-select>
+                <option value="">{{ i18n.t("common.all") }}</option>
+                {% for (value, label) in self.categories() %}
+                <option value="{{ value }}"{% if self.category_is(value) %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field filters-service">
+            <label for="actor_id" class="field-label">{{ i18n.t("journal.member") }}</label>
+            <select id="actor_id" name="actor_id" class="input" data-custom-select>
+                <option value="">{{ i18n.t("common.all") }}</option>
+                {% for member in members %}
+                <option value="{{ member.id }}"{% if self.member_is(member.id) %} selected{% endif %}>{{ member.display_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="from" class="field-label">{{ i18n.t("events.from") }}</label>
+            <input id="from" name="from" type="date" class="input" value="{{ query.from.as_deref().unwrap_or_default() }}">
+        </div>
+        <div class="field">
+            <label for="to" class="field-label">{{ i18n.t("events.to") }}</label>
+            <input id="to" name="to" type="date" class="input" value="{{ query.to.as_deref().unwrap_or_default() }}">
+        </div>
+        </div>
+        <noscript><button type="submit" class="btn btn-ghost">{{ i18n.t("common.filter") }}</button></noscript>
+    </form>
+    <p id="journal-live" class="sr-only" role="status"></p>
+    {% endif %}
+
+    <div id="journal-results" class="swap-fade">
+        {% include "admin/_journal_results.html" %}
+    </div>
+</div>
+{% endblock %}
