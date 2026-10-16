@@ -423,6 +423,37 @@ async fn a_disabled_accounts_email_is_still_taken() {
 }
 
 #[tokio::test]
+async fn only_an_admin_opens_arranging_from_the_dashboard() {
+    let (app, _admin_id) = spawn_with_admin().await;
+    let (status, body) = app.get("/").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        body.contains("data-arrange-toggle"),
+        "the title row offers the way into arranging"
+    );
+
+    let app = TestApp::spawn().await;
+    app.create_user(
+        "pub@test.com",
+        "publisher_pass_12",
+        "Publisher",
+        Role::Publisher,
+    )
+    .await;
+    app.login("pub@test.com", "publisher_pass_12").await;
+    let (status, body) = app.get("/").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!body.contains("data-arrange-toggle"), "not for an editor");
+
+    let app = TestApp::spawn().await;
+    app.reader("reader@test.com", "Reader").await;
+    app.login("reader@test.com", "reader_password_12").await;
+    let (status, body) = app.get("/").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!body.contains("data-arrange-toggle"), "not for a reader");
+}
+
+#[tokio::test]
 async fn arrange_mode_draws_handles_and_widths_and_keeps_a_width() {
     let (app, _admin_id) = spawn_with_admin().await;
 

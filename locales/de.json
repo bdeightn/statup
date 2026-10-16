@@ -131,6 +131,8 @@
   "dashboard.activity": "Letzte Aktivität",
   "dashboard.arrange": "Blöcke anordnen",
   "dashboard.arrange_done": "Fertig",
+  "dashboard.arrange_open": "Anordnen",
+  "dashboard.arrange_opened": "Anordnungsmodus aktiv.",
   "dashboard.width_of": "Breite von",
   "dashboard.width_narrow": "Ein Viertel",
   "dashboard.width_wide": "Die Hälfte",

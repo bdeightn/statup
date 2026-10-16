@@ -131,6 +131,8 @@
   "dashboard.activity": "Recent activity",
   "dashboard.arrange": "Arrange the blocks",
   "dashboard.arrange_done": "Done",
+  "dashboard.arrange_open": "Arrange",
+  "dashboard.arrange_opened": "Arrange mode on.",
   "dashboard.width_of": "Width of",
   "dashboard.width_narrow": "A quarter",
   "dashboard.width_wide": "Half",

@@ -304,25 +304,16 @@
         }
     }
 
-    .dash-tools {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px 12px;
-        margin-bottom: 20px;
-    }
-
-    .dash-tools[hidden] {
+    /* The buttons the arrange mode sets aside, and Done while it is open. */
+    .page-actions > [hidden] {
         display: none;
     }
 
-    .arrange-bar {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 8px 16px;
-        margin-left: auto;
+    /* A phone stacks every block on one column: nothing to arrange there. */
+    @media (max-width: 767px) {
+        .page-actions .arrange-open {
+            display: none;
+        }
     }
 
     /* Arranging: the whole card is picked up, its content set aside, its

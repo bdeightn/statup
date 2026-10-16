@@ -131,6 +131,8 @@
   "dashboard.activity": "Activité récente",
   "dashboard.arrange": "Organiser les blocs",
   "dashboard.arrange_done": "Terminer",
+  "dashboard.arrange_open": "Organiser",
+  "dashboard.arrange_opened": "Mode organisation ouvert.",
   "dashboard.width_of": "Taille de",
   "dashboard.width_narrow": "Un quart",
   "dashboard.width_wide": "La moitié",
