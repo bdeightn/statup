@@ -17,7 +17,7 @@ use super::{ServiceService, notify_later, tell_outage_detected};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::journal;
-use crate::models::{CheckedService, Happening, JournalKind, Notification};
+use crate::models::{CheckKind, CheckedService, Happening, JournalKind, Notification};
 use crate::repositories::{EventRepository, NewJournalEntry, ServiceRepository};
 
 const ROUND_INTERVAL: Duration = Duration::from_secs(60);
@@ -207,13 +207,26 @@ impl Checked<'_> {
     /// What the journal says about this check: the address, without what
     /// follows the host, then why it failed and how many times in a row.
     fn detail(&self, failures: u8) -> String {
-        let mut parts = vec![self.service.target.clone()];
+        let mut parts = vec![self.place()];
         if self.observation.outcome == Outcome::Failed {
             parts.push(self.report.finding.words());
             parts.extend(self.report.detail.clone());
             parts.push(format!("{failures} failed in a row"));
         }
         parts.join(" · ")
+    }
+
+    /// Where the check goes. A web address keeps only its origin, read by
+    /// the URL parser rather than by searching the text: whatever follows
+    /// the host can hold a key, in any form the address takes.
+    fn place(&self) -> String {
+        match self.service.kind {
+            CheckKind::Tcp => self.service.target.clone(),
+            CheckKind::Http => match reqwest::Url::parse(&self.service.target) {
+                Ok(url) => format!("{}/…", url.origin().ascii_serialization()),
+                Err(_) => String::new(),
+            },
+        }
     }
 
     async fn record(&self, pool: &DbPool, kind: JournalKind, failures: u8, detailed: bool) {
@@ -460,6 +473,31 @@ mod tests {
                 .iter()
                 .all(|(_, _, detail)| !detail.contains("SECRET"))
         );
+    }
+
+    #[tokio::test]
+    async fn an_awkward_address_still_loses_what_follows_its_host() {
+        let pool = test_pool().await;
+        let id = checked_service(&pool, "Intranet").await;
+        let check = ServiceCheck {
+            kind: CheckKind::Http,
+            target: "https://intranet.example/a b)?key=SECRET".to_string(),
+            internal_cert: false,
+        };
+        ServiceRepository::set_check(&pool, id, Some(&check))
+            .await
+            .unwrap();
+        let mut state = MonitorState::default();
+
+        rounds(&pool, &mut state, Outcome::Failed, &[0, 1, 2]).await;
+
+        let details: Vec<String> = sqlx::query_scalar("SELECT detail FROM journal_entries")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_ne!(details, Vec::<String>::new());
+        assert!(details.iter().all(|detail| !detail.contains("SECRET")));
+        assert!(details[0].starts_with("https://intranet.example/… · "));
     }
 
     async fn rounds(pool: &DbPool, state: &mut MonitorState, outcome: Outcome, minutes: &[i64]) {
