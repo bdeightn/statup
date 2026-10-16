@@ -12,7 +12,7 @@ use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, OptionalUser};
 use crate::models::{Event, EventReview, Kind, Lifecycle, Service, ServiceTag, User, delay_text};
-use crate::repositories::{EventRepository, EventReviewRepository};
+use crate::repositories::{EventRepository, EventReviewRepository, ServiceRepository};
 use crate::routes::timeline::{self, TimelineEntry};
 use crate::routes::{Frame, members_only, render};
 use crate::services::{EventService, can_modify, can_review, sanitize_markdown};
@@ -129,6 +129,10 @@ pub(super) struct DrawerTemplate {
     transitions: Vec<TransitionOption>,
     /// Undoing a step is offered on the event's page only.
     revert_label: Option<String>,
+    /// The next step after the event, done on its page.
+    follow_up: FollowUp,
+    /// The service whose panel this one was opened from, to go back to.
+    back_to: Option<(i64, String)>,
     composer: Composer,
     i18n: I18n,
 }
@@ -350,6 +354,13 @@ pub async fn detail(
     })
 }
 
+impl DrawerTemplate {
+    /// "Back to Mail", the link's name for screen readers.
+    fn back_label(&self, service: &str) -> String {
+        self.i18n.tf("events.back_to_service", &[("name", service)])
+    }
+}
+
 /// The event's page, with what the author had typed in the form that was
 /// refused, `composer` or `review_form`.
 pub(super) async fn detail_page(
@@ -401,6 +412,8 @@ pub(super) async fn drawer_page(
     Ok(DrawerTemplate {
         transitions: transition_options(&view.event, composer.lifecycle, &i18n),
         revert_label: None,
+        follow_up: FollowUp::of(&view.event, user),
+        back_to: None,
         can_edit,
         csrf_token,
         view,
@@ -409,10 +422,17 @@ pub(super) async fn drawer_page(
     })
 }
 
+#[derive(Deserialize)]
+pub struct DrawerQuery {
+    /// The service whose panel the event was opened from.
+    service: Option<i64>,
+}
+
 pub async fn drawer_content(
     OptionalUser(user): OptionalUser,
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    Query(query): Query<DrawerQuery>,
     headers: HeaderMap,
     csrf_token: CsrfToken,
     Locale(i18n): Locale,
@@ -420,7 +440,7 @@ pub async fn drawer_content(
     if let Some(redirect) = members_only(&state, user.as_ref(), &headers) {
         return Ok(redirect);
     }
-    let page = drawer_page(
+    let mut page = drawer_page(
         &state,
         id,
         user.as_ref(),
@@ -429,5 +449,10 @@ pub async fn drawer_content(
         Composer::default(),
     )
     .await?;
+    if let Some(service_id) = query.service {
+        page.back_to = ServiceRepository::find_by_id(&state.pool, service_id)
+            .await?
+            .map(|service| (service.id, service.name));
+    }
     render(&page)
 }

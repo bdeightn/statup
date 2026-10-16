@@ -216,6 +216,7 @@
   "events.no_match_text": "Pruebe con otra palabra o quite un filtro.",
   "events.clear_filters": "Quitar los filtros",
   "events.back_to_events": "Todos los eventos",
+  "events.back_to_service": "Volver a {name}",
   "events.back_to_event": "Volver al evento",
   "events.details_label": "Detalle del evento",
   "events.drawer_error": "No se pudo cargar el detalle.",

@@ -216,6 +216,7 @@
   "events.no_match_text": "Versuchen Sie ein anderes Wort oder entfernen Sie einen Filter.",
   "events.clear_filters": "Filter zurücksetzen",
   "events.back_to_events": "Alle Ereignisse",
+  "events.back_to_service": "Zurück zu {name}",
   "events.back_to_event": "Zurück zum Ereignis",
   "events.details_label": "Details zum Ereignis",
   "events.drawer_error": "Die Details konnten nicht geladen werden.",

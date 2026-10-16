@@ -35,7 +35,7 @@
         <ul class="log-list">
             {% for event in events %}
             <li>
-                <a class="log-row{% if event.is_current() %} log-row-open{% else %} log-row-closed{% endif %}" href="/events/{{ event.id }}" data-drawer="/events/{{ event.id }}/drawer">
+                <a class="log-row{% if event.is_current() %} log-row-open{% else %} log-row-closed{% endif %}" href="/events/{{ event.id }}" data-drawer="/events/{{ event.id }}/drawer?service={{ row.service.id }}">
                     <span class="log-time">{{ self.event_day(event) }}</span>
                     <span class="log-body">
                         <span class="log-head">

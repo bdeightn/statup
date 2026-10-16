@@ -8,6 +8,7 @@ All notable changes to Statup are listed here. The project is pre-v1: until 1.0,
 - Each action has one way in and one name: the settings no longer repeat "Arrange the blocks", the icons page opens from the Services page (where editors, who may use it, can reach it), the page that sends to Teams, Slack or email is called "Alerts" and each of its entries a "channel", so "Notifications" now only means the bell, and adding a service reads "New service" everywhere. An event's progress is called "Progress" on every screen, and its side panel links to "Open the page".
 - A saved event template can be removed from the "Start from a template" menu. A closed event tells editors that only an administrator may still change it, and a service with events says why it cannot be deleted. Texts that name a settings page now link to it.
 - The general settings (instance name, logo, time zone, who can see the page) are saved together with one "Save" button, and leaving the page with unsaved changes asks first; choosing "Everyone" no longer opens the page on a single click.
+- An event opened from a service's side panel leads back to that service, and the side panel of an event offers the step that follows it ("Write the report" once an incident is resolved, "Publish what's new" after a maintenance), taken on the event's page.
 - Fixed: an update posted from an event's own page now confirms it is published, as a new event already did.
 
 ## 0.5.0, 2026-10-14

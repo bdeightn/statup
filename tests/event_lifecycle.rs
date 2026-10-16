@@ -2245,6 +2245,49 @@ async fn publishing_from_a_template_counts_its_usage() {
 }
 
 #[tokio::test]
+async fn an_event_panel_opened_from_a_service_leads_back_to_it() {
+    let app = TestApp::spawn().await;
+    app.setup_publisher().await;
+    let service_id = app.create_service("Mail").await;
+    let path = app
+        .create_incident("Mail is slow", "Queue backlog", "minor", &[service_id])
+        .await;
+    let event_id = event_id_from_path(&path);
+
+    let (_, panel) = app.get(&format!("/services/{service_id}/drawer")).await;
+    assert!(
+        panel.contains(&format!("/events/{event_id}/drawer?service={service_id}")),
+        "an event opens from its service's panel knowing where it came from"
+    );
+
+    let (_, panel) = app
+        .get(&format!("/events/{event_id}/drawer?service={service_id}"))
+        .await;
+    assert!(
+        panel.contains(&format!(r#"data-drawer="/services/{service_id}/drawer""#)),
+        "the event's panel leads back to the service"
+    );
+    assert!(panel.contains("Revenir à Mail"));
+
+    let (_, panel) = app.get(&format!("/events/{event_id}/drawer")).await;
+    assert!(
+        !panel.contains(r#"class="back-link""#),
+        "opened from elsewhere, there is nothing to go back to"
+    );
+
+    app.post_form_with_header_csrf(
+        &format!("/events/{event_id}/updates"),
+        &[("lifecycle", "resolved"), ("message", "Queue drained")],
+    )
+    .await;
+    let (_, panel) = app.get(&format!("/events/{event_id}/drawer")).await;
+    assert!(
+        panel.contains(&format!(r#"href="/events/{event_id}#review""#)),
+        "a resolved incident's panel offers its report, written on its page"
+    );
+}
+
+#[tokio::test]
 async fn a_template_is_removed_from_the_menu_of_a_new_event() {
     let app = TestApp::spawn().await;
     app.setup_publisher().await;

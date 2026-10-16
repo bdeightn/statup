@@ -1,12 +1,26 @@
 {% import "components/macros.html" as ui %}
 <div class="drawer-body">
+    {% if let Some((service_id, service_name)) = back_to %}
+    <a class="back-link" href="/events?service_id={{ service_id }}" data-drawer="/services/{{ service_id }}/drawer" aria-label="{{ self.back_label(service_name) }}">{% call ui::arrow_left() %}{% endcall %}{{ service_name }}</a>
+    {% endif %}
     <h2 id="drawer-title" class="drawer-title">{{ view.event.title }}</h2>
     {% let facts_csrf = csrf_token.as_str() %}
     {% include "events/_facts.html" %}
 
     <div class="drawer-actions">
+        {# The step after the event is taken on its page. #}
+        {% if follow_up.is_changelog() %}
+        <a href="/events/new?kind=publication&amp;after={{ view.event.id }}" class="btn btn-primary">{{ i18n.t("events.publish_changelog") }}</a>
+        {% endif %}
+        {% if follow_up.is_review() %}
+        {% if view.review.is_some() %}
+        <a href="/events/{{ view.event.id }}#review" class="btn btn-ghost">{{ i18n.t("events.edit_review") }}</a>
+        {% else %}
+        <a href="/events/{{ view.event.id }}#review" class="btn btn-primary">{{ i18n.t("events.write_review") }}</a>
+        {% endif %}
+        {% endif %}
         {% if can_edit %}
-        <button type="button" class="btn btn-primary" aria-controls="panel-composer" aria-expanded="{{ composer.error.is_some() }}" data-composer-toggle>{{ i18n.t("events.publish_update") }}</button>
+        <button type="button" class="btn {% if follow_up != FollowUp::None %}btn-ghost{% else %}btn-primary{% endif %}" aria-controls="panel-composer" aria-expanded="{{ composer.error.is_some() }}" data-composer-toggle>{{ i18n.t("events.publish_update") }}</button>
         {% endif %}
         <a class="hero-link" href="/events/{{ view.event.id }}">{{ i18n.t("events.open_full_page") }}{% call ui::arrow_right() %}{% endcall %}</a>
     </div>
