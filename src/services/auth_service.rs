@@ -89,7 +89,6 @@ impl AuthService {
         Self::check_new_password(password, confirmation)?;
         let hash = Self::hash_password(password).await?;
         UserRepository::update_password(pool, user_id, &hash).await?;
-        tracing::info!(user_id, "Password changed by its owner");
         Ok(hash)
     }
 

@@ -33,20 +33,156 @@ pub enum JournalKind {
     AppError,
     /// A warning the app logged.
     AppWarning,
+    /// A member added a service.
+    ServiceCreated,
+    /// A member changed a service.
+    ServiceUpdated,
+    /// A member deleted a service.
+    ServiceDeleted,
+    /// A member set the status of a service.
+    ServiceStatusSet,
+    /// A member changed the order of the services.
+    ServicesReordered,
+    /// A member turned the problems-first order on or off.
+    ProblemsFirstChanged,
+    /// A member saved the general settings.
+    SettingsSaved,
+    /// A member removed the logo.
+    LogoRemoved,
+    /// A member changed what the journal keeps.
+    JournalSettingsSaved,
+    /// A member changed the address of the page used in alerts.
+    PageAddressSaved,
+    /// A member added an alert channel.
+    ChannelCreated,
+    /// A member changed an alert channel.
+    ChannelUpdated,
+    /// A member deleted an alert channel.
+    ChannelDeleted,
+    /// A member tried an alert channel.
+    ChannelTested,
+    /// A member added someone to the team.
+    MemberAdded,
+    /// A member changed the role of someone.
+    MemberRoleChanged,
+    /// A member disabled an account.
+    MemberDisabled,
+    /// A member enabled an account again.
+    MemberEnabled,
+    /// A member gave someone a temporary password.
+    MemberPasswordReset,
+    /// A member published an event.
+    EventCreated,
+    /// A member edited an event.
+    EventEdited,
+    /// A member posted news on an event.
+    EventUpdatePosted,
+    /// A member removed an update of an event.
+    EventUpdateDeleted,
+    /// A member reopened an event.
+    EventReverted,
+    /// A member deleted an event.
+    EventDeleted,
+    /// A member published the review of an incident.
+    ReviewPublished,
+    /// A member removed the review of an incident.
+    ReviewRemoved,
+    /// A member saved an event template.
+    TemplateSaved,
+    /// A member deleted an event template.
+    TemplateDeleted,
+    /// A member added an icon.
+    IconUploaded,
+    /// A member deleted an icon.
+    IconDeleted,
+    /// A member arranged the dashboard.
+    DashboardArranged,
+    /// A member changed their profile.
+    ProfileUpdated,
+    /// A member changed their own password.
+    OwnPasswordChanged,
 }
 
 impl JournalKind {
     pub fn category(self) -> JournalCategory {
         match self {
             Self::AppError | Self::AppWarning => JournalCategory::System,
+            Self::ServiceCreated
+            | Self::ServiceUpdated
+            | Self::ServiceDeleted
+            | Self::ServiceStatusSet
+            | Self::ServicesReordered
+            | Self::ProblemsFirstChanged
+            | Self::SettingsSaved
+            | Self::LogoRemoved
+            | Self::JournalSettingsSaved
+            | Self::PageAddressSaved
+            | Self::ChannelCreated
+            | Self::ChannelUpdated
+            | Self::ChannelDeleted
+            | Self::ChannelTested
+            | Self::MemberAdded
+            | Self::MemberRoleChanged
+            | Self::MemberDisabled
+            | Self::MemberEnabled
+            | Self::MemberPasswordReset
+            | Self::EventCreated
+            | Self::EventEdited
+            | Self::EventUpdatePosted
+            | Self::EventUpdateDeleted
+            | Self::EventReverted
+            | Self::EventDeleted
+            | Self::ReviewPublished
+            | Self::ReviewRemoved
+            | Self::TemplateSaved
+            | Self::TemplateDeleted
+            | Self::IconUploaded
+            | Self::IconDeleted
+            | Self::DashboardArranged
+            | Self::ProfileUpdated
+            | Self::OwnPasswordChanged => JournalCategory::Members,
         }
     }
 
     /// The default view keeps the large changes and the real problems.
     pub fn is_essential(self) -> bool {
         match self {
-            Self::AppError => true,
-            Self::AppWarning => false,
+            Self::AppError
+            | Self::ServiceCreated
+            | Self::ServiceUpdated
+            | Self::ServiceDeleted
+            | Self::SettingsSaved
+            | Self::LogoRemoved
+            | Self::JournalSettingsSaved
+            | Self::PageAddressSaved
+            | Self::ChannelCreated
+            | Self::ChannelUpdated
+            | Self::ChannelDeleted
+            | Self::MemberAdded
+            | Self::MemberRoleChanged
+            | Self::MemberDisabled
+            | Self::MemberEnabled
+            | Self::MemberPasswordReset
+            | Self::EventDeleted => true,
+            Self::AppWarning
+            | Self::ServiceStatusSet
+            | Self::ServicesReordered
+            | Self::ProblemsFirstChanged
+            | Self::ChannelTested
+            | Self::EventCreated
+            | Self::EventEdited
+            | Self::EventUpdatePosted
+            | Self::EventUpdateDeleted
+            | Self::EventReverted
+            | Self::ReviewPublished
+            | Self::ReviewRemoved
+            | Self::TemplateSaved
+            | Self::TemplateDeleted
+            | Self::IconUploaded
+            | Self::IconDeleted
+            | Self::DashboardArranged
+            | Self::ProfileUpdated
+            | Self::OwnPasswordChanged => false,
         }
     }
 
@@ -55,6 +191,40 @@ impl JournalKind {
         match self {
             Self::AppError => Level::ERROR,
             Self::AppWarning => Level::WARN,
+            Self::ServiceCreated
+            | Self::ServiceUpdated
+            | Self::ServiceDeleted
+            | Self::ServiceStatusSet
+            | Self::ServicesReordered
+            | Self::ProblemsFirstChanged
+            | Self::SettingsSaved
+            | Self::LogoRemoved
+            | Self::JournalSettingsSaved
+            | Self::PageAddressSaved
+            | Self::ChannelCreated
+            | Self::ChannelUpdated
+            | Self::ChannelDeleted
+            | Self::ChannelTested
+            | Self::MemberAdded
+            | Self::MemberRoleChanged
+            | Self::MemberDisabled
+            | Self::MemberEnabled
+            | Self::MemberPasswordReset
+            | Self::EventCreated
+            | Self::EventEdited
+            | Self::EventUpdatePosted
+            | Self::EventUpdateDeleted
+            | Self::EventReverted
+            | Self::EventDeleted
+            | Self::ReviewPublished
+            | Self::ReviewRemoved
+            | Self::TemplateSaved
+            | Self::TemplateDeleted
+            | Self::IconUploaded
+            | Self::IconDeleted
+            | Self::DashboardArranged
+            | Self::ProfileUpdated
+            | Self::OwnPasswordChanged => Level::INFO,
         }
     }
 
@@ -63,6 +233,40 @@ impl JournalKind {
         match self {
             Self::AppError => Tone::Crit,
             Self::AppWarning => Tone::Minor,
+            Self::ServiceCreated
+            | Self::ServiceUpdated
+            | Self::ServiceDeleted
+            | Self::ServiceStatusSet
+            | Self::ServicesReordered
+            | Self::ProblemsFirstChanged
+            | Self::SettingsSaved
+            | Self::LogoRemoved
+            | Self::JournalSettingsSaved
+            | Self::PageAddressSaved
+            | Self::ChannelCreated
+            | Self::ChannelUpdated
+            | Self::ChannelDeleted
+            | Self::ChannelTested
+            | Self::MemberAdded
+            | Self::MemberRoleChanged
+            | Self::MemberDisabled
+            | Self::MemberEnabled
+            | Self::MemberPasswordReset
+            | Self::EventCreated
+            | Self::EventEdited
+            | Self::EventUpdatePosted
+            | Self::EventUpdateDeleted
+            | Self::EventReverted
+            | Self::EventDeleted
+            | Self::ReviewPublished
+            | Self::ReviewRemoved
+            | Self::TemplateSaved
+            | Self::TemplateDeleted
+            | Self::IconUploaded
+            | Self::IconDeleted
+            | Self::DashboardArranged
+            | Self::ProfileUpdated
+            | Self::OwnPasswordChanged => Tone::Neutral,
         }
     }
 
@@ -71,6 +275,40 @@ impl JournalKind {
         match self {
             Self::AppError => "Application error",
             Self::AppWarning => "Application warning",
+            Self::ServiceCreated => "Service created",
+            Self::ServiceUpdated => "Service updated",
+            Self::ServiceDeleted => "Service deleted",
+            Self::ServiceStatusSet => "Service status set",
+            Self::ServicesReordered => "Services reordered",
+            Self::ProblemsFirstChanged => "Problems first changed",
+            Self::SettingsSaved => "Settings saved",
+            Self::LogoRemoved => "Logo removed",
+            Self::JournalSettingsSaved => "Journal settings saved",
+            Self::PageAddressSaved => "Page address saved",
+            Self::ChannelCreated => "Alert channel created",
+            Self::ChannelUpdated => "Alert channel updated",
+            Self::ChannelDeleted => "Alert channel deleted",
+            Self::ChannelTested => "Alert channel tested",
+            Self::MemberAdded => "Member added",
+            Self::MemberRoleChanged => "Member role changed",
+            Self::MemberDisabled => "Member disabled",
+            Self::MemberEnabled => "Member enabled",
+            Self::MemberPasswordReset => "Member password reset",
+            Self::EventCreated => "Event created",
+            Self::EventEdited => "Event edited",
+            Self::EventUpdatePosted => "Event update posted",
+            Self::EventUpdateDeleted => "Event update deleted",
+            Self::EventReverted => "Event reverted",
+            Self::EventDeleted => "Event deleted",
+            Self::ReviewPublished => "Review published",
+            Self::ReviewRemoved => "Review removed",
+            Self::TemplateSaved => "Template saved",
+            Self::TemplateDeleted => "Template deleted",
+            Self::IconUploaded => "Icon uploaded",
+            Self::IconDeleted => "Icon deleted",
+            Self::DashboardArranged => "Dashboard arranged",
+            Self::ProfileUpdated => "Profile updated",
+            Self::OwnPasswordChanged => "Own password changed",
         }
     }
 }
@@ -130,6 +368,40 @@ impl JournalEntry {
         let key = match self.kind {
             JournalKind::AppError => "journal.app_error",
             JournalKind::AppWarning => "journal.app_warning",
+            JournalKind::ServiceCreated => "journal.service_created",
+            JournalKind::ServiceUpdated => "journal.service_updated",
+            JournalKind::ServiceDeleted => "journal.service_deleted",
+            JournalKind::ServiceStatusSet => "journal.service_status_set",
+            JournalKind::ServicesReordered => "journal.services_reordered",
+            JournalKind::ProblemsFirstChanged => "journal.problems_first_changed",
+            JournalKind::SettingsSaved => "journal.settings_saved",
+            JournalKind::LogoRemoved => "journal.logo_removed",
+            JournalKind::JournalSettingsSaved => "journal.journal_settings_saved",
+            JournalKind::PageAddressSaved => "journal.page_address_saved",
+            JournalKind::ChannelCreated => "journal.channel_created",
+            JournalKind::ChannelUpdated => "journal.channel_updated",
+            JournalKind::ChannelDeleted => "journal.channel_deleted",
+            JournalKind::ChannelTested => "journal.channel_tested",
+            JournalKind::MemberAdded => "journal.member_added",
+            JournalKind::MemberRoleChanged => "journal.member_role_changed",
+            JournalKind::MemberDisabled => "journal.member_disabled",
+            JournalKind::MemberEnabled => "journal.member_enabled",
+            JournalKind::MemberPasswordReset => "journal.member_password_reset",
+            JournalKind::EventCreated => "journal.event_created",
+            JournalKind::EventEdited => "journal.event_edited",
+            JournalKind::EventUpdatePosted => "journal.event_update_posted",
+            JournalKind::EventUpdateDeleted => "journal.event_update_deleted",
+            JournalKind::EventReverted => "journal.event_reverted",
+            JournalKind::EventDeleted => "journal.event_deleted",
+            JournalKind::ReviewPublished => "journal.review_published",
+            JournalKind::ReviewRemoved => "journal.review_removed",
+            JournalKind::TemplateSaved => "journal.template_saved",
+            JournalKind::TemplateDeleted => "journal.template_deleted",
+            JournalKind::IconUploaded => "journal.icon_uploaded",
+            JournalKind::IconDeleted => "journal.icon_deleted",
+            JournalKind::DashboardArranged => "journal.dashboard_arranged",
+            JournalKind::ProfileUpdated => "journal.profile_updated",
+            JournalKind::OwnPasswordChanged => "journal.own_password_changed",
         };
         i18n.tf(
             key,

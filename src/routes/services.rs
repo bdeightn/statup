@@ -13,14 +13,15 @@ use super::{Frame, members_only, render};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
+use crate::journal;
 use crate::middleware::headers::is_htmx;
 use crate::middleware::{CsrfToken, HtmlForm, OptionalUser, RequirePublisher};
 use crate::models::{
-    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, Service, ServiceStatus, User,
-    find_builtin_icon,
+    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, JournalKind, Service,
+    ServiceStatus, User, find_builtin_icon,
 };
 use crate::modules::services::{LONG_DAYS, ServiceRow, Strip, service_history, strips};
-use crate::repositories::{EventRepository, ServiceRepository};
+use crate::repositories::{EventRepository, NewJournalEntry, ServiceRepository};
 use crate::services::{
     DEFAULT_OUTAGE_AFTER, IconService, LastCheck, ServiceService, put_problems_first,
 };
@@ -430,7 +431,13 @@ pub async fn create(
     HtmlForm(input): HtmlForm<ServiceInput>,
 ) -> Result<Response, AppError> {
     match save_new(&state.pool, &input).await {
-        Ok(id) => Ok(Redirect::to(&format!("/services?saved={id}")).into_response()),
+        Ok(service) => {
+            let entry = NewJournalEntry::new(JournalKind::ServiceCreated)
+                .by(&user)
+                .about(&service.name);
+            journal::record(&state.pool, entry).await;
+            Ok(Redirect::to(&format!("/services?saved={}", service.id)).into_response())
+        }
         Err(AppError::Validation(key)) => {
             let page = input.into_page(None, ServiceStatus::Operational, key);
             render_form(&state, &user, csrf_token.0, i18n, page).await
@@ -440,7 +447,7 @@ pub async fn create(
 }
 
 /// The check is read first, so a refused address or delay saves nothing.
-async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<i64, AppError> {
+async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<Service, AppError> {
     let monitoring = input.check.monitoring()?;
     let icon_name = input.icon_name();
     let service = ServiceService::create(
@@ -452,7 +459,7 @@ async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<i64, AppError> 
     )
     .await?;
     ServiceService::set_monitoring(pool, service.id, monitoring.as_ref()).await?;
-    Ok(service.id)
+    Ok(service)
 }
 
 async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), AppError> {
@@ -499,7 +506,13 @@ pub async fn update(
     HtmlForm(input): HtmlForm<ServiceInput>,
 ) -> Result<Response, AppError> {
     match save_edit(&state.pool, id, &input).await {
-        Ok(()) => Ok(Redirect::to(&format!("/services?saved={id}")).into_response()),
+        Ok(()) => {
+            let entry = NewJournalEntry::new(JournalKind::ServiceUpdated)
+                .by(&user)
+                .about(input.name.trim());
+            journal::record(&state.pool, entry).await;
+            Ok(Redirect::to(&format!("/services?saved={id}")).into_response())
+        }
         Err(AppError::Validation(key)) => {
             let status = ServiceRepository::find_by_id(&state.pool, id)
                 .await?
@@ -525,6 +538,10 @@ pub async fn delete(
         .ok_or(AppError::NotFound)?;
     match ServiceService::delete(&state.pool, id).await {
         Ok(()) => {
+            let entry = NewJournalEntry::new(JournalKind::ServiceDeleted)
+                .by(&user)
+                .about(&service.name);
+            journal::record(&state.pool, entry).await;
             let name = percent_encoding::utf8_percent_encode(
                 &service.name,
                 percent_encoding::NON_ALPHANUMERIC,
@@ -559,7 +576,11 @@ pub async fn save_order(
     if !ServiceRepository::reorder(&state.pool, &form.order).await? {
         return Err(AppError::validation("error.invalid_data"));
     }
-    tracing::info!(user_id = user.id, "Service order saved");
+    journal::record(
+        &state.pool,
+        NewJournalEntry::new(JournalKind::ServicesReordered).by(&user),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -577,11 +598,10 @@ pub async fn save_problems_first(
     HtmlForm(form): HtmlForm<ProblemsFirstForm>,
 ) -> Result<Response, AppError> {
     ServiceService::set_problems_first(&state.pool, form.enabled).await?;
-    tracing::info!(
-        user_id = user.id,
-        enabled = form.enabled,
-        "Problems first saved"
-    );
+    let entry = NewJournalEntry::new(JournalKind::ProblemsFirstChanged)
+        .by(&user)
+        .with_detail(if form.enabled { "on" } else { "off" });
+    journal::record(&state.pool, entry).await;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -607,10 +627,29 @@ struct StatusSelectorFragment {
     i18n: I18n,
 }
 
+async fn record_status_set(
+    pool: &DbPool,
+    user: &User,
+    name: &str,
+    status: ServiceStatus,
+    is_undo: bool,
+) {
+    let detail = if is_undo {
+        format!("{}, undo", status.as_str())
+    } else {
+        status.as_str().to_string()
+    };
+    let entry = NewJournalEntry::new(JournalKind::ServiceStatusSet)
+        .by(user)
+        .about(name)
+        .with_detail(detail);
+    journal::record(pool, entry).await;
+}
+
 /// Answers htmx with the refreshed cell; a plain form post goes back to the
 /// list.
 pub async fn update_status(
-    _publisher: RequirePublisher,
+    RequirePublisher(user): RequirePublisher,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     headers: HeaderMap,
@@ -622,11 +661,13 @@ pub async fn update_status(
         .status
         .parse()
         .map_err(|()| AppError::validation("error.invalid_data"))?;
-    let before = ServiceRepository::find_by_id(&state.pool, id)
+    let current = ServiceRepository::find_by_id(&state.pool, id)
         .await?
-        .ok_or(AppError::NotFound)?
-        .manual_status;
+        .ok_or(AppError::NotFound)?;
+    let before = current.manual_status;
     ServiceService::set_manual_status(&state.pool, id, status).await?;
+    let is_undo = input.undo.is_some();
+    record_status_set(&state.pool, &user, &current.name, status, is_undo).await;
     if !is_htmx(&headers) {
         return Ok(Redirect::to(&format!("/services?saved={id}")).into_response());
     }
@@ -635,7 +676,7 @@ pub async fn update_status(
         .ok_or(AppError::NotFound)?;
     render(&StatusSelectorFragment {
         csrf_token: csrf_token.0,
-        previous: (input.undo.is_none() && before != status).then_some(before),
+        previous: (!is_undo && before != status).then_some(before),
         driver: EventRepository::state_drivers(&state.pool, Some(id))
             .await?
             .remove(&id),

@@ -6,9 +6,11 @@ use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
 use super::detail::{Composer, ReviewForm, detail_page};
+use super::{record_on, title_of};
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
+use crate::models::JournalKind;
 use crate::routes::render;
 use crate::services::EventService;
 use crate::state::AppState;
@@ -39,7 +41,11 @@ pub async fn publish_review(
     HtmlForm(input): HtmlForm<ReviewInput>,
 ) -> Result<Response, AppError> {
     match EventService::publish_review(&state.pool, id, &input.body, &user).await {
-        Ok(()) => Ok(Redirect::to(&format!("/events/{id}?published=1")).into_response()),
+        Ok(()) => {
+            let title = title_of(&state.pool, id).await;
+            record_on(&state.pool, JournalKind::ReviewPublished, &user, &title).await;
+            Ok(Redirect::to(&format!("/events/{id}?published=1")).into_response())
+        }
         Err(AppError::Validation(key)) => {
             let review_form = input.refused(&key, &i18n);
             let page = detail_page(
@@ -64,5 +70,7 @@ pub async fn remove_review(
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
     EventService::remove_review(&state.pool, id, user.role).await?;
+    let title = title_of(&state.pool, id).await;
+    record_on(&state.pool, JournalKind::ReviewRemoved, &user, &title).await;
     Ok(Redirect::to(&format!("/events/{id}")).into_response())
 }

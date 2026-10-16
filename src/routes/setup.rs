@@ -15,9 +15,10 @@ use super::render;
 use crate::clock;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
+use crate::journal;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
-use crate::models::{CheckKind, MAX_ICON_SIZE, Service, ServiceCheck};
-use crate::repositories::ServiceRepository;
+use crate::models::{CheckKind, JournalKind, MAX_ICON_SIZE, Service, ServiceCheck, User};
+use crate::repositories::{NewJournalEntry, ServiceRepository};
 use crate::services::{LogoService, ServiceService, SettingsService};
 use crate::state::AppState;
 
@@ -246,6 +247,39 @@ pub(super) struct GeneralInput {
     logo: Vec<u8>,
 }
 
+impl GeneralInput {
+    /// What this save would change, named in English. Read before saving.
+    pub(super) fn changed_fields(&self, state: &AppState) -> Vec<&'static str> {
+        let differs = [
+            ("name", self.instance_name.trim() != crate::instance_name()),
+            ("logo", !self.logo.is_empty()),
+            (
+                "time_zone",
+                self.time_zone
+                    .as_deref()
+                    .is_some_and(|zone| zone != clock::zone().name()),
+            ),
+            (
+                "access",
+                (self.access == "everyone") != state.is_public_mode(),
+            ),
+        ];
+        differs
+            .into_iter()
+            .filter_map(|(field, changed)| changed.then_some(field))
+            .collect()
+    }
+}
+
+/// The general settings were saved, from the settings page or the setup.
+pub(super) async fn record_settings_saved(state: &AppState, admin: &User, changed: &[&str]) {
+    let mut entry = NewJournalEntry::new(JournalKind::SettingsSaved).by(admin);
+    if !changed.is_empty() {
+        entry = entry.with_detail(changed.join(", "));
+    }
+    journal::record(&state.pool, entry).await;
+}
+
 pub(super) async fn read_general(multipart: &mut Multipart) -> Result<GeneralInput, AppError> {
     let unreadable = |_| AppError::validation("validation.invalid_form_data");
     let mut input = GeneralInput::default();
@@ -302,16 +336,15 @@ pub async fn save_page(
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
     let applied = match read_general(&mut multipart).await {
-        Ok(input) => apply_general(&state, &input).await.map(|()| input),
+        Ok(input) => {
+            let changed = input.changed_fields(&state);
+            apply_general(&state, &input).await.map(|()| changed)
+        }
         Err(e) => Err(e),
     };
     match applied {
-        Ok(input) => {
-            tracing::info!(
-                admin_id = admin.id,
-                public = input.access == "everyone",
-                "Page set up"
-            );
+        Ok(changed) => {
+            record_settings_saved(&state, &admin, &changed).await;
             Ok(Redirect::to("/setup/services").into_response())
         }
         Err(AppError::Validation(key)) => {
@@ -512,7 +545,12 @@ pub async fn save_services(
     };
     match create_services(&state, &names, &checks, &i18n).await {
         Ok(()) => {
-            tracing::info!(admin_id = admin.id, added = names.len(), "Services set up");
+            for name in &names {
+                let entry = NewJournalEntry::new(JournalKind::ServiceCreated)
+                    .by(&admin)
+                    .about(name);
+                journal::record(&state.pool, entry).await;
+            }
             Ok(Redirect::to("/setup/done").into_response())
         }
         Err(AppError::Validation(key)) => {

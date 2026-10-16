@@ -15,11 +15,13 @@ use super::dashboard::origin;
 use super::{Frame, render};
 use crate::error::AppError;
 use crate::i18n::{I18n, LANGUAGES, Locale, language};
+use crate::journal;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
 use crate::models::{
-    Channel, ChannelInput, ChannelKind, Delivery, DeliveryStatus, Happening, SEPARATOR, User,
+    Channel, ChannelInput, ChannelKind, Delivery, DeliveryStatus, Happening, JournalKind,
+    SEPARATOR, User,
 };
-use crate::repositories::{NotificationRepository, SettingsRepository};
+use crate::repositories::{NewJournalEntry, NotificationRepository, SettingsRepository};
 use crate::services::{
     Facts, Failure, Finding, Notice, Origin, PAGE_ADDRESS_SETTING, Sender, Subject,
     destination_allowed, destination_name_refusal, email_addresses, page_address,
@@ -504,7 +506,12 @@ pub async fn create(
     };
     let channel = NotificationRepository::create_channel(&state.pool, &input).await?;
     remember_page_address(&state, &headers).await?;
+    record_channel(&state, JournalKind::ChannelCreated, &user, &channel.name).await;
     Ok(Redirect::to(&format!("/admin/notifications?added={}", channel.id)).into_response())
+}
+
+async fn record_channel(state: &AppState, kind: JournalKind, user: &User, name: &str) {
+    journal::record(&state.pool, NewJournalEntry::new(kind).by(user).about(name)).await;
 }
 
 /// The first destination keeps the address the admin uses, so the messages
@@ -577,24 +584,27 @@ pub async fn update(
         }
     };
     NotificationRepository::update_channel(&state.pool, id, &input).await?;
+    record_channel(&state, JournalKind::ChannelUpdated, &user, &input.name).await;
     Ok(Redirect::to(&format!("/admin/notifications?saved={id}")).into_response())
 }
 
 pub async fn delete(
-    _admin: RequireAdmin,
+    RequireAdmin(user): RequireAdmin,
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
+    let channel = find(&state, id).await?;
     if !NotificationRepository::delete_channel(&state.pool, id).await? {
         return Err(AppError::NotFound);
     }
+    record_channel(&state, JournalKind::ChannelDeleted, &user, &channel.name).await;
     Ok(Redirect::to("/admin/notifications?deleted=1").into_response())
 }
 
 /// Sends a test message to the destination the form describes, without
 /// saving anything, and says how it went.
 pub async fn test(
-    _admin: RequireAdmin,
+    RequireAdmin(user): RequireAdmin,
     State(state): State<AppState>,
     Locale(i18n): Locale,
     headers: HeaderMap,
@@ -615,6 +625,14 @@ pub async fn test(
         .unwrap_or_else(|| origin(&state, &headers));
     let (notice, facts) = test_message(&channel, page);
     let result = state.notifier.send(&channel, &notice, &facts).await;
+    let outcome = result
+        .as_ref()
+        .map_or_else(|failure| failure.code(), |()| "sent".to_string());
+    let entry = NewJournalEntry::new(JournalKind::ChannelTested)
+        .by(&user)
+        .about(&channel.name)
+        .with_detail(outcome);
+    journal::record(&state.pool, entry).await;
     let (tone, message) = match result {
         Ok(()) => ("ok", i18n.t("notifications.test_sent").to_string()),
         Err(failure) => {
@@ -694,6 +712,8 @@ pub async fn save_page_address(
         return render_list(&state, &user, csrf_token, i18n, &headers, page).await;
     }
     SettingsRepository::set(&state.pool, PAGE_ADDRESS_SETTING, &typed).await?;
+    let entry = NewJournalEntry::new(JournalKind::PageAddressSaved).by(&user);
+    journal::record(&state.pool, entry).await;
     Ok(Redirect::to("/admin/notifications?address=1").into_response())
 }
 

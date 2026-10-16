@@ -6,14 +6,15 @@ use axum::response::Response;
 use serde::Deserialize;
 use tower_sessions::Session;
 
-use super::password::reopen_session;
+use super::password::{record_password_changed, reopen_session};
 use super::{Frame, render};
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
+use crate::journal;
 use crate::middleware::headers::no_store;
 use crate::middleware::{AuthUser, CsrfToken, HtmlForm};
-use crate::models::{User, check_display_name};
-use crate::repositories::UserRepository;
+use crate::models::{JournalKind, User, check_display_name};
+use crate::repositories::{NewJournalEntry, UserRepository};
 use crate::services::AuthService;
 use crate::state::AppState;
 
@@ -134,7 +135,11 @@ async fn save_profile(
             }
             _ => AppError::Database(e),
         })?;
-    tracing::info!(user_id = user.id, "Profile updated");
+    journal::record(
+        &state.pool,
+        NewJournalEntry::new(JournalKind::ProfileUpdated).by(user),
+    )
+    .await;
 
     UserRepository::find_by_id(&state.pool, user.id)
         .await?
@@ -192,7 +197,10 @@ async fn change_own_password(
         &input.new_password_confirm,
     );
     match changed.await {
-        Ok(hash) => Ok(Ok(hash)),
+        Ok(hash) => {
+            record_password_changed(&state.pool, user).await;
+            Ok(Ok(hash))
+        }
         Err(AppError::Validation(key)) => Ok(Err(key)),
         Err(e) => Err(e),
     }

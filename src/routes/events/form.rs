@@ -5,13 +5,14 @@ use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
+use super::record_on;
 use crate::clock;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
 use crate::models::{
-    Category, CreateEventInput, Event, EventWithServices, Kind, Lifecycle, NextUpdate, SEPARATOR,
-    Service, Severity, UpdateEventInput, User,
+    Category, CreateEventInput, Event, EventWithServices, JournalKind, Kind, Lifecycle, NextUpdate,
+    SEPARATOR, Service, Severity, UpdateEventInput, User,
 };
 use crate::repositories::{
     CreateTemplateInput, EventRepository, EventTemplateRepository, OutageRepository,
@@ -483,6 +484,7 @@ pub async fn create(
     };
     match created {
         Ok(event) => {
+            record_on(&state.pool, JournalKind::EventCreated, &user, &event.title).await;
             after_create(&state, &user, &input, kind).await;
             Ok(Redirect::to(&format!("/events/{}?published=1", event.id)).into_response())
         }
@@ -514,8 +516,9 @@ async fn after_create(state: &AppState, user: &User, input: &EventInput, kind: K
         category: input.category(kind),
         created_by: user.id,
     };
-    if let Err(e) = EventTemplateService::create(&state.pool, template).await {
-        tracing::warn!(error = %e, "Failed to save event template");
+    match EventTemplateService::create(&state.pool, template).await {
+        Ok(saved) => record_on(&state.pool, JournalKind::TemplateSaved, user, &saved.title).await,
+        Err(e) => tracing::warn!(error = %e, "Failed to save event template"),
     }
 }
 
@@ -558,8 +561,12 @@ pub async fn update(
         service_ids: input.service_ids.clone(),
         follows_event_id: input.follows_event_id,
     };
+    let title = changes.title.clone();
     match EventService::update(&state.pool, id, changes, user.role).await {
-        Ok(()) => Ok(Redirect::to(&format!("/events/{id}")).into_response()),
+        Ok(()) => {
+            record_on(&state.pool, JournalKind::EventEdited, &user, &title).await;
+            Ok(Redirect::to(&format!("/events/{id}")).into_response())
+        }
         Err(AppError::Validation(key)) => {
             let mut form = EventFormData::from_input(input, kind, planned);
             form.start_locked = kind == Kind::Maintenance && event.started_at.is_some();

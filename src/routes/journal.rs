@@ -17,8 +17,10 @@ use crate::i18n::{I18n, Locale};
 use crate::journal;
 use crate::middleware::headers::is_htmx;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
-use crate::models::{JournalCategory, JournalDay, JournalFilters, User, group_journal_by_day};
-use crate::repositories::{JournalRepository, UserRepository};
+use crate::models::{
+    JournalCategory, JournalDay, JournalFilters, JournalKind, User, group_journal_by_day,
+};
+use crate::repositories::{JournalRepository, NewJournalEntry, UserRepository};
 use crate::state::AppState;
 
 const PAGE_SIZE: i64 = 50;
@@ -286,7 +288,14 @@ pub async fn save_settings(
     let detailed = form.capture == "detailed";
     let days = form.retention_days.trim().parse().unwrap_or(0);
     match journal::save_settings(&state.pool, detailed, days).await {
-        Ok(()) => Ok(Redirect::to("/admin/journal?saved=1").into_response()),
+        Ok(()) => {
+            let capture = if detailed { "detailed" } else { "essential" };
+            let entry = NewJournalEntry::new(JournalKind::JournalSettingsSaved)
+                .by(&admin)
+                .with_detail(format!("capture={capture}, retention={days} days"));
+            journal::record(&state.pool, entry).await;
+            Ok(Redirect::to("/admin/journal?saved=1").into_response())
+        }
         Err(AppError::Validation(key)) => {
             let query = JournalQuery::default();
             let results = load_results(&state, &query, &i18n).await?;

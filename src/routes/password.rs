@@ -9,12 +9,15 @@ use tower_sessions::Session;
 
 use super::auth::instance_title;
 use super::render;
+use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
+use crate::journal;
 use crate::middleware::csrf::renew_token;
 use crate::middleware::headers::no_store;
 use crate::middleware::{AuthUser, CsrfToken, HtmlForm};
-use crate::models::User;
+use crate::models::{JournalKind, User};
+use crate::repositories::NewJournalEntry;
 use crate::services::AuthService;
 use crate::session::{rotate_id, stamp_credential};
 use crate::state::AppState;
@@ -74,6 +77,13 @@ pub(super) async fn reopen_session(
     renew_token(session).await
 }
 
+/// A member replaced their own password, from the profile or the page a
+/// temporary password leads to.
+pub(super) async fn record_password_changed(pool: &DbPool, user: &User) {
+    let entry = NewJournalEntry::new(JournalKind::OwnPasswordChanged).by(user);
+    journal::record(pool, entry).await;
+}
+
 fn render_page(
     user: &User,
     csrf_token: String,
@@ -128,6 +138,7 @@ pub async fn update(
     );
     match changed.await {
         Ok(hash) => {
+            record_password_changed(&state.pool, &user).await;
             reopen_session(&session, &hash).await?;
             Ok(Redirect::to("/").into_response())
         }
