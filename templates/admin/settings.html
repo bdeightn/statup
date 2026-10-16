@@ -125,8 +125,8 @@
                         <p id="access-help" class="set-help">{{ i18n.t("admin.public_mode_help") }}</p>
                     </div>
                     <div class="segmented" role="radiogroup" aria-labelledby="access-label" aria-describedby="access-help">
-                        <label class="choice"><input type="radio" name="access" value="everyone" class="sr-only"{% if public_mode %} checked{% endif %}><span>{{ i18n.t("admin.access_everyone") }}</span></label>
                         <label class="choice"><input type="radio" name="access" value="members" class="sr-only"{% if !public_mode %} checked{% endif %}><span>{{ i18n.t("admin.access_members") }}</span></label>
+                        <label class="choice"><input type="radio" name="access" value="everyone" class="sr-only"{% if public_mode %} checked{% endif %}><span>{{ i18n.t("admin.access_everyone") }}</span></label>
                     </div>
                 </div>
                 <div class="set-foot">

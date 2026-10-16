@@ -15,7 +15,7 @@ test("a fresh instance is set up from its first account", async ({ page }) => {
     await page.getByRole("button", { name: "Continuer" }).click();
 
     await expect(page).toHaveURL(/\/setup\/page$/);
-    await page.getByLabel("Nom affiché").fill("Acme IT");
+    await page.getByLabel("Nom de la page").fill("Acme IT");
     await page.getByText("Tout le monde", { exact: true }).click();
     await expect(page.getByRole("radio", { name: /Tout le monde/ })).toBeChecked();
     await page.getByRole("button", { name: "Continuer" }).click();
