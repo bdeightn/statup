@@ -13,10 +13,11 @@ use super::{
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::I18n;
-use crate::models::{Channel, Delivery, Happening};
+use crate::journal;
+use crate::models::{Channel, Delivery, Happening, JournalKind};
 use crate::repositories::{
-    EventRepository, EventReviewRepository, MemberNoticeRepository, NotificationRepository,
-    OutageRepository, ServiceRepository, SettingsRepository,
+    EventRepository, EventReviewRepository, MemberNoticeRepository, NewJournalEntry,
+    NotificationRepository, OutageRepository, ServiceRepository, SettingsRepository,
 };
 use crate::services::{sanitize_markdown, tell_delivery_failed};
 
@@ -230,8 +231,8 @@ async fn load_event(
     }))
 }
 
-/// Records how sending went for the message and its wave, `ids`, and logs
-/// it without the address.
+/// Records how sending went for the message and its wave, `ids`, and keeps
+/// it in the journal without the address.
 async fn settle(
     pool: &DbPool,
     delivery: &Delivery,
@@ -244,15 +245,15 @@ async fn settle(
         for id in ids {
             NotificationRepository::mark_sent(pool, *id, now).await?;
         }
-        tracing::debug!(channel_id = channel.id, kind = ?channel.kind, "Notification delivered");
+        record_delivery(pool, JournalKind::AlertSent, channel, channel.kind.as_str()).await;
         return Ok(());
     };
     let code = failure.code();
-    tracing::warn!(channel_id = channel.id, kind = ?channel.kind, failure = %code, "Notification not delivered");
     if failure == Failure::Gone {
         for id in ids {
             NotificationRepository::fail(pool, *id, &code, now).await?;
         }
+        record_delivery(pool, JournalKind::AlertAbandoned, channel, &code).await;
         return Ok(());
     }
     let retry = if failure.is_permanent() {
@@ -264,11 +265,23 @@ async fn settle(
         for id in ids {
             NotificationRepository::retry_later(pool, *id, &code, at).await?;
         }
+        record_delivery(pool, JournalKind::AlertRetrying, channel, &code).await;
     } else {
         NotificationRepository::fail_waiting(pool, channel.id, &code, now).await?;
+        record_delivery(pool, JournalKind::AlertAbandoned, channel, &code).await;
         tell_delivery_failed(pool, channel.id).await;
     }
     Ok(())
+}
+
+/// A line naming the channel and the tool, with the outcome; never the
+/// address it posts to.
+async fn record_delivery(pool: &DbPool, kind: JournalKind, channel: &Channel, outcome: &str) {
+    let detail = format!("{} · {outcome}", channel.kind.as_str());
+    let entry = NewJournalEntry::new(kind)
+        .about(&channel.name)
+        .with_detail(detail);
+    journal::record(pool, entry).await;
 }
 
 /// When to try again after `attempts` attempts, or `None` once they are used.
@@ -564,6 +577,31 @@ mod tests {
             .unwrap();
         assert_eq!(notices.len(), 1, "the administrator hears of it once");
         assert_eq!(notices[0].channel_name.as_deref(), Some("team"));
+    }
+
+    #[tokio::test]
+    async fn a_message_given_up_is_kept_in_the_journal_without_its_address() {
+        let pool = test_pool().await;
+        let team = channel(&pool, "team", "en").await;
+        let event = incident(&pool, "Outage").await;
+        announce(&pool, event, 0).await;
+        let script = Arc::new(Script::answering(team, &[Err(Failure::Status(404))]));
+
+        deliver_due(&pool, &script, None, at(5)).await.unwrap();
+
+        let lines: Vec<(String, String, String)> =
+            sqlx::query_as("SELECT kind, subject, detail FROM journal_entries")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            lines,
+            [(
+                "alert_abandoned".to_string(),
+                "team".to_string(),
+                "slack · status_404".to_string()
+            )]
+        );
     }
 
     #[tokio::test]

@@ -117,6 +117,20 @@ pub enum JournalKind {
     PasswordResetNotSent,
     /// Someone chose a new password through the emailed link.
     PasswordResetCompleted,
+    /// The checks declared a service down.
+    OutageDetected,
+    /// A service declared down answers again.
+    OutageEnded,
+    /// One check of a service failed.
+    CheckFailed,
+    /// Every service failed at once: the round was ignored.
+    MonitoringRoundSkipped,
+    /// A message left for an alert channel.
+    AlertSent,
+    /// A message did not leave and will be tried again.
+    AlertRetrying,
+    /// A message was given up.
+    AlertAbandoned,
 }
 
 impl JournalKind {
@@ -165,6 +179,11 @@ impl JournalKind {
             | Self::PasswordResetBlocked
             | Self::PasswordResetNotSent
             | Self::PasswordResetCompleted => JournalCategory::Access,
+            Self::OutageDetected
+            | Self::OutageEnded
+            | Self::CheckFailed
+            | Self::MonitoringRoundSkipped => JournalCategory::Monitoring,
+            Self::AlertSent | Self::AlertRetrying | Self::AlertAbandoned => JournalCategory::Alerts,
         }
     }
 
@@ -191,7 +210,11 @@ impl JournalKind {
             | Self::SignInBlocked
             | Self::PasswordCheckBlocked
             | Self::PasswordResetBlocked
-            | Self::PasswordResetNotSent => true,
+            | Self::PasswordResetNotSent
+            | Self::OutageDetected
+            | Self::OutageEnded
+            | Self::MonitoringRoundSkipped
+            | Self::AlertAbandoned => true,
             Self::AppWarning
             | Self::ServiceStatusSet
             | Self::ServicesReordered
@@ -214,7 +237,10 @@ impl JournalKind {
             | Self::SignedIn
             | Self::SignInFailed
             | Self::PasswordResetRequested
-            | Self::PasswordResetCompleted => false,
+            | Self::PasswordResetCompleted
+            | Self::CheckFailed
+            | Self::AlertSent
+            | Self::AlertRetrying => false,
         }
     }
 
@@ -258,20 +284,27 @@ impl JournalKind {
             | Self::OwnPasswordChanged
             | Self::SignedIn
             | Self::PasswordResetRequested
-            | Self::PasswordResetCompleted => Level::INFO,
+            | Self::PasswordResetCompleted
+            | Self::OutageEnded => Level::INFO,
+            Self::CheckFailed | Self::AlertSent => Level::DEBUG,
             Self::AppWarning
             | Self::SignInFailed
             | Self::SignInBlocked
             | Self::PasswordCheckBlocked
             | Self::PasswordResetBlocked
-            | Self::PasswordResetNotSent => Level::WARN,
+            | Self::PasswordResetNotSent
+            | Self::OutageDetected
+            | Self::MonitoringRoundSkipped
+            | Self::AlertRetrying
+            | Self::AlertAbandoned => Level::WARN,
         }
     }
 
     /// The hue of its chip: color only for problems.
     pub fn tone(self) -> Tone {
         match self {
-            Self::AppError => Tone::Crit,
+            Self::AppError | Self::OutageDetected | Self::AlertAbandoned => Tone::Crit,
+            Self::OutageEnded => Tone::Ok,
             Self::ServiceCreated
             | Self::ServiceUpdated
             | Self::ServiceDeleted
@@ -309,12 +342,16 @@ impl JournalKind {
             | Self::SignedIn
             | Self::SignInFailed
             | Self::PasswordResetRequested
-            | Self::PasswordResetCompleted => Tone::Neutral,
+            | Self::PasswordResetCompleted
+            | Self::AlertSent => Tone::Neutral,
             Self::AppWarning
             | Self::SignInBlocked
             | Self::PasswordCheckBlocked
             | Self::PasswordResetBlocked
-            | Self::PasswordResetNotSent => Tone::Minor,
+            | Self::PasswordResetNotSent
+            | Self::CheckFailed
+            | Self::MonitoringRoundSkipped
+            | Self::AlertRetrying => Tone::Minor,
         }
     }
 
@@ -365,6 +402,15 @@ impl JournalKind {
             Self::PasswordResetBlocked => "Password reset requests blocked",
             Self::PasswordResetNotSent => "Password reset email not sent",
             Self::PasswordResetCompleted => "Password reset completed",
+            Self::OutageDetected => "Outage detected",
+            Self::OutageEnded => "Service back up",
+            Self::CheckFailed => "Check failed",
+            Self::MonitoringRoundSkipped => {
+                "Monitoring round ignored: every service failed at once"
+            }
+            Self::AlertSent => "Alert sent",
+            Self::AlertRetrying => "Alert not sent, will try again",
+            Self::AlertAbandoned => "Alert given up",
         }
     }
 }
@@ -467,6 +513,13 @@ impl JournalEntry {
             JournalKind::PasswordResetBlocked => "journal.password_reset_blocked",
             JournalKind::PasswordResetNotSent => "journal.password_reset_not_sent",
             JournalKind::PasswordResetCompleted => "journal.password_reset_completed",
+            JournalKind::OutageDetected => "journal.outage_detected",
+            JournalKind::OutageEnded => "journal.outage_ended",
+            JournalKind::CheckFailed => "journal.check_failed",
+            JournalKind::MonitoringRoundSkipped => "journal.monitoring_round_skipped",
+            JournalKind::AlertSent => "journal.alert_sent",
+            JournalKind::AlertRetrying => "journal.alert_retrying",
+            JournalKind::AlertAbandoned => "journal.alert_abandoned",
         };
         i18n.tf(
             key,

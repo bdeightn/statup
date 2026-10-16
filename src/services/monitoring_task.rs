@@ -16,8 +16,9 @@ use super::probe::{CHECK_TIMEOUT, Prober, Probes, Report};
 use super::{ServiceService, notify_later, tell_outage_detected};
 use crate::db::DbPool;
 use crate::error::AppError;
-use crate::models::{CheckedService, Happening, Notification};
-use crate::repositories::{EventRepository, ServiceRepository};
+use crate::journal;
+use crate::models::{CheckKind, CheckedService, Happening, JournalKind, Notification};
+use crate::repositories::{EventRepository, NewJournalEntry, ServiceRepository};
 
 const ROUND_INTERVAL: Duration = Duration::from_secs(60);
 /// Checks running at once, so a long list never floods the network.
@@ -156,28 +157,33 @@ pub async fn run_round<P: Prober>(
         .collect();
     let reports = probe_all(prober, &services).await;
     state.last.record(&reports);
-    let observed: Vec<(i64, Observation)> = services
+    let observed: Vec<Checked<'_>> = services
         .iter()
         .filter_map(|service| {
-            let outcome = reports.get(&service.id)?.outcome();
+            let report = reports.get(&service.id)?;
             let observation = Observation {
                 failures: state.failures(service.id),
                 detected: service.detected_status.is_some(),
-                outcome,
+                outcome: report.outcome(),
                 outage_after: service.outage_after_minutes,
             };
-            Some((service.id, observation))
+            Some(Checked {
+                service,
+                report,
+                observation,
+            })
         })
         .collect();
-    if skip_this_round(state, &observed) {
+    if skip_this_round(pool, state, &observed).await {
         return Ok(());
     }
     // One service that cannot be recorded, such as one deleted during the
     // round, leaves the others to be judged.
     let mut changes = Vec::new();
-    for (service_id, observation) in observed {
+    for checked in &observed {
+        let service_id = checked.service.id;
         let silenced = silenced.contains(&service_id);
-        match apply(pool, state, service_id, observation, silenced, now).await {
+        match apply(pool, state, checked, silenced, now).await {
             Ok(Some(happening)) => changes.push((happening, service_id)),
             Ok(None) => {}
             Err(e) => {
@@ -187,6 +193,38 @@ pub async fn run_round<P: Prober>(
     }
     announce(pool, &changes, now).await;
     Ok(())
+}
+
+/// A service of the round, what its check found, and what the rules see.
+struct Checked<'a> {
+    service: &'a CheckedService,
+    report: &'a Report,
+    observation: Observation,
+}
+
+impl Checked<'_> {
+    /// What the journal says about this check: the address, without what
+    /// follows the host, then why it failed and how many times in a row.
+    fn detail(&self, failures: u8) -> String {
+        let target = match self.service.kind {
+            CheckKind::Http => journal::scrub(&self.service.target),
+            CheckKind::Tcp => self.service.target.clone(),
+        };
+        let mut parts = vec![target];
+        if self.report.outcome() == Outcome::Failed {
+            parts.push(self.report.finding.words());
+            parts.extend(self.report.detail.clone());
+            parts.push(format!("{failures} failed in a row"));
+        }
+        parts.join(" · ")
+    }
+
+    async fn record(&self, pool: &DbPool, kind: JournalKind, failures: u8) {
+        let entry = NewJournalEntry::new(kind)
+            .about(&self.service.name)
+            .with_detail(self.detail(failures));
+        journal::record(pool, entry).await;
+    }
 }
 
 /// Every check of the round, at most [`MAX_CONCURRENT_CHECKS`] at once. A
@@ -219,16 +257,21 @@ async fn probe_all<P: Prober>(
 
 /// A round where every service that answered fails at once points at
 /// Statup's own connection: it is ignored, a few times in a row at most.
-fn skip_this_round(state: &mut MonitorState, observed: &[(i64, Observation)]) -> bool {
-    let observations: Vec<Observation> = observed.iter().map(|(_, o)| *o).collect();
+async fn skip_this_round(
+    pool: &DbPool,
+    state: &mut MonitorState,
+    observed: &[Checked<'_>],
+) -> bool {
+    let observations: Vec<Observation> = observed.iter().map(|c| c.observation).collect();
     let (skip, skipped_rounds) =
         skip_round(looks_like_own_failure(&observations), state.skipped_rounds);
     state.skipped_rounds = skipped_rounds;
     if skip {
-        tracing::warn!(
-            services = observations.len(),
-            "Every checked service failed at once: round ignored, Statup's own connection is suspected"
-        );
+        let entry = NewJournalEntry::new(JournalKind::MonitoringRoundSkipped).with_detail(format!(
+            "{} services, Statup's own connection is suspected",
+            observations.len()
+        ));
+        journal::record(pool, entry).await;
     }
     skip
 }
@@ -236,18 +279,25 @@ fn skip_this_round(state: &mut MonitorState, observed: &[(i64, Observation)]) ->
 async fn apply(
     pool: &DbPool,
     state: &mut MonitorState,
-    service_id: i64,
-    observation: Observation,
+    checked: &Checked<'_>,
     silenced: bool,
     now: DateTime<Utc>,
 ) -> Result<Option<Happening>, AppError> {
-    let (failures, transition) = next_state(observation, silenced);
+    let service_id = checked.service.id;
+    let (failures, transition) = next_state(checked.observation, silenced);
     let since = state.record(service_id, failures, silenced, now);
+    if checked.report.outcome() == Outcome::Failed {
+        checked
+            .record(pool, JournalKind::CheckFailed, failures)
+            .await;
+    }
     let told = match transition {
         Transition::Stay => return Ok(None),
         Transition::Down => {
             ServiceRepository::mark_detected_down(pool, service_id, since).await?;
-            tracing::info!(service_id, "Service detected down");
+            checked
+                .record(pool, JournalKind::OutageDetected, failures)
+                .await;
             // An incident being worked on already tells people.
             EventRepository::status_drivers(pool, service_id)
                 .await?
@@ -256,7 +306,9 @@ async fn apply(
         }
         Transition::Up => {
             ServiceRepository::mark_detected_up(pool, service_id, now).await?;
-            tracing::info!(service_id, "Service detected back up");
+            checked
+                .record(pool, JournalKind::OutageEnded, failures)
+                .await;
             Some(Happening::ServiceUp)
         }
     };
@@ -370,6 +422,42 @@ mod tests {
         ServiceRepository::set_check(pool, service_id, Some(&check))
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_outage_and_its_end_are_kept_without_what_follows_the_host() {
+        let pool = test_pool().await;
+        let id = checked_service(&pool, "Intranet").await;
+        let check = ServiceCheck {
+            kind: CheckKind::Http,
+            target: "https://intranet.example/health?key=SECRET".to_string(),
+            internal_cert: false,
+        };
+        ServiceRepository::set_check(&pool, id, Some(&check))
+            .await
+            .unwrap();
+        let mut state = MonitorState::default();
+
+        rounds(&pool, &mut state, Outcome::Failed, &[0, 1, 2]).await;
+        rounds(&pool, &mut state, Outcome::Answered, &[3]).await;
+
+        let lines: Vec<(String, String, String)> =
+            sqlx::query_as("SELECT kind, subject, detail FROM journal_entries ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        let kinds: Vec<&str> = lines.iter().map(|(kind, _, _)| kind.as_str()).collect();
+        assert_eq!(kinds, ["outage_detected", "outage_ended"]);
+        assert_eq!(lines[0].1, "Intranet");
+        assert_eq!(
+            lines[0].2,
+            "https://intranet.example/… · connection refused · 3 failed in a row"
+        );
+        assert!(
+            lines
+                .iter()
+                .all(|(_, _, detail)| !detail.contains("SECRET"))
+        );
     }
 
     async fn rounds(pool: &DbPool, state: &mut MonitorState, outcome: Outcome, minutes: &[i64]) {
