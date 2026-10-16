@@ -16,6 +16,13 @@
         border-bottom: 0;
     }
 
+    /* The one save of a card of settings, under its last row. */
+    .set-foot {
+        display: flex;
+        justify-content: flex-end;
+        padding: 12px 16px 16px;
+    }
+
     .set-row > * {
         min-width: 0;
     }
@@ -76,8 +83,7 @@
         width: 100%;
     }
 
-    /* Two choices that are the state and the action at once: one control in
-       two segments, the marked one is the state. */
+    /* Two choices in one control of two segments, the marked one chosen. */
     .segmented {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -238,12 +244,8 @@
         gap: 10px 16px;
     }
 
-    .set-logo > form:first-of-type {
-        flex: 1 1 auto;
-    }
-
     .set-logo .icon-upload-field {
-        width: 100%;
+        flex: 1 1 auto;
     }
 
     .set-logo-preview {

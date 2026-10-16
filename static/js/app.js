@@ -638,8 +638,6 @@
         }
         if (event.key === "Tab" && drawerIsOpen()) trapDrawerFocus(event);
 
-        const form = event.target instanceof Element ? event.target.closest("form[data-autosubmit]") : null;
-        if (form) delete form.dataset.pointer;
     });
 
     // Safari scrolls the page to its top when a menu of the sticky masthead
@@ -652,26 +650,11 @@
         summary.focus({ preventScroll: true });
     });
 
-    // A choice that applies itself under the pointer; from the keyboard the
-    // arrows only move the choice and a button applies it.
-    document.addEventListener("pointerdown", (event) => {
-        const form = event.target instanceof Element ? event.target.closest("form[data-autosubmit]") : null;
-        if (form) form.dataset.pointer = "1";
-    });
-
     document.addEventListener("change", (event) => {
         const target = event.target;
         if (!(target instanceof Element)) return;
-        const auto = target.closest("form[data-autosubmit]");
-        if (auto) {
-            const apply = auto.querySelector("[data-apply]");
-            if (auto.dataset.pointer === "1") {
-                auto.requestSubmit();
-            } else if (apply) {
-                apply.hidden = false;
-            }
-            return;
-        }
+        const picked = target.matches("input[type=file]") && target.closest("label")?.querySelector("[data-file-name]");
+        if (picked && target.files[0]) picked.textContent = target.files[0].name;
         const upload = target.closest("form[data-submit-on-change]");
         if (upload && target.matches('input[type="file"]') && target.files.length > 0) {
             upload.requestSubmit();
@@ -679,6 +662,22 @@
         }
         const filters = target.closest("form.filters");
         if (filters) countFilters(filters);
+    });
+
+    // A form whose changes wait for its button: leaving before it is sent
+    // asks first, in the browser's own words.
+    function markUnsaved(event) {
+        const form = event.target instanceof Element ? event.target.closest("form[data-warn-unsaved]") : null;
+        if (form) form.dataset.unsaved = "1";
+    }
+
+    document.addEventListener("input", markUnsaved);
+    document.addEventListener("change", markUnsaved);
+    document.addEventListener("submit", (event) => {
+        if (event.target instanceof HTMLFormElement) delete event.target.dataset.unsaved;
+    });
+    window.addEventListener("beforeunload", (event) => {
+        if (document.querySelector("form[data-warn-unsaved][data-unsaved]")) event.preventDefault();
     });
 
     document.addEventListener("focusin", (event) => {
@@ -808,9 +807,6 @@
         startLiveRefresh();
         hideBrokenImages(document);
         document.fonts.ready.then(() => fitFieldsToText(document));
-        document.querySelectorAll("form[data-autosubmit] [data-apply]").forEach((button) => {
-            button.hidden = true;
-        });
         const saved = document.querySelector("[data-scroll-into-view]");
         if (saved) saved.scrollIntoView({ block: "center" });
         lightPublished();

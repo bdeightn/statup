@@ -214,7 +214,7 @@ fn upload_routes() -> Router<AppState> {
     Router::new()
         .route("/icons/upload", post(icons::upload))
         .route("/icons/upload-picker", post(icons::upload_picker))
-        .route("/admin/settings/logo", post(admin::update_logo))
+        .route("/admin/settings/general", post(admin::save_settings))
         .route("/setup/page", get(setup::page_form).post(setup::save_page))
 }
 
@@ -226,15 +226,6 @@ fn admin_routes() -> Router<AppState> {
         )
         .route("/setup/done", get(setup::done))
         .route("/admin/settings", get(admin::settings_page))
-        .route(
-            "/admin/settings/public-mode",
-            post(admin::set_public_access),
-        )
-        .route(
-            "/admin/settings/instance-name",
-            post(admin::update_instance_name),
-        )
-        .route("/admin/settings/time-zone", post(admin::update_time_zone))
         .route("/admin/settings/logo/remove", post(admin::remove_logo))
         .route("/admin/users", get(admin::users_list))
         .route("/admin/users/new", post(admin::add_member))

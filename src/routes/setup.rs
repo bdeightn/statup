@@ -12,6 +12,7 @@ use serde::Deserialize;
 use super::checks::{CheckFields, CheckInput, parse_check};
 use super::dashboard::origin;
 use super::render;
+use crate::clock;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
@@ -234,23 +235,27 @@ pub async fn page_form(
     render_page_step(&state, csrf_token, i18n, crate::instance_name(), None).await
 }
 
-/// The fields of the page step, read from its multipart body.
+/// The general settings, read from one multipart body: the page step of
+/// the setup and the settings page send the same fields, the setup without
+/// a zone (it takes the browser's at sign-up).
 #[derive(Default)]
-struct PageInput {
-    instance_name: String,
-    access: String,
+pub(super) struct GeneralInput {
+    pub(super) instance_name: String,
+    pub(super) access: String,
+    pub(super) time_zone: Option<String>,
     logo: Vec<u8>,
 }
 
-async fn read_page_input(multipart: &mut Multipart) -> Result<PageInput, AppError> {
+pub(super) async fn read_general(multipart: &mut Multipart) -> Result<GeneralInput, AppError> {
     let unreadable = |_| AppError::validation("validation.invalid_form_data");
-    let mut input = PageInput::default();
+    let mut input = GeneralInput::default();
     while let Some(field) = multipart.next_field().await.map_err(unreadable)? {
         match field.name() {
             Some("instance_name") => {
                 input.instance_name = field.text().await.map_err(unreadable)?;
             }
             Some("access") => input.access = field.text().await.map_err(unreadable)?,
+            Some("time_zone") => input.time_zone = Some(field.text().await.map_err(unreadable)?),
             Some("file") => input.logo = field.bytes().await.map_err(unreadable)?.to_vec(),
             _ => {}
         }
@@ -261,8 +266,8 @@ async fn read_page_input(multipart: &mut Multipart) -> Result<PageInput, AppErro
     Ok(input)
 }
 
-/// Name, logo and audience, each kept as the settings page keeps it.
-async fn apply_page(state: &AppState, input: &PageInput) -> Result<(), AppError> {
+/// Name, logo, zone and audience, all checked before any is written.
+pub(super) async fn apply_general(state: &AppState, input: &GeneralInput) -> Result<(), AppError> {
     let name = input.instance_name.trim();
     if let Some(key) = SettingsService::name_refusal(name) {
         return Err(AppError::validation(key));
@@ -270,14 +275,22 @@ async fn apply_page(state: &AppState, input: &PageInput) -> Result<(), AppError>
     let public = match input.access.as_str() {
         "everyone" => true,
         "members" => false,
-        _ => {
-            return Err(AppError::validation("validation.unknown_access"));
-        }
+        _ => return Err(AppError::validation("validation.unknown_access")),
+    };
+    let zone = match &input.time_zone {
+        Some(name) => Some(
+            clock::parse_zone(name)
+                .ok_or_else(|| AppError::validation("validation.unknown_zone"))?,
+        ),
+        None => None,
     };
     if !input.logo.is_empty() {
         LogoService::replace(&state.pool, &state.upload_dir, input.logo.clone()).await?;
     }
     SettingsService::set_name(&state.pool, name).await?;
+    if let Some(zone) = zone {
+        SettingsService::set_time_zone(&state.pool, zone).await?;
+    }
     SettingsService::set_public_mode(state, public).await
 }
 
@@ -288,8 +301,8 @@ pub async fn save_page(
     Locale(i18n): Locale,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
-    let applied = match read_page_input(&mut multipart).await {
-        Ok(input) => apply_page(&state, &input).await.map(|()| input),
+    let applied = match read_general(&mut multipart).await {
+        Ok(input) => apply_general(&state, &input).await.map(|()| input),
         Err(e) => Err(e),
     };
     match applied {

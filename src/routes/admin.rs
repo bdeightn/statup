@@ -5,6 +5,7 @@ use axum::extract::{Multipart, Path, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
+use super::setup::{GeneralInput, apply_general, read_general};
 use super::{Frame, render};
 use crate::clock;
 use crate::error::AppError;
@@ -13,7 +14,7 @@ use crate::middleware::headers::no_store;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
 use crate::models::{Role, User, check_display_name};
 use crate::repositories::{NotificationRepository, UserRepository};
-use crate::services::{AuthService, CURRENT_VERSION, LogoService, NewerRelease, SettingsService};
+use crate::services::{AuthService, CURRENT_VERSION, LogoService, NewerRelease};
 use crate::state::AppState;
 
 #[derive(Template)]
@@ -27,8 +28,8 @@ struct SettingsPageTemplate {
     notice: Option<SettingsNotice>,
     /// A refused name, said in the page rather than on the bare error page.
     error: Option<String>,
-    /// The instance zone, and the ones it may switch to.
-    time_zone: &'static str,
+    /// The zone shown as chosen, and the ones it may switch to.
+    time_zone: String,
     zones: Vec<&'static str>,
     users_count: i64,
     admins_count: i64,
@@ -39,13 +40,8 @@ struct SettingsPageTemplate {
 }
 
 enum SettingsNotice {
-    Renamed(String),
-    NameReset,
-    ZoneSet(&'static str),
-    LogoSet,
+    Saved,
     LogoRemoved,
-    PublicOpened,
-    PublicClosed,
 }
 
 impl SettingsPageTemplate {
@@ -68,11 +64,6 @@ impl SettingsPageTemplate {
         zone.replace('_', " ")
     }
 
-    fn zone_notice(&self, zone: &str) -> String {
-        self.i18n
-            .tf("admin.zone_notice", &[("zone", &Self::zone_label(zone))])
-    }
-
     fn newer_notice(&self, release: &NewerRelease) -> String {
         self.i18n
             .tf("admin.version_newer", &[("version", &release.version)])
@@ -84,46 +75,61 @@ impl SettingsPageTemplate {
     }
 }
 
-/// What the settings page says on top of the saved values.
+/// What the general card shows: the saved values, or the ones a refused
+/// save sent, with what to say on top.
 struct SettingsPage {
     instance_name: String,
+    time_zone: String,
+    public_mode: bool,
     notice: Option<SettingsNotice>,
     error: Option<String>,
 }
 
+impl SettingsPage {
+    fn saved(state: &AppState) -> Self {
+        Self {
+            instance_name: crate::instance_name(),
+            time_zone: clock::zone().name().to_string(),
+            public_mode: state.is_public_mode(),
+            notice: None,
+            error: None,
+        }
+    }
+
+    fn typed(state: &AppState, input: &GeneralInput) -> Self {
+        let saved = Self::saved(state);
+        Self {
+            instance_name: input.instance_name.trim().to_string(),
+            time_zone: input.time_zone.clone().unwrap_or(saved.time_zone),
+            public_mode: match input.access.as_str() {
+                "everyone" => true,
+                "members" => false,
+                _ => saved.public_mode,
+            },
+            ..saved
+        }
+    }
+
+    fn refused(self, i18n: &I18n, key: &str) -> Self {
+        Self {
+            error: Some(i18n.t(key).to_string()),
+            ..self
+        }
+    }
+}
+
 #[derive(Deserialize, Default)]
 pub struct SettingsQuery {
-    renamed: Option<String>,
-    public: Option<String>,
-    zone: Option<String>,
+    saved: Option<String>,
     logo: Option<String>,
 }
 
 impl SettingsQuery {
-    /// The name is read back from memory, not from the address bar, so the
-    /// receipt cannot be made to say anything the instance is not called.
     fn notice(&self) -> Option<SettingsNotice> {
-        if self.renamed.is_some() {
-            let name = crate::instance_name();
-            return Some(if name.is_empty() {
-                SettingsNotice::NameReset
-            } else {
-                SettingsNotice::Renamed(name)
-            });
+        if self.saved.is_some() {
+            return Some(SettingsNotice::Saved);
         }
-        if self.zone.is_some() {
-            return Some(SettingsNotice::ZoneSet(clock::zone().name()));
-        }
-        match self.logo.as_deref() {
-            Some("set") => return Some(SettingsNotice::LogoSet),
-            Some("removed") => return Some(SettingsNotice::LogoRemoved),
-            _ => {}
-        }
-        match self.public.as_deref() {
-            Some("on") => Some(SettingsNotice::PublicOpened),
-            Some("off") => Some(SettingsNotice::PublicClosed),
-            _ => None,
-        }
+        (self.logo.as_deref() == Some("removed")).then_some(SettingsNotice::LogoRemoved)
     }
 }
 
@@ -241,9 +247,8 @@ pub async fn settings_page(
     Query(query): Query<SettingsQuery>,
 ) -> Result<Response, AppError> {
     let page = SettingsPage {
-        instance_name: crate::instance_name(),
         notice: query.notice(),
-        error: None,
+        ..SettingsPage::saved(&state)
     };
     render_settings(&state, &user, csrf_token, i18n, page).await
 }
@@ -258,11 +263,11 @@ async fn render_settings(
     let frame = Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?;
     render(&SettingsPageTemplate {
         frame,
-        public_mode: state.is_public_mode(),
+        public_mode: page.public_mode,
         instance_name: page.instance_name,
         notice: page.notice,
         error: page.error,
-        time_zone: clock::zone().name(),
+        time_zone: page.time_zone,
         zones: clock::zone_names(),
         users_count: UserRepository::count_all(&state.pool).await?,
         admins_count: UserRepository::count_admins(&state.pool).await?,
@@ -534,62 +539,34 @@ async fn apply_toggle(state: &AppState, admin: &User, user_id: i64) -> Result<()
     Ok(())
 }
 
-#[derive(Deserialize)]
-pub struct InstanceNameInput {
-    #[serde(default)]
-    instance_name: String,
-}
-
-pub async fn update_instance_name(
-    RequireAdmin(admin): RequireAdmin,
-    State(state): State<AppState>,
-    CsrfToken(csrf_token): CsrfToken,
-    Locale(i18n): Locale,
-    HtmlForm(input): HtmlForm<InstanceNameInput>,
-) -> Result<Response, AppError> {
-    let name = input.instance_name.trim();
-    if let Some(key) = SettingsService::name_refusal(name) {
-        let page = SettingsPage {
-            instance_name: name.to_string(),
-            notice: None,
-            error: Some(i18n.t(key).to_string()),
-        };
-        return render_settings(&state, &admin, csrf_token, i18n, page).await;
-    }
-
-    SettingsService::set_name(&state.pool, name).await?;
-    tracing::info!(
-        admin_id = admin.id,
-        instance_name = name,
-        "Instance name updated"
-    );
-
-    Ok(Redirect::to("/admin/settings?renamed=1").into_response())
-}
-
-/// A logo refused for its file is said on the settings page.
-pub async fn update_logo(
+/// The general card is saved at once: name, logo, zone and audience. A
+/// refusal shows the page again with what was chosen.
+pub async fn save_settings(
     RequireAdmin(admin): RequireAdmin,
     State(state): State<AppState>,
     CsrfToken(csrf_token): CsrfToken,
     Locale(i18n): Locale,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
-    let stored = match super::icons::extract_upload(&mut multipart).await {
-        Ok((_, data)) => LogoService::replace(&state.pool, &state.upload_dir, data).await,
-        Err(e) => Err(e),
+    let input = match read_general(&mut multipart).await {
+        Ok(input) => input,
+        Err(AppError::Validation(key)) => {
+            let page = SettingsPage::saved(&state).refused(&i18n, &key);
+            return render_settings(&state, &admin, csrf_token, i18n, page).await;
+        }
+        Err(e) => return Err(e),
     };
-    match stored {
+    match apply_general(&state, &input).await {
         Ok(()) => {
-            tracing::info!(admin_id = admin.id, "Logo updated");
-            Ok(Redirect::to("/admin/settings?logo=set").into_response())
+            tracing::info!(
+                admin_id = admin.id,
+                public_mode = input.access == "everyone",
+                "Settings saved"
+            );
+            Ok(Redirect::to("/admin/settings?saved=1").into_response())
         }
         Err(AppError::Validation(key)) => {
-            let page = SettingsPage {
-                instance_name: crate::instance_name(),
-                notice: None,
-                error: Some(i18n.t(&key).to_string()),
-            };
+            let page = SettingsPage::typed(&state, &input).refused(&i18n, &key);
             render_settings(&state, &admin, csrf_token, i18n, page).await
         }
         Err(e) => Err(e),
@@ -603,56 +580,4 @@ pub async fn remove_logo(
     LogoService::remove(&state.pool, &state.upload_dir).await?;
     tracing::info!(admin_id = admin.id, "Logo removed");
     Ok(Redirect::to("/admin/settings?logo=removed").into_response())
-}
-
-#[derive(Deserialize)]
-pub struct TimeZoneInput {
-    #[serde(default)]
-    time_zone: String,
-}
-
-pub async fn update_time_zone(
-    RequireAdmin(admin): RequireAdmin,
-    State(state): State<AppState>,
-    HtmlForm(input): HtmlForm<TimeZoneInput>,
-) -> Result<Response, AppError> {
-    let zone = clock::parse_zone(&input.time_zone)
-        .ok_or_else(|| AppError::validation("validation.unknown_zone"))?;
-    SettingsService::set_time_zone(&state.pool, zone).await?;
-    tracing::info!(
-        admin_id = admin.id,
-        time_zone = zone.name(),
-        "Time zone updated"
-    );
-    Ok(Redirect::to("/admin/settings?zone=1").into_response())
-}
-
-#[derive(Deserialize)]
-pub struct AccessInput {
-    #[serde(default)]
-    access: String,
-}
-
-/// Who can read the page: the two choices are the state and the action at
-/// once, so the handler sets rather than toggles.
-pub async fn set_public_access(
-    RequireAdmin(admin): RequireAdmin,
-    State(state): State<AppState>,
-    HtmlForm(input): HtmlForm<AccessInput>,
-) -> Result<Response, AppError> {
-    let public = match input.access.as_str() {
-        "everyone" => true,
-        "members" => false,
-        _ => return Err(AppError::validation("validation.unknown_access")),
-    };
-    SettingsService::set_public_mode(&state, public).await?;
-
-    tracing::info!(
-        admin_id = admin.id,
-        public_mode = public,
-        "Public access updated"
-    );
-
-    let receipt = if public { "on" } else { "off" };
-    Ok(Redirect::to(&format!("/admin/settings?public={receipt}")).into_response())
 }

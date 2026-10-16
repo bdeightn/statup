@@ -541,26 +541,21 @@ async fn role_change_with_invalid_role_is_rejected() {
 async fn instance_name_replaces_the_brand_in_masthead_and_title() {
     let _brand = BRAND.lock().await;
     let (app, _admin_id) = spawn_with_admin().await;
-    let csrf = app.csrf().await;
 
     let (status, _, location) = app
-        .post_form(
-            "/admin/settings/instance-name",
-            &csrf,
-            &[("instance_name", "  Acme Status  ")],
-        )
+        .save_settings(&[("instance_name", "  Acme Status  ")], None)
         .await;
     assert_eq!(status, StatusCode::SEE_OTHER);
-    assert_eq!(location.as_deref(), Some("/admin/settings?renamed=1"));
+    assert_eq!(location.as_deref(), Some("/admin/settings?saved=1"));
 
-    let (_, body) = app.get("/admin/settings?renamed=1").await;
+    let (_, body) = app.get("/admin/settings?saved=1").await;
     assert!(
         body.contains("| Acme Status</title>"),
         "tab title should end with the instance name"
     );
     assert!(
-        body.contains("<q>Acme Status</q>"),
-        "the settings page should confirm the new name in a receipt"
+        body.contains("Réglages enregistrés."),
+        "the settings page should confirm the save once"
     );
     assert!(
         body.contains(r#"<span class="mast-word-custom">Acme Status</span>"#),
@@ -575,31 +570,26 @@ async fn instance_name_replaces_the_brand_in_masthead_and_title() {
         "the settings field should show the trimmed saved value"
     );
 
-    let csrf = app.csrf().await;
-    app.post_form(
-        "/admin/settings/instance-name",
-        &csrf,
-        &[("instance_name", "")],
-    )
-    .await;
+    app.save_settings(&[("instance_name", "")], None).await;
     let (_, body) = app.get("/").await;
     assert!(body.contains(r#"Statu<span class="mast-word-accent">"#));
 }
 
-/// A name past the limit comes back on the settings page with the field
-/// still holding it, not on a bare error page.
+/// A name past the limit comes back on the settings page with every choice
+/// of the card still as sent, and nothing saved.
 #[tokio::test]
 async fn instance_name_too_long_is_refused_in_the_page() {
     let _brand = BRAND.lock().await;
     let (app, _admin_id) = spawn_with_admin().await;
-    let csrf = app.csrf().await;
     let long_name = "a".repeat(41);
 
     let (status, body, location) = app
-        .post_form(
-            "/admin/settings/instance-name",
-            &csrf,
-            &[("instance_name", long_name.as_str())],
+        .save_settings(
+            &[
+                ("instance_name", long_name.as_str()),
+                ("access", "everyone"),
+            ],
+            None,
         )
         .await;
     assert_eq!(status, StatusCode::OK);
@@ -607,52 +597,55 @@ async fn instance_name_too_long_is_refused_in_the_page() {
     assert!(body.contains(r#"id="form-error""#));
     assert!(body.contains(&format!(r#"value="{long_name}""#)));
     assert!(body.contains(r#"aria-invalid="true""#));
+    assert!(
+        body.contains(r#"value="everyone" class="sr-only" checked"#),
+        "the other choice of the card is kept as sent"
+    );
 
     let (_, body) = app.get("/").await;
     assert!(
         body.contains(r#"Statu<span class="mast-word-accent">"#),
         "a refused name must not replace the brand"
     );
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'public_mode'")
+            .fetch_optional(&app.pool)
+            .await
+            .expect("settings are readable");
+    assert_ne!(
+        stored.as_deref(),
+        Some("true"),
+        "nothing of a refused card is saved"
+    );
 }
 
-/// Choosing who can see the page says so on the settings page, keeps the
-/// chosen side marked, and the receipt for opening links to the page.
+/// Who can see the page is saved with the rest of the card, and only then.
 #[tokio::test]
-async fn public_access_choice_confirms_its_new_state() {
+async fn public_access_is_saved_with_the_card() {
     let (app, _admin_id) = spawn_with_admin().await;
-    let csrf = app.csrf().await;
 
-    let (status, _, location) = app
-        .post_form(
-            "/admin/settings/public-mode",
-            &csrf,
-            &[("access", "everyone")],
-        )
-        .await;
+    let (_, body) = app.get("/admin/settings").await;
+    assert!(
+        !body.contains("data-autosubmit"),
+        "a click on a choice no longer saves on its own"
+    );
+    assert!(body.contains(r#"action="/admin/settings/general""#));
+    assert!(body.contains("data-warn-unsaved"));
+
+    let (status, _, location) = app.save_settings(&[("access", "everyone")], None).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
-    assert_eq!(location.as_deref(), Some("/admin/settings?public=on"));
+    assert_eq!(location.as_deref(), Some("/admin/settings?saved=1"));
     let stored: String = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'public_mode'")
         .fetch_one(&app.pool)
         .await
         .expect("the choice is stored");
     assert_eq!(stored, "true");
-
-    let (_, body) = app.get("/admin/settings?public=on").await;
+    let (_, body) = app.get("/admin/settings").await;
     assert!(body.contains(r#"value="everyone" class="sr-only" checked"#));
-    assert!(body.contains(r#"href="/" class="link""#));
 
-    let csrf = app.csrf().await;
-    let (_, _, location) = app
-        .post_form(
-            "/admin/settings/public-mode",
-            &csrf,
-            &[("access", "members")],
-        )
-        .await;
-    assert_eq!(location.as_deref(), Some("/admin/settings?public=off"));
+    app.save_settings(&[("access", "members")], None).await;
     let (_, body) = app.get("/admin/settings").await;
     assert!(body.contains(r#"value="members" class="sr-only" checked"#));
-    assert!(!body.contains(r#"href="/" class="link""#));
 }
 
 #[tokio::test]
@@ -836,20 +829,14 @@ async fn csrf_token_of_an_authenticated_page_is_never_empty() {
 async fn a_logo_replaces_the_mark_until_removed() {
     let _brand = BRAND.lock().await;
     let (app, _) = spawn_with_admin().await;
-    let csrf = app.csrf_from("/admin/settings").await;
     let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 10"><rect width="40" height="10"/></svg>"#;
 
-    let resp = app
-        .client
-        .post(app.url("/admin/settings/logo"))
-        .header("content-type", "multipart/form-data; boundary=statup")
-        .body(icon_upload_body(&csrf, "acme.svg", "image/svg+xml", svg))
-        .send()
-        .await
-        .expect("upload failed");
-    assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+    let (status, _, _) = app
+        .save_settings(&[], Some(("acme.svg", "image/svg+xml", svg)))
+        .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
 
-    let (_, body) = app.get("/admin/settings?logo=set").await;
+    let (_, body) = app.get("/admin/settings?saved=1").await;
     let logo = body
         .split("class=\"mast-logo\" src=\"")
         .nth(1)
@@ -1024,8 +1011,7 @@ async fn switching_language_after_any_form_lands_on_a_page() {
     let (app, admin_id) = spawn_with_admin().await;
     for action in [
         format!("/admin/users/{admin_id}/reset-password"),
-        "/admin/settings/time-zone".to_string(),
-        "/admin/settings/logo".to_string(),
+        "/admin/settings/general".to_string(),
         "/admin/settings/logo/remove".to_string(),
         "/admin/dashboard/layout/order".to_string(),
         "/events/templates/4/delete".to_string(),
