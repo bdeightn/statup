@@ -10,6 +10,7 @@ All notable changes to Statup are listed here. The project is pre-v1: until 1.0,
 - The general settings (instance name, logo, time zone, who can see the page) are saved together with one "Save" button, and leaving the page with unsaved changes asks first; choosing "Everyone" no longer opens the page on a single click.
 - An event opened from a service's side panel leads back to that service, and the side panel of an event offers the step that follows it ("Write the report" once an incident is resolved, "Publish what's new" after a maintenance), taken on the event's page.
 - Fixed: an update posted from an event's own page now confirms it is published, as a new event already did.
+- Fixed: the logo picked at first launch shows in the preview before it is saved, instead of an empty square.
 
 ## 0.5.0, 2026-10-14
 

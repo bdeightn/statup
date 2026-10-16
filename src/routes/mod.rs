@@ -69,8 +69,9 @@ const UPLOAD_BODY_LIMIT: usize = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// No inline script, handler or style anywhere: behavior lives in
-/// `static/js`, presentation in the stylesheet.
-const APP_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'self'; frame-ancestors 'none'";
+/// `static/js`, presentation in the stylesheet. `blob:` images let a logo
+/// picked at first launch show before it is uploaded.
+const APP_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; font-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'self'; frame-ancestors 'none'";
 
 const PERMISSIONS_POLICY: &str = "camera=(), microphone=(), geolocation=(), interest-cohort=()";
 
