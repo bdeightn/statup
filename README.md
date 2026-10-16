@@ -47,6 +47,7 @@ It is a status page you host yourself. Whoever runs a service posts, once, what 
 - **Quick to publish**: dated updates, reusable templates and a short report once an incident is resolved; an outage spotted by the checks is declared in one click.
 - **Tells people where they are**: each incident, maintenance and announcement posted to Microsoft Teams, Slack, Google Chat, Discord or Mattermost, to phones through ntfy, by email, or to any tool through a webhook, in the language of each destination.
 - **Easy to follow**: search and filters, a side panel to read without leaving the list, and an Atom feed for feed readers.
+- **A record of everything**: a Journal for administrators shows who changed what, sign-ins, outages with their reason and messages that did not leave, kept 90 days and exported as a spreadsheet.
 - **Your page, your way**: public or members only, your name and logo, blocks you arrange on the page; French, English, German and Spanish, light and dark, accessible.
 
 **Light, private, safe by default.**
@@ -90,12 +91,12 @@ Add them from the **Team** page: they open the same address. For HTTPS and a nam
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/assets/roadmap-dark.png">
-  <img src=".github/assets/roadmap.png" alt="Roadmap: shipped are automatic monitoring, notifications, four languages, password reset and clearer incident updates; coming next, in order, the nine steps listed below, then the stable 1.0 release" width="1296">
+  <img src=".github/assets/roadmap.png" alt="Roadmap: shipped are automatic monitoring, notifications, four languages, password reset and clearer incident updates; step 1, the activity log, shipped in 0.6.0; coming next, in order, steps 2 to 9 listed below, then the stable 1.0 release" width="1296">
 </picture>
 
 Planned, in this order, without dates:
 
-1. **Activity log**: every action, check and sign-in, for administrators to look back on.
+1. ~~**Activity log**: every action, check and sign-in, for administrators to look back on.~~ Shipped in 0.6.0.
 2. **Groups and visibility**: choose which services and events each group of colleagues sees.
 3. **Email subscriptions**: visitors get each update in their inbox.
 4. **API and monitoring tools**: Zabbix, Grafana or a script open and close incidents by themselves.

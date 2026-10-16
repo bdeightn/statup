@@ -2,9 +2,9 @@
 
 All notable changes to Statup are listed here. The project is pre-v1: until 1.0, a minor version may change the interface or the database, and the README asks you to back up before upgrading.
 
-## Unreleased
+## 0.6.0, 2026-10-16
 
-- A Journal page for administrators, in Settings: what members changed, sign-ins, outages with the address checked and the reason, alert messages that did not leave, and the app's errors, day by day, with filters and an export. Essential, the default, keeps the large changes and the real problems; Detailed keeps everything from the moment it is chosen. Lines are kept 90 days by default. The server output shows the same lines, in clear words.
+- A Journal page for administrators, in Settings: what members changed, sign-ins, outages with the address checked and the reason, alert messages that did not leave, and the app's errors, day by day, in the reader's language, with lines that repeat folded into one, filters and an export. Essential, the default, keeps the large changes and the real problems; Detailed keeps everything from the moment it is chosen. Lines are kept 90 days by default. The server output shows the same lines, in clear words.
 - The delay before an outage is typed in its sentence, without a box.
 - Administrators arrange the dashboard from the dashboard itself: an "Arrange" button sits beside "New event", turns the page title into "Arrange the blocks" and gives way to "Done" in the same place; Escape also leaves. Not offered on a phone, where every block takes the full width.
 - Each action has one way in and one name: the settings no longer repeat "Arrange the blocks", the icons page opens from the Services page (where editors, who may use it, can reach it), the page that sends to Teams, Slack or email is called "Alerts" and each of its entries a "channel", so "Notifications" now only means the bell, and adding a service reads "New service" everywhere. An event's progress is called "Progress" on every screen, and its side panel links to "Open the page".
