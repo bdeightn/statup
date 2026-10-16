@@ -301,7 +301,10 @@ async fn apply(
     let service_id = checked.service.id;
     let (failures, transition) = next_state(checked.observation, silenced);
     let since = state.record(service_id, failures, silenced, now);
-    if checked.observation.outcome == Outcome::Failed {
+    // A failed check says why an outage is coming; once it is declared, or
+    // while a maintenance takes the service down, it would only repeat.
+    let building = !checked.observation.detected && !silenced;
+    if checked.observation.outcome == Outcome::Failed && building {
         checked
             .record(pool, JournalKind::CheckFailed, failures, detailed)
             .await;
@@ -437,6 +440,32 @@ mod tests {
         ServiceRepository::set_check(pool, service_id, Some(&check))
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_checks_stop_being_kept_once_the_outage_is_declared() {
+        let pool = test_pool().await;
+        checked_service(&pool, "Intranet").await;
+        crate::journal::save_settings(&pool, true, 90)
+            .await
+            .unwrap();
+        let mut state = MonitorState::default();
+
+        rounds(&pool, &mut state, Outcome::Failed, &[0, 1, 2, 3, 4, 5, 6]).await;
+
+        let kinds: Vec<String> = sqlx::query_scalar("SELECT kind FROM journal_entries ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            kinds,
+            [
+                "check_failed",
+                "check_failed",
+                "check_failed",
+                "outage_detected"
+            ]
+        );
     }
 
     #[tokio::test]
