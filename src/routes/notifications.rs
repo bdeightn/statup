@@ -628,10 +628,13 @@ pub async fn test(
     let outcome = result
         .as_ref()
         .map_or_else(|failure| failure.code(), |()| "sent".to_string());
-    let entry = NewJournalEntry::new(JournalKind::ChannelTested)
+    let mut entry = NewJournalEntry::new(JournalKind::ChannelTested)
         .by(&user)
-        .about(&channel.name)
-        .with_detail(outcome);
+        .with_detail(format!("{} · {outcome}", channel.kind.as_str()));
+    // A channel tried before it has a name is named by its tool alone.
+    if !channel.name.trim().is_empty() {
+        entry = entry.about(channel.name.trim());
+    }
     journal::record(&state.pool, entry).await;
     let (tone, message) = match result {
         Ok(()) => ("ok", i18n.t("notifications.test_sent").to_string()),

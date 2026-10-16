@@ -10,7 +10,7 @@ use tracing::field::{Field, Visit};
 use tracing::span::{Attributes, Id};
 use tracing::{Event, Level, Metadata, Subscriber};
 use tracing_subscriber::Layer;
-use tracing_subscriber::filter::{FilterFn, Filtered};
+use tracing_subscriber::filter::{FilterFn, Filtered, LevelFilter};
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::registry::LookupSpan;
 
@@ -57,7 +57,9 @@ where
         }
     };
     (
-        layer.with_filter(FilterFn::new(wanted)),
+        // The request spans are INFO: the hint keeps every DEBUG and TRACE
+        // callsite skipped up front when the output does not want them.
+        layer.with_filter(FilterFn::new(wanted).with_max_level_hint(LevelFilter::INFO)),
         JournalInbox { receiver, dropped },
     )
 }

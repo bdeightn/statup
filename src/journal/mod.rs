@@ -154,7 +154,11 @@ pub fn scrub(text: &str) -> String {
     cut(clean)
 }
 
+/// Where the first web address starts, whatever the case of its scheme:
+/// `HTTPS://` is a valid address too.
 fn address_start(text: &str) -> Option<usize> {
+    // Lower-casing ASCII keeps every byte where it was.
+    let text = text.to_ascii_lowercase();
     [text.find("http://"), text.find("https://")]
         .into_iter()
         .flatten()
@@ -201,6 +205,10 @@ mod tests {
         assert_eq!(
             scrub("got http://admin:hunter2@10.0.0.5:8080?token=abc and https://intranet"),
             "got http://10.0.0.5:8080/… and https://intranet"
+        );
+        assert_eq!(
+            scrub("HTTPS://intranet.example/health?key=SECRET"),
+            "HTTPS://intranet.example/…"
         );
     }
 

@@ -546,6 +546,7 @@
   "journal.channel_updated": "{actor} hat den Alarmierungskanal „{subject}“ geändert",
   "journal.channel_deleted": "{actor} hat den Alarmierungskanal „{subject}“ gelöscht",
   "journal.channel_tested": "{actor} hat den Kanal „{subject}“ ausprobiert",
+  "journal.channel_tested_unnamed": "{actor} hat einen Alarmierungskanal ausprobiert",
   "journal.member_added": "{actor} hat {subject} zum Team hinzugefügt",
   "journal.member_role_changed": "{actor} hat die Rolle von {subject} geändert",
   "journal.member_disabled": "{actor} hat das Konto von {subject} deaktiviert",

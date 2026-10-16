@@ -546,6 +546,7 @@
   "journal.channel_updated": "{actor} changed the alert channel “{subject}”",
   "journal.channel_deleted": "{actor} deleted the alert channel “{subject}”",
   "journal.channel_tested": "{actor} tried the channel “{subject}”",
+  "journal.channel_tested_unnamed": "{actor} tried an alert channel",
   "journal.member_added": "{actor} added {subject} to the team",
   "journal.member_role_changed": "{actor} changed the role of {subject}",
   "journal.member_disabled": "{actor} disabled the account of {subject}",

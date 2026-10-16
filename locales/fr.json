@@ -546,6 +546,7 @@
   "journal.channel_updated": "{actor} a modifié le canal d'alerte « {subject} »",
   "journal.channel_deleted": "{actor} a supprimé le canal d'alerte « {subject} »",
   "journal.channel_tested": "{actor} a essayé le canal « {subject} »",
+  "journal.channel_tested_unnamed": "{actor} a essayé un canal d'alerte",
   "journal.member_added": "{actor} a ajouté {subject} à l'équipe",
   "journal.member_role_changed": "{actor} a changé le rôle de {subject}",
   "journal.member_disabled": "{actor} a désactivé le compte de {subject}",

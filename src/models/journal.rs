@@ -483,6 +483,9 @@ impl JournalEntry {
             JournalKind::ChannelCreated => "journal.channel_created",
             JournalKind::ChannelUpdated => "journal.channel_updated",
             JournalKind::ChannelDeleted => "journal.channel_deleted",
+            JournalKind::ChannelTested if self.subject.is_none() => {
+                "journal.channel_tested_unnamed"
+            }
             JournalKind::ChannelTested => "journal.channel_tested",
             JournalKind::MemberAdded => "journal.member_added",
             JournalKind::MemberRoleChanged => "journal.member_role_changed",

@@ -190,11 +190,10 @@ async fn send_link(
     page_locale: &str,
 ) -> Result<(), AppError> {
     let link = match PasswordResetService::request(pool, email).await? {
-        LinkRequest::NoAccount => return Ok(()),
-        LinkRequest::LimitReached => {
-            record_requests_blocked(pool, ip).await;
-            return Ok(());
-        }
+        // An account past its links of the hour writes nothing: requests
+        // from many addresses would otherwise write a line each, and the
+        // limit per address already says when it starts.
+        LinkRequest::NoAccount | LinkRequest::LimitReached => return Ok(()),
         LinkRequest::Issued(link) => link,
     };
     record_reset(
