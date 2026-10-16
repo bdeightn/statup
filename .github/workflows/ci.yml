@@ -1,9 +1,18 @@
 name: CI
 
+# Every commit already passes the same checks locally before it is made, so
+# a draft pull request runs nothing: the checks start once it is marked ready.
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
+
+# A newer push to the same pull request replaces the run still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -12,6 +21,7 @@ env:
 jobs:
   checks:
     name: Format, lint and test
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +35,7 @@ jobs:
 
   msrv:
     name: Minimum Rust version
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +47,7 @@ jobs:
 
   audit:
     name: Dependency advisories
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     # The action publishes its report as a check on the commit.
     permissions:
@@ -52,6 +64,7 @@ jobs:
 
   stylesheet:
     name: Stylesheet builds
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +77,7 @@ jobs:
 
   browser:
     name: Browser tests
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -95,6 +109,7 @@ jobs:
 
   docker:
     name: Docker image builds
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
