@@ -6,7 +6,7 @@ use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
 use super::detail::{Composer, ReviewForm, detail_page};
-use super::{record_on, title_of};
+use super::record_event;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
@@ -42,8 +42,7 @@ pub async fn publish_review(
 ) -> Result<Response, AppError> {
     match EventService::publish_review(&state.pool, id, &input.body, &user).await {
         Ok(()) => {
-            let title = title_of(&state.pool, id).await;
-            record_on(&state.pool, JournalKind::ReviewPublished, &user, &title).await;
+            record_event(&state.pool, JournalKind::ReviewPublished, &user, id, None).await;
             Ok(Redirect::to(&format!("/events/{id}?published=1")).into_response())
         }
         Err(AppError::Validation(key)) => {
@@ -70,7 +69,6 @@ pub async fn remove_review(
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
     EventService::remove_review(&state.pool, id, user.role).await?;
-    let title = title_of(&state.pool, id).await;
-    record_on(&state.pool, JournalKind::ReviewRemoved, &user, &title).await;
+    record_event(&state.pool, JournalKind::ReviewRemoved, &user, id, None).await;
     Ok(Redirect::to(&format!("/events/{id}")).into_response())
 }

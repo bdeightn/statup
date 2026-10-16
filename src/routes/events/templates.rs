@@ -5,12 +5,11 @@ use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
-use super::record_on;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::RequirePublisher;
 use crate::models::{Category, JournalKind, Severity};
-use crate::repositories::EventTemplateRepository;
+use crate::repositories::{EventTemplateRepository, NewJournalEntry};
 use crate::routes::render;
 use crate::services::EventTemplateService;
 use crate::state::AppState;
@@ -73,12 +72,10 @@ pub async fn template_delete(
         .await?
         .ok_or(AppError::NotFound)?;
     EventTemplateService::delete(&state.pool, id).await?;
-    record_on(
-        &state.pool,
-        JournalKind::TemplateDeleted,
-        &user,
-        &template.title,
-    )
-    .await;
+    NewJournalEntry::new(JournalKind::TemplateDeleted)
+        .by(&user)
+        .about(&template.title)
+        .record(&state.pool)
+        .await;
     Ok(Redirect::to("/events/new").into_response())
 }

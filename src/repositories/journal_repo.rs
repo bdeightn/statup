@@ -4,11 +4,12 @@
 use chrono::{DateTime, Utc};
 use sqlx::{QueryBuilder, Sqlite};
 
+use super::escape_like;
 use crate::clock;
 use crate::db::DbPool;
 use crate::models::{JournalEntry, JournalFilters, JournalKind};
 
-/// A line to write; its family and importance follow from its kind.
+/// A line to write; its family follows from its kind.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewJournalEntry {
     pub kind: JournalKind,
@@ -46,12 +47,11 @@ impl JournalRepository {
         }
         let mut query = QueryBuilder::<Sqlite>::new(
             "INSERT INTO journal_entries \
-             (kind, category, essential, actor_id, actor_name, subject, detail, ip) ",
+             (kind, category, actor_id, actor_name, subject, detail, ip) ",
         );
         query.push_values(entries, |mut row, entry| {
             row.push_bind(entry.kind)
                 .push_bind(entry.kind.category())
-                .push_bind(entry.kind.is_essential())
                 .push_bind(entry.actor_id)
                 .push_bind(entry.actor_name.as_deref())
                 .push_bind(entry.subject.as_deref())
@@ -68,7 +68,7 @@ impl JournalRepository {
         filters: &JournalFilters,
     ) -> Result<Vec<JournalEntry>, sqlx::Error> {
         let mut query = QueryBuilder::<Sqlite>::new(
-            "SELECT id, kind, category, actor_name, subject, detail, ip, created_at \
+            "SELECT id, kind, actor_name, subject, detail, ip, created_at \
              FROM journal_entries",
         );
         push_filters(&mut query, filters);
@@ -126,14 +126,6 @@ fn push_filters(query: &mut QueryBuilder<'_, Sqlite>, filters: &JournalFilters) 
     }
 }
 
-/// A search for `50%` looks for the sign, not for anything.
-fn escape_like(words: &str) -> String {
-    words
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
-}
-
 #[cfg(test)]
 mod tests {
     use chrono::Duration;
@@ -141,8 +133,8 @@ mod tests {
     use super::*;
     use crate::test_helpers::test_pool;
 
-    async fn rows(pool: &DbPool) -> Vec<(String, String, bool, Option<String>)> {
-        sqlx::query_as("SELECT kind, category, essential, subject FROM journal_entries ORDER BY id")
+    async fn rows(pool: &DbPool) -> Vec<(JournalKind, Option<String>)> {
+        sqlx::query_as("SELECT kind, subject FROM journal_entries ORDER BY id")
             .fetch_all(pool)
             .await
             .unwrap()
@@ -162,15 +154,18 @@ mod tests {
         assert_eq!(
             rows(&pool).await,
             vec![
-                (
-                    "app_error".into(),
-                    "system".into(),
-                    true,
-                    Some("Database error".into())
-                ),
-                ("app_warning".into(), "system".into(), false, None),
+                (JournalKind::AppError, Some("Database error".into())),
+                (JournalKind::AppWarning, None),
             ]
         );
+        let stored: Vec<String> =
+            sqlx::query_scalar("SELECT category FROM journal_entries ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(stored, ["system", "system"]);
+        assert!(JournalKind::AppError.is_essential());
+        assert!(!JournalKind::AppWarning.is_essential());
     }
 
     #[tokio::test]

@@ -15,7 +15,6 @@ use super::render;
 use crate::clock;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
-use crate::journal;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
 use crate::models::{CheckKind, JournalKind, MAX_ICON_SIZE, Service, ServiceCheck, User};
 use crate::repositories::{NewJournalEntry, ServiceRepository};
@@ -277,7 +276,7 @@ pub(super) async fn record_settings_saved(state: &AppState, admin: &User, change
     if !changed.is_empty() {
         entry = entry.with_detail(changed.join(", "));
     }
-    journal::record(&state.pool, entry).await;
+    entry.record(&state.pool).await;
 }
 
 pub(super) async fn read_general(multipart: &mut Multipart) -> Result<GeneralInput, AppError> {
@@ -546,10 +545,11 @@ pub async fn save_services(
     match create_services(&state, &names, &checks, &i18n).await {
         Ok(()) => {
             for name in &names {
-                let entry = NewJournalEntry::new(JournalKind::ServiceCreated)
+                NewJournalEntry::new(JournalKind::ServiceCreated)
                     .by(&admin)
-                    .about(name);
-                journal::record(&state.pool, entry).await;
+                    .about(name)
+                    .record(&state.pool)
+                    .await;
             }
             Ok(Redirect::to("/setup/done").into_response())
         }

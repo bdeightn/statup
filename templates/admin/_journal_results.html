@@ -19,13 +19,13 @@
     {% for day in results.days %}
     <h2 class="log-day">{{ day.label }}</h2>
     <ul class="log-list">
-        {% for entry in day.entries %}
+        {% for entry in day.items %}
         <li>
-            <div class="log-row journal-row">
+            <div class="log-row">
             <span class="log-time">{{ i18n.format_time(entry.created_at) }}</span>
             <span class="log-body">
                 <span class="log-head">
-                    {% call ui::kind_chip(i18n.t(entry.category.label_key()), entry.kind.tone().as_str()) %}{% endcall %}
+                    {% call ui::kind_chip(i18n.t(entry.kind.category().label_key()), entry.kind.tone().as_str()) %}{% endcall %}
                     <span class="log-title">{{ entry.sentence(i18n) }}</span>
                 </span>
                 {% let facts = entry.facts() %}

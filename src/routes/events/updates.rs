@@ -6,10 +6,9 @@ use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
 use super::detail::{Composer, ReviewForm, detail_page, drawer_page};
-use super::{record_on, title_of};
+use super::{record_event, title_of};
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
-use crate::journal;
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
 use crate::models::{JournalKind, Lifecycle, User};
 use crate::repositories::NewJournalEntry;
@@ -45,13 +44,15 @@ impl UpdateInput {
 
     /// The new state is the detail, when the update sets one.
     async fn record(&self, state: &AppState, id: i64, user: &User) {
-        let mut entry = NewJournalEntry::new(JournalKind::EventUpdatePosted)
-            .by(user)
-            .about(title_of(&state.pool, id).await);
-        if let Some(lifecycle) = self.lifecycle {
-            entry = entry.with_detail(lifecycle.as_str());
-        }
-        journal::record(&state.pool, entry).await;
+        let detail = self.lifecycle.map(Lifecycle::as_str);
+        record_event(
+            &state.pool,
+            JournalKind::EventUpdatePosted,
+            user,
+            id,
+            detail,
+        )
+        .await;
     }
 
     /// The form again, with what the author wrote and why it was refused.
@@ -126,8 +127,14 @@ pub async fn delete_update(
     Path((id, update_id)): Path<(i64, i64)>,
 ) -> Result<Response, AppError> {
     EventService::delete_update(&state.pool, id, update_id, &user).await?;
-    let title = title_of(&state.pool, id).await;
-    record_on(&state.pool, JournalKind::EventUpdateDeleted, &user, &title).await;
+    record_event(
+        &state.pool,
+        JournalKind::EventUpdateDeleted,
+        &user,
+        id,
+        None,
+    )
+    .await;
     Ok(Redirect::to(&format!("/events/{id}")).into_response())
 }
 
@@ -137,8 +144,7 @@ pub async fn revert_lifecycle(
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
     EventService::revert(&state.pool, id, user.role).await?;
-    let title = title_of(&state.pool, id).await;
-    record_on(&state.pool, JournalKind::EventReverted, &user, &title).await;
+    record_event(&state.pool, JournalKind::EventReverted, &user, id, None).await;
     Ok(Redirect::to(&format!("/events/{id}")).into_response())
 }
 
@@ -149,6 +155,10 @@ pub async fn delete(
 ) -> Result<Response, AppError> {
     let title = title_of(&state.pool, id).await;
     EventService::delete(&state.pool, id, user.role).await?;
-    record_on(&state.pool, JournalKind::EventDeleted, &user, &title).await;
+    NewJournalEntry::new(JournalKind::EventDeleted)
+        .by(&user)
+        .about(title)
+        .record(&state.pool)
+        .await;
     Ok(Redirect::to("/events").into_response())
 }

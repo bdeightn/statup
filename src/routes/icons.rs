@@ -11,7 +11,6 @@ use serde::Deserialize;
 use super::{Frame, render};
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
-use crate::journal;
 use crate::middleware::{CsrfToken, RequirePublisher};
 use crate::models::{Icon, JournalKind, MAX_ICON_SIZE, User};
 use crate::repositories::{IconRepository, NewJournalEntry};
@@ -186,10 +185,11 @@ async fn store_upload(
         user.id,
     )
     .await?;
-    let entry = NewJournalEntry::new(JournalKind::IconUploaded)
+    NewJournalEntry::new(JournalKind::IconUploaded)
         .by(user)
-        .about(&icon.original_name);
-    journal::record(&state.pool, entry).await;
+        .about(&icon.original_name)
+        .record(&state.pool)
+        .await;
     Ok(icon)
 }
 
@@ -243,10 +243,11 @@ pub async fn delete(
 ) -> Result<Response, AppError> {
     match IconService::delete(&state.pool, &state.upload_dir, id).await {
         Ok(icon) => {
-            let entry = NewJournalEntry::new(JournalKind::IconDeleted)
+            NewJournalEntry::new(JournalKind::IconDeleted)
                 .by(&user)
-                .about(&icon.original_name);
-            journal::record(&state.pool, entry).await;
+                .about(&icon.original_name)
+                .record(&state.pool)
+                .await;
             let removed = utf8_percent_encode(&icon.original_name, NON_ALPHANUMERIC);
             Ok(Redirect::to(&format!("/icons?removed={removed}")).into_response())
         }

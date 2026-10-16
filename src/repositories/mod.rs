@@ -27,3 +27,11 @@ pub use password_reset_repo::*;
 pub use service_repo::*;
 pub use settings_repo::*;
 pub use user_repo::*;
+
+/// A search for `50%` looks for the sign, not for anything.
+pub(crate) fn escape_like(words: &str) -> String {
+    words
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}

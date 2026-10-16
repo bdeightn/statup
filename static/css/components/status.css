@@ -757,7 +757,7 @@
         border-top: 0;
     }
 
-    .log-row:hover {
+    a.log-row:hover {
         background: var(--surface-hover);
     }
 
@@ -804,7 +804,7 @@
         overflow-wrap: anywhere;
     }
 
-    .log-row:hover .log-title {
+    a.log-row:hover .log-title {
         text-decoration: underline;
         text-decoration-color: var(--line-strong);
         text-underline-offset: 3px;
@@ -838,12 +838,7 @@
     }
 
     .journal-edit:hover,
-    .journal-menu[open] > .journal-edit {
-        text-decoration: underline;
-        text-decoration-color: var(--line-strong);
-        text-underline-offset: 3px;
-    }
-
+    .journal-menu[open] > .journal-edit,
     /* The count of lines, and the download of them to its right. */
     .results-bar {
         display: flex;
@@ -978,16 +973,8 @@
         }
     }
 
-    /* A journal line is read, not opened: no hover, and its facts wrap
-       under the sentence in plain text. */
-    .journal-row:hover {
-        background: none;
-    }
-
-    .journal-row:hover .log-title {
-        text-decoration: none;
-    }
-
+    /* A journal line is read, not opened: its facts wrap under the
+       sentence in plain text. */
     .journal-facts {
         display: block;
         margin-top: 4px;

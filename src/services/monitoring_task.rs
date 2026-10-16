@@ -17,7 +17,7 @@ use super::{ServiceService, notify_later, tell_outage_detected};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::journal;
-use crate::models::{CheckKind, CheckedService, Happening, JournalKind, Notification};
+use crate::models::{CheckedService, Happening, JournalKind, Notification};
 use crate::repositories::{EventRepository, NewJournalEntry, ServiceRepository};
 
 const ROUND_INTERVAL: Duration = Duration::from_secs(60);
@@ -151,6 +151,7 @@ pub async fn run_round<P: Prober>(
     if services.is_empty() {
         return Ok(());
     }
+    let detailed = journal::captures_details(pool).await;
     let silenced: HashSet<i64> = EventRepository::services_under_maintenance(pool)
         .await?
         .into_iter()
@@ -174,7 +175,7 @@ pub async fn run_round<P: Prober>(
             })
         })
         .collect();
-    if skip_this_round(pool, state, &observed).await {
+    if skip_this_round(pool, state, &observed, detailed).await {
         return Ok(());
     }
     // One service that cannot be recorded, such as one deleted during the
@@ -183,7 +184,7 @@ pub async fn run_round<P: Prober>(
     for checked in &observed {
         let service_id = checked.service.id;
         let silenced = silenced.contains(&service_id);
-        match apply(pool, state, checked, silenced, now).await {
+        match apply(pool, state, checked, silenced, now, detailed).await {
             Ok(Some(happening)) => changes.push((happening, service_id)),
             Ok(None) => {}
             Err(e) => {
@@ -206,12 +207,8 @@ impl Checked<'_> {
     /// What the journal says about this check: the address, without what
     /// follows the host, then why it failed and how many times in a row.
     fn detail(&self, failures: u8) -> String {
-        let target = match self.service.kind {
-            CheckKind::Http => journal::scrub(&self.service.target),
-            CheckKind::Tcp => self.service.target.clone(),
-        };
-        let mut parts = vec![target];
-        if self.report.outcome() == Outcome::Failed {
+        let mut parts = vec![self.service.target.clone()];
+        if self.observation.outcome == Outcome::Failed {
             parts.push(self.report.finding.words());
             parts.extend(self.report.detail.clone());
             parts.push(format!("{failures} failed in a row"));
@@ -219,11 +216,14 @@ impl Checked<'_> {
         parts.join(" · ")
     }
 
-    async fn record(&self, pool: &DbPool, kind: JournalKind, failures: u8) {
+    async fn record(&self, pool: &DbPool, kind: JournalKind, failures: u8, detailed: bool) {
+        if !journal::kept(kind, detailed) {
+            return;
+        }
         let entry = NewJournalEntry::new(kind)
             .about(&self.service.name)
             .with_detail(self.detail(failures));
-        journal::record(pool, entry).await;
+        journal::record_with(pool, entry, detailed).await;
     }
 }
 
@@ -261,6 +261,7 @@ async fn skip_this_round(
     pool: &DbPool,
     state: &mut MonitorState,
     observed: &[Checked<'_>],
+    detailed: bool,
 ) -> bool {
     let observations: Vec<Observation> = observed.iter().map(|c| c.observation).collect();
     let (skip, skipped_rounds) =
@@ -271,7 +272,7 @@ async fn skip_this_round(
             "{} services, Statup's own connection is suspected",
             observations.len()
         ));
-        journal::record(pool, entry).await;
+        journal::record_with(pool, entry, detailed).await;
     }
     skip
 }
@@ -282,13 +283,14 @@ async fn apply(
     checked: &Checked<'_>,
     silenced: bool,
     now: DateTime<Utc>,
+    detailed: bool,
 ) -> Result<Option<Happening>, AppError> {
     let service_id = checked.service.id;
     let (failures, transition) = next_state(checked.observation, silenced);
     let since = state.record(service_id, failures, silenced, now);
-    if checked.report.outcome() == Outcome::Failed {
+    if checked.observation.outcome == Outcome::Failed {
         checked
-            .record(pool, JournalKind::CheckFailed, failures)
+            .record(pool, JournalKind::CheckFailed, failures, detailed)
             .await;
     }
     let told = match transition {
@@ -296,7 +298,7 @@ async fn apply(
         Transition::Down => {
             ServiceRepository::mark_detected_down(pool, service_id, since).await?;
             checked
-                .record(pool, JournalKind::OutageDetected, failures)
+                .record(pool, JournalKind::OutageDetected, failures, detailed)
                 .await;
             // An incident being worked on already tells people.
             EventRepository::status_drivers(pool, service_id)
@@ -307,7 +309,7 @@ async fn apply(
         Transition::Up => {
             ServiceRepository::mark_detected_up(pool, service_id, now).await?;
             checked
-                .record(pool, JournalKind::OutageEnded, failures)
+                .record(pool, JournalKind::OutageEnded, failures, detailed)
                 .await;
             Some(Happening::ServiceUp)
         }

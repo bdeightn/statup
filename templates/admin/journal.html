@@ -21,7 +21,7 @@
            fold under "Change", in a panel over the page. #}
         <div class="journal-summary">
             <span>{{ capture.summary }}&nbsp;<span aria-hidden="true">·</span> {{ capture.kept }}&nbsp;<span aria-hidden="true">·</span></span>
-            <details class="more-actions journal-menu" data-more-actions data-reset-on-close{% if capture.open %} open{% endif %}>
+            <details class="more-actions journal-menu" data-more-actions{% if capture.open %} open{% endif %}>
                 <summary class="journal-edit">{{ i18n.t("journal.edit") }}{% call ui::caret_icon() %}{% endcall %}</summary>
                 <form class="more-actions-menu journal-panel" method="post" action="/admin/journal/settings" data-warn-unsaved>
                     <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">

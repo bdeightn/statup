@@ -676,17 +676,17 @@
     document.addEventListener("submit", (event) => {
         if (event.target instanceof HTMLFormElement) delete event.target.dataset.unsaved;
     });
-    // A settings panel closed without saving forgets what was changed.
+    // A menu closed without saving forgets what was changed in its forms.
     document.addEventListener(
         "toggle",
         (event) => {
-            const panel = event.target;
-            if (!(panel instanceof HTMLDetailsElement) || panel.open) return;
-            if (!panel.hasAttribute("data-reset-on-close")) return;
-            const form = panel.querySelector("form");
-            if (!form) return;
-            form.reset();
-            delete form.dataset.unsaved;
+            const menu = event.target;
+            if (!(menu instanceof HTMLDetailsElement) || menu.open) return;
+            if (!menu.hasAttribute("data-more-actions")) return;
+            menu.querySelectorAll("form[data-warn-unsaved]").forEach((form) => {
+                form.reset();
+                delete form.dataset.unsaved;
+            });
         },
         true,
     );

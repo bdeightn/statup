@@ -13,7 +13,6 @@ use super::{Frame, members_only, render};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
-use crate::journal;
 use crate::middleware::headers::is_htmx;
 use crate::middleware::{CsrfToken, HtmlForm, OptionalUser, RequirePublisher};
 use crate::models::{
@@ -432,10 +431,11 @@ pub async fn create(
 ) -> Result<Response, AppError> {
     match save_new(&state.pool, &input).await {
         Ok(service) => {
-            let entry = NewJournalEntry::new(JournalKind::ServiceCreated)
+            NewJournalEntry::new(JournalKind::ServiceCreated)
                 .by(&user)
-                .about(&service.name);
-            journal::record(&state.pool, entry).await;
+                .about(&service.name)
+                .record(&state.pool)
+                .await;
             Ok(Redirect::to(&format!("/services?saved={}", service.id)).into_response())
         }
         Err(AppError::Validation(key)) => {
@@ -507,10 +507,11 @@ pub async fn update(
 ) -> Result<Response, AppError> {
     match save_edit(&state.pool, id, &input).await {
         Ok(()) => {
-            let entry = NewJournalEntry::new(JournalKind::ServiceUpdated)
+            NewJournalEntry::new(JournalKind::ServiceUpdated)
                 .by(&user)
-                .about(input.name.trim());
-            journal::record(&state.pool, entry).await;
+                .about(input.name.trim())
+                .record(&state.pool)
+                .await;
             Ok(Redirect::to(&format!("/services?saved={id}")).into_response())
         }
         Err(AppError::Validation(key)) => {
@@ -538,10 +539,11 @@ pub async fn delete(
         .ok_or(AppError::NotFound)?;
     match ServiceService::delete(&state.pool, id).await {
         Ok(()) => {
-            let entry = NewJournalEntry::new(JournalKind::ServiceDeleted)
+            NewJournalEntry::new(JournalKind::ServiceDeleted)
                 .by(&user)
-                .about(&service.name);
-            journal::record(&state.pool, entry).await;
+                .about(&service.name)
+                .record(&state.pool)
+                .await;
             let name = percent_encoding::utf8_percent_encode(
                 &service.name,
                 percent_encoding::NON_ALPHANUMERIC,
@@ -576,11 +578,10 @@ pub async fn save_order(
     if !ServiceRepository::reorder(&state.pool, &form.order).await? {
         return Err(AppError::validation("error.invalid_data"));
     }
-    journal::record(
-        &state.pool,
-        NewJournalEntry::new(JournalKind::ServicesReordered).by(&user),
-    )
-    .await;
+    NewJournalEntry::new(JournalKind::ServicesReordered)
+        .by(&user)
+        .record(&state.pool)
+        .await;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -598,10 +599,11 @@ pub async fn save_problems_first(
     HtmlForm(form): HtmlForm<ProblemsFirstForm>,
 ) -> Result<Response, AppError> {
     ServiceService::set_problems_first(&state.pool, form.enabled).await?;
-    let entry = NewJournalEntry::new(JournalKind::ProblemsFirstChanged)
+    NewJournalEntry::new(JournalKind::ProblemsFirstChanged)
         .by(&user)
-        .with_detail(if form.enabled { "on" } else { "off" });
-    journal::record(&state.pool, entry).await;
+        .with_detail(if form.enabled { "on" } else { "off" })
+        .record(&state.pool)
+        .await;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -639,11 +641,12 @@ async fn record_status_set(
     } else {
         status.as_str().to_string()
     };
-    let entry = NewJournalEntry::new(JournalKind::ServiceStatusSet)
+    NewJournalEntry::new(JournalKind::ServiceStatusSet)
         .by(user)
         .about(name)
-        .with_detail(detail);
-    journal::record(pool, entry).await;
+        .with_detail(detail)
+        .record(pool)
+        .await;
 }
 
 /// Answers htmx with the refreshed cell; a plain form post goes back to the

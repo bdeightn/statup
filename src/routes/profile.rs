@@ -11,12 +11,11 @@ use serde::Deserialize;
 use tower_sessions::Session;
 
 use super::auth::request_ip;
-use super::password::{record_password_changed, reopen_session};
+use super::password::reopen_session;
 use super::{Frame, render};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
-use crate::journal;
 use crate::middleware::headers::no_store;
 use crate::middleware::{AuthUser, CsrfToken, HtmlForm};
 use crate::models::{JournalKind, User, check_display_name};
@@ -141,11 +140,10 @@ async fn save_profile(
             }
             _ => AppError::Database(e),
         })?;
-    journal::record(
-        &state.pool,
-        NewJournalEntry::new(JournalKind::ProfileUpdated).by(user),
-    )
-    .await;
+    NewJournalEntry::new(JournalKind::ProfileUpdated)
+        .by(user)
+        .record(&state.pool)
+        .await;
 
     UserRepository::find_by_id(&state.pool, user.id)
         .await?
@@ -214,7 +212,10 @@ async fn change_own_password(
     );
     match changed.await {
         Ok(hash) => {
-            record_password_changed(&state.pool, user).await;
+            NewJournalEntry::new(JournalKind::OwnPasswordChanged)
+                .by(user)
+                .record(&state.pool)
+                .await;
             Ok(Ok(hash))
         }
         Err(AppError::Validation(key)) => Ok(Err(key)),
@@ -223,10 +224,10 @@ async fn change_own_password(
 }
 
 async fn record_password_check_blocked(pool: &DbPool, user: &User, ip: &IpAddr) {
-    let entry = NewJournalEntry::new(JournalKind::PasswordCheckBlocked)
-        .by(user)
-        .about(&user.display_name)
+    NewJournalEntry::new(JournalKind::PasswordCheckBlocked)
+        .on_member(user)
         .with_detail("too many attempts")
-        .from_ip(ip.to_string());
-    journal::record(pool, entry).await;
+        .from_ip(ip)
+        .record(pool)
+        .await;
 }

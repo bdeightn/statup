@@ -7,7 +7,7 @@ use std::time::Duration;
 use chrono::Utc;
 use tokio::task::AbortHandle;
 
-use super::{JournalInbox, TARGET, captures_details, retention_days};
+use super::{JournalInbox, TARGET, captures_details, kept, retention_days};
 use crate::db::DbPool;
 use crate::repositories::{JournalRepository, NewJournalEntry};
 
@@ -31,9 +31,8 @@ async fn run(pool: DbPool, mut inbox: JournalInbox) {
                         Err(_) => break,
                     }
                 }
-                if !captures_details(&pool).await {
-                    batch.retain(|entry| entry.kind.is_essential());
-                }
+                let detailed = captures_details(&pool).await;
+                batch.retain(|entry| kept(entry.kind, detailed));
                 write(&pool, &batch).await;
                 report_dropped(&inbox);
             }

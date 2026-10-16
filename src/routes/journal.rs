@@ -3,8 +3,6 @@
 
 mod csv_export;
 
-use std::fmt::Write as _;
-
 use askama::Template;
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
@@ -12,6 +10,7 @@ use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
 use super::events::deserialize_blank_as_none;
+use super::page::query_pairs;
 use super::{Frame, render};
 use crate::clock;
 use crate::error::AppError;
@@ -20,7 +19,7 @@ use crate::journal;
 use crate::middleware::headers::is_htmx;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
 use crate::models::{
-    JournalCategory, JournalDay, JournalFilters, JournalKind, User, group_journal_by_day,
+    DayGroup, JournalCategory, JournalEntry, JournalFilters, JournalKind, User, group_by_day,
 };
 use crate::repositories::{JournalRepository, NewJournalEntry, UserRepository};
 use crate::state::AppState;
@@ -111,24 +110,13 @@ impl JournalQuery {
     /// The current filters as query pairs, each followed by `&`, so that a
     /// parameter can be appended.
     fn filter_pairs(&self) -> String {
-        let mut pairs = String::new();
-        let values = [
+        query_pairs(&[
             ("category", self.category().map(|c| c.as_str().to_string())),
             ("actor_id", self.actor_id.map(|id| id.to_string())),
             ("q", self.query()),
             ("from", self.from.clone()),
             ("to", self.to.clone()),
-        ];
-        for (name, value) in values {
-            if let Some(value) = value {
-                let encoded = percent_encoding::utf8_percent_encode(
-                    &value,
-                    percent_encoding::NON_ALPHANUMERIC,
-                );
-                let _ = write!(pairs, "{name}={encoded}&");
-            }
-        }
-        pairs
+        ])
     }
 
     /// Query string of the current filters, ready for a `page=` parameter.
@@ -145,7 +133,7 @@ impl JournalQuery {
 
 /// The part of the page that the filters refresh.
 pub struct JournalResults {
-    pub days: Vec<JournalDay>,
+    pub days: Vec<DayGroup<JournalEntry>>,
     pub total: i64,
     pub count_label: String,
     pub page: i64,
@@ -171,28 +159,25 @@ struct Capture {
 }
 
 impl Capture {
-    async fn saved(state: &AppState, i18n: &I18n, query: &JournalQuery) -> Self {
+    /// What is stored now, closed and without a notice.
+    async fn load(state: &AppState, i18n: &I18n) -> Self {
         let detailed = journal::captures_details(&state.pool).await;
         let days = journal::retention_days(&state.pool).await;
+        let summary_key = if detailed {
+            "journal.summary_detailed"
+        } else {
+            "journal.summary_essential"
+        };
         Self {
-            summary: summary(i18n, detailed),
+            summary: i18n.t(summary_key).to_string(),
             kept: i18n.plural("journal.days", usize::try_from(days).unwrap_or(0)),
             detailed,
             retention_days: days.to_string(),
             open: false,
-            saved: query.saved.is_some(),
+            saved: false,
             error: None,
         }
     }
-}
-
-fn summary(i18n: &I18n, detailed: bool) -> String {
-    let key = if detailed {
-        "journal.summary_detailed"
-    } else {
-        "journal.summary_essential"
-    };
-    i18n.t(key).to_string()
 }
 
 #[derive(Template)]
@@ -244,13 +229,15 @@ async fn load_results(
     i18n: &I18n,
 ) -> Result<JournalResults, AppError> {
     let filters = query.filters();
-    let mut entries = JournalRepository::list_page(&state.pool, &filters).await?;
-    let total = JournalRepository::count_filtered(&state.pool, &filters).await?;
+    let (mut entries, total) = tokio::try_join!(
+        JournalRepository::list_page(&state.pool, &filters),
+        JournalRepository::count_filtered(&state.pool, &filters),
+    )?;
     let page_size = usize::try_from(PAGE_SIZE).unwrap_or(usize::MAX);
     let has_next = entries.len() > page_size;
     entries.truncate(page_size);
     Ok(JournalResults {
-        days: group_journal_by_day(entries, i18n),
+        days: group_by_day(entries, i18n, |entry| &entry.created_at),
         total,
         count_label: i18n.plural("journal.count", usize::try_from(total).unwrap_or(0)),
         page: query.page(),
@@ -274,7 +261,10 @@ pub async fn page(
     if is_htmx(&headers) {
         return render(&JournalResultsTemplate { results, i18n });
     }
-    let capture = Capture::saved(&state, &i18n, &query).await;
+    let capture = Capture {
+        saved: query.saved.is_some(),
+        ..Capture::load(&state, &i18n).await
+    };
     render_page(&state, &user, csrf_token, i18n, query, results, capture).await
 }
 
@@ -318,10 +308,11 @@ pub async fn save_settings(
     match journal::save_settings(&state.pool, detailed, days).await {
         Ok(()) => {
             let capture = if detailed { "detailed" } else { "essential" };
-            let entry = NewJournalEntry::new(JournalKind::JournalSettingsSaved)
+            NewJournalEntry::new(JournalKind::JournalSettingsSaved)
                 .by(&admin)
-                .with_detail(format!("capture={capture}, retention={days} days"));
-            journal::record(&state.pool, entry).await;
+                .with_detail(format!("capture={capture}, retention={days} days"))
+                .record(&state.pool)
+                .await;
             Ok(Redirect::to("/admin/journal?saved=1").into_response())
         }
         Err(AppError::Validation(key)) => {
@@ -332,7 +323,7 @@ pub async fn save_settings(
                 retention_days: form.retention_days.trim().to_string(),
                 open: true,
                 error: Some(i18n.t(&key).to_string()),
-                ..Capture::saved(&state, &i18n, &query).await
+                ..Capture::load(&state, &i18n).await
             };
             render_page(&state, &admin, csrf_token, i18n, query, results, capture).await
         }
@@ -343,9 +334,8 @@ pub async fn save_settings(
 /// What the Journal tile of the settings says: what is captured, and for
 /// how long.
 pub async fn tile_label(state: &AppState, i18n: &I18n) -> String {
-    let capture = summary(i18n, journal::captures_details(&state.pool).await);
-    let days = usize::try_from(journal::retention_days(&state.pool).await).unwrap_or(0);
-    format!("{capture}, {}", i18n.plural("journal.days", days))
+    let capture = Capture::load(state, i18n).await;
+    format!("{}, {}", capture.summary, capture.kept)
 }
 
 #[cfg(test)]

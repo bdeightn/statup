@@ -98,10 +98,15 @@ async fn a_retention_out_of_range_is_refused_in_the_page() {
 type Line = (String, bool, Option<String>, Option<String>);
 
 async fn lines(app: &TestApp) -> Vec<Line> {
-    sqlx::query_as("SELECT kind, essential, subject, detail FROM journal_entries ORDER BY id")
-        .fetch_all(&app.pool)
-        .await
-        .unwrap()
+    // The importance is not stored: it follows from the kind.
+    let rows: Vec<(String, JournalKind, Option<String>, Option<String>)> =
+        sqlx::query_as("SELECT kind, kind, subject, detail FROM journal_entries ORDER BY id")
+            .fetch_all(&app.pool)
+            .await
+            .unwrap();
+    rows.into_iter()
+        .map(|(name, kind, subject, detail)| (name, kind.is_essential(), subject, detail))
+        .collect()
 }
 
 fn line(kind: &str, essential: bool, subject: Option<&str>, detail: Option<&str>) -> Line {

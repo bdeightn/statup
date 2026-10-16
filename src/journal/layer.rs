@@ -81,8 +81,12 @@ where
         let mut fields = Fields::default();
         attrs.record(&mut fields);
         if let Some(span) = ctx.span(id) {
-            span.extensions_mut()
-                .insert(RequestLine(fields.values.join(" ")));
+            let line: Vec<&str> = fields
+                .pairs
+                .iter()
+                .map(|(_, value)| value.as_str())
+                .collect();
+            span.extensions_mut().insert(RequestLine(line.join(" ")));
         }
     }
 
@@ -123,7 +127,11 @@ fn caught(event: &Event<'_>, fields: Fields, request: Option<String>) -> NewJour
     } else {
         JournalKind::AppWarning
     };
-    let detail: Vec<String> = request.into_iter().chain(fields.named).collect();
+    let named = fields
+        .pairs
+        .into_iter()
+        .map(|(name, value)| format!("{name}={value}"));
+    let detail: Vec<String> = request.into_iter().chain(named).collect();
     let mut entry = NewJournalEntry::new(kind).about(scrub(&fields.message));
     if !detail.is_empty() {
         entry = entry.with_detail(scrub(&detail.join(" · ")));
@@ -135,8 +143,7 @@ fn caught(event: &Event<'_>, fields: Fields, request: Option<String>) -> NewJour
 #[derive(Default)]
 struct Fields {
     message: String,
-    named: Vec<String>,
-    values: Vec<String>,
+    pairs: Vec<(&'static str, String)>,
 }
 
 impl Fields {
@@ -144,8 +151,7 @@ impl Fields {
         if field.name() == "message" {
             self.message = value;
         } else {
-            self.named.push(format!("{}={value}", field.name()));
-            self.values.push(value);
+            self.pairs.push((field.name(), value));
         }
     }
 }

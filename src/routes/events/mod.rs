@@ -23,9 +23,8 @@ pub use review::{publish_review, remove_review};
 pub use templates::{template_delete, template_detail, template_search};
 pub use updates::{add_update, add_update_in_panel, delete, delete_update, revert_lifecycle};
 
-/// The title an event has now, which the journal copies to name it. Read
-/// after the action, so a failed read leaves the line unnamed rather than
-/// failing what was already done.
+/// The title an event has now, which the journal copies to name it. A failed
+/// read leaves the line unnamed rather than failing what was already done.
 async fn title_of(pool: &DbPool, id: i64) -> String {
     match EventRepository::find_by_id(pool, id).await {
         Ok(Some(event)) => event.title,
@@ -33,9 +32,26 @@ async fn title_of(pool: &DbPool, id: i64) -> String {
     }
 }
 
-/// Writes what a member did to an event or a template, named by its title.
-async fn record_on(pool: &DbPool, kind: JournalKind, user: &User, title: &str) {
-    journal::record(pool, NewJournalEntry::new(kind).by(user).about(title)).await;
+/// Writes what a member did to an event, named by the title it has now,
+/// read after the action and only when the line will be kept.
+async fn record_event(
+    pool: &DbPool,
+    kind: JournalKind,
+    user: &User,
+    id: i64,
+    detail: Option<&str>,
+) {
+    let detailed = journal::captures_details(pool).await;
+    if !journal::kept(kind, detailed) {
+        return;
+    }
+    let mut entry = NewJournalEntry::new(kind)
+        .by(user)
+        .about(title_of(pool, id).await);
+    if let Some(detail) = detail {
+        entry = entry.with_detail(detail);
+    }
+    journal::record_with(pool, entry, detailed).await;
 }
 
 /// A field left blank means none. A filled one is read as text, or as a

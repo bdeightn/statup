@@ -22,7 +22,6 @@ use crate::clock;
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
-use crate::journal;
 use crate::middleware::client_ip::client_ip;
 use crate::middleware::csrf::{form_token, renew_token};
 use crate::middleware::{FormCsrfToken, HtmlForm, OptionalUser};
@@ -197,7 +196,11 @@ pub async fn login(
     match AuthService::login(&state.pool, &input.email, &input.password).await? {
         Ok(user) => {
             state.login_limiter.clear(&ip, &input.email);
-            record_sign_in(&state.pool, &user, &ip).await;
+            NewJournalEntry::new(JournalKind::SignedIn)
+                .on_member(&user)
+                .from_ip(&ip)
+                .record(&state.pool)
+                .await;
             open_session(&session, &user, input.remember_me.is_some()).await?;
             Ok(signed_in_redirect(&user, state.serves_https()))
         }
@@ -220,29 +223,22 @@ fn render_refusal(
     render_login(state, csrf_token, i18n, message, email)
 }
 
-async fn record_sign_in(pool: &DbPool, user: &User, ip: &IpAddr) {
-    let entry = NewJournalEntry::new(JournalKind::SignedIn)
-        .by(user)
-        .about(&user.display_name)
-        .from_ip(ip.to_string());
-    journal::record(pool, entry).await;
-}
-
 /// The refused sign-in, then the block it may have started. An unknown
 /// account is kept without a name: what was typed is not.
 async fn record_refusal(pool: &DbPool, refusal: &SignInRefusal, ip: &IpAddr, blocks: bool) {
     let mut entry = NewJournalEntry::new(JournalKind::SignInFailed)
         .with_detail(refusal.reason())
-        .from_ip(ip.to_string());
+        .from_ip(ip);
     if let Some(account) = refusal.account() {
-        entry = entry.by(account).about(&account.display_name);
+        entry = entry.on_member(account);
     }
-    journal::record(pool, entry).await;
+    entry.record(pool).await;
     if blocks {
-        let entry = NewJournalEntry::new(JournalKind::SignInBlocked)
+        NewJournalEntry::new(JournalKind::SignInBlocked)
             .with_detail("too many attempts")
-            .from_ip(ip.to_string());
-        journal::record(pool, entry).await;
+            .from_ip(ip)
+            .record(pool)
+            .await;
     }
 }
 

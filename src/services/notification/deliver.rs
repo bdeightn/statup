@@ -14,7 +14,7 @@ use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::I18n;
 use crate::journal;
-use crate::models::{Channel, Delivery, Happening, JournalKind};
+use crate::models::{Channel, ChannelKind, Delivery, Happening, JournalKind};
 use crate::repositories::{
     EventRepository, EventReviewRepository, MemberNoticeRepository, NewJournalEntry,
     NotificationRepository, OutageRepository, ServiceRepository, SettingsRepository,
@@ -75,6 +75,7 @@ pub async fn deliver_due<S: Sender + Send + Sync + 'static>(
         instance: crate::brand_name(),
         page: page_address(pool, public_url).await?,
     };
+    let detailed = journal::captures_details(pool).await;
     let mut sent = 0;
     let mut previous = Vec::new();
     loop {
@@ -85,7 +86,7 @@ pub async fn deliver_due<S: Sender + Send + Sync + 'static>(
             return Ok(sent);
         }
         previous = ids;
-        sent += deliver_batch(pool, sender, &origin, heads, now).await?;
+        sent += deliver_batch(pool, sender, &origin, heads, now, detailed).await?;
     }
 }
 
@@ -97,9 +98,10 @@ async fn deliver_batch<S: Sender + Send + Sync + 'static>(
     origin: &Origin,
     heads: Vec<Delivery>,
     now: DateTime<Utc>,
+    detailed: bool,
 ) -> Result<usize, AppError> {
     let mut sends = JoinSet::new();
-    for message in prepare(pool, origin, heads, now).await? {
+    for message in prepare(pool, origin, heads, now, detailed).await? {
         let sender = Arc::clone(sender);
         sends.spawn(async move {
             let result = sender
@@ -119,6 +121,7 @@ async fn deliver_batch<S: Sender + Send + Sync + 'static>(
                     &message.channel,
                     result,
                     now,
+                    detailed,
                 )
                 .await?;
                 sent += usize::from(result.is_ok());
@@ -136,6 +139,7 @@ async fn prepare(
     origin: &Origin,
     heads: Vec<Delivery>,
     now: DateTime<Utc>,
+    detailed: bool,
 ) -> Result<Vec<Outgoing>, AppError> {
     let mut outgoing = Vec::with_capacity(heads.len());
     for delivery in heads {
@@ -149,7 +153,16 @@ async fn prepare(
             .map(|d| d.id)
             .collect();
         let Some(subject) = load_subject(pool, &delivery, &wave).await? else {
-            settle(pool, &delivery, &ids, &channel, Err(Failure::Gone), now).await?;
+            settle(
+                pool,
+                &delivery,
+                &ids,
+                &channel,
+                Err(Failure::Gone),
+                now,
+                detailed,
+            )
+            .await?;
             continue;
         };
         let i18n = I18n::new(&channel.locale);
@@ -240,12 +253,20 @@ async fn settle(
     channel: &Channel,
     result: Result<(), Failure>,
     now: DateTime<Utc>,
+    detailed: bool,
 ) -> Result<(), AppError> {
     let Err(failure) = result else {
         for id in ids {
             NotificationRepository::mark_sent(pool, *id, now).await?;
         }
-        record_delivery(pool, JournalKind::AlertSent, channel, channel.kind.as_str()).await;
+        record_delivery(
+            pool,
+            JournalKind::AlertSent,
+            channel,
+            channel.kind.as_str(),
+            detailed,
+        )
+        .await;
         return Ok(());
     };
     let code = failure.code();
@@ -253,7 +274,7 @@ async fn settle(
         for id in ids {
             NotificationRepository::fail(pool, *id, &code, now).await?;
         }
-        record_delivery(pool, JournalKind::AlertAbandoned, channel, &code).await;
+        record_delivery(pool, JournalKind::AlertAbandoned, channel, &code, detailed).await;
         return Ok(());
     }
     let retry = if failure.is_permanent() {
@@ -265,10 +286,10 @@ async fn settle(
         for id in ids {
             NotificationRepository::retry_later(pool, *id, &code, at).await?;
         }
-        record_delivery(pool, JournalKind::AlertRetrying, channel, &code).await;
+        record_delivery(pool, JournalKind::AlertRetrying, channel, &code, detailed).await;
     } else {
         NotificationRepository::fail_waiting(pool, channel.id, &code, now).await?;
-        record_delivery(pool, JournalKind::AlertAbandoned, channel, &code).await;
+        record_delivery(pool, JournalKind::AlertAbandoned, channel, &code, detailed).await;
         tell_delivery_failed(pool, channel.id).await;
     }
     Ok(())
@@ -276,12 +297,25 @@ async fn settle(
 
 /// A line naming the channel and the tool, with the outcome; never the
 /// address it posts to.
-async fn record_delivery(pool: &DbPool, kind: JournalKind, channel: &Channel, outcome: &str) {
-    let detail = format!("{} · {outcome}", channel.kind.as_str());
+async fn record_delivery(
+    pool: &DbPool,
+    kind: JournalKind,
+    channel: &Channel,
+    outcome: &str,
+    detailed: bool,
+) {
+    if !journal::kept(kind, detailed) {
+        return;
+    }
     let entry = NewJournalEntry::new(kind)
         .about(&channel.name)
-        .with_detail(detail);
-    journal::record(pool, entry).await;
+        .with_detail(channel_detail(channel.kind, outcome));
+    journal::record_with(pool, entry, detailed).await;
+}
+
+/// The tool of a channel and what happened, as the journal keeps it.
+pub(crate) fn channel_detail(kind: ChannelKind, outcome: &str) -> String {
+    format!("{} · {outcome}", kind.as_str())
 }
 
 /// When to try again after `attempts` attempts, or `None` once they are used.

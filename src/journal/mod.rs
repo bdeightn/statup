@@ -8,11 +8,12 @@
 mod layer;
 mod writer;
 
+use std::net::IpAddr;
 use std::ops::RangeInclusive;
 
 use crate::db::DbPool;
 use crate::error::AppError;
-use crate::models::User;
+use crate::models::{JournalKind, User, excerpt};
 use crate::repositories::{JournalRepository, NewJournalEntry, SettingsRepository};
 
 pub use layer::{JournalInbox, JournalLayer, journal_layer};
@@ -91,18 +92,41 @@ impl NewJournalEntry {
         self
     }
 
+    /// A member acting on their own account: both the actor and the subject.
+    #[must_use]
+    pub fn on_member(self, member: &User) -> Self {
+        self.by(member).about(&member.display_name)
+    }
+
     /// The address the request came from, kept for the access lines.
     #[must_use]
-    pub fn from_ip(mut self, ip: impl Into<String>) -> Self {
-        self.ip = Some(ip.into());
+    pub fn from_ip(mut self, ip: &IpAddr) -> Self {
+        self.ip = Some(ip.to_string());
         self
+    }
+
+    /// Finishes the line: see [`record`].
+    pub async fn record(self, pool: &DbPool) {
+        record(pool, self).await;
     }
 }
 
 /// Writes a line to the server output and keeps it for the Journal page.
 /// A line that cannot be kept never fails the action it records.
-pub async fn record(pool: &DbPool, mut entry: NewJournalEntry) {
-    if !entry.kind.is_essential() && !captures_details(pool).await {
+pub async fn record(pool: &DbPool, entry: NewJournalEntry) {
+    // The setting only matters to a line that is not essential.
+    let detailed = !entry.kind.is_essential() && captures_details(pool).await;
+    record_with(pool, entry, detailed).await;
+}
+
+/// Whether a line of this kind is kept, given whether every line is.
+pub fn kept(kind: JournalKind, detailed: bool) -> bool {
+    detailed || kind.is_essential()
+}
+
+/// Like [`record`], for a caller that already read the capture setting.
+pub async fn record_with(pool: &DbPool, mut entry: NewJournalEntry, detailed: bool) {
+    if !kept(entry.kind, detailed) {
         return;
     }
     entry.detail = entry.detail.as_deref().map(scrub);
@@ -151,7 +175,7 @@ pub fn scrub(text: &str) -> String {
         rest = &address[end..];
     }
     clean.push_str(rest);
-    cut(clean)
+    excerpt(&clean, DETAIL_LIMIT)
 }
 
 /// Where the first web address starts, whatever the case of its scheme:
@@ -180,17 +204,9 @@ fn origin_of(address: &str) -> String {
     origin
 }
 
-fn cut(text: String) -> String {
-    match text.char_indices().nth(DETAIL_LIMIT) {
-        Some((at, _)) => format!("{}…", &text[..at]),
-        None => text,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::JournalKind;
     use crate::test_helpers::test_pool;
 
     #[test]

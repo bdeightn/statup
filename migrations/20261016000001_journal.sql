@@ -6,8 +6,6 @@ CREATE TABLE journal_entries (
     kind TEXT NOT NULL,
     category TEXT NOT NULL
         CHECK (category IN ('members', 'access', 'monitoring', 'alerts', 'system')),
-    -- Shown in the default view; the detailed view shows every line.
-    essential INTEGER NOT NULL,
     actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     actor_name TEXT,
     subject TEXT,
@@ -17,4 +15,5 @@ CREATE TABLE journal_entries (
 );
 
 CREATE INDEX idx_journal_entries_created ON journal_entries(created_at);
-CREATE INDEX idx_journal_entries_essential ON journal_entries(essential, created_at);
+CREATE INDEX idx_journal_entries_category ON journal_entries(category, created_at);
+CREATE INDEX idx_journal_entries_actor ON journal_entries(actor_id, created_at);

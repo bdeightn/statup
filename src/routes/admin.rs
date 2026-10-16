@@ -10,7 +10,6 @@ use super::{Frame, render};
 use crate::clock;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
-use crate::journal;
 use crate::middleware::headers::no_store;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
 use crate::models::{JournalKind, Role, User, check_display_name};
@@ -375,11 +374,12 @@ pub async fn add_member(
 ) -> Result<Response, AppError> {
     match create_member(&state, &input).await {
         Ok(created) => {
-            let entry = NewJournalEntry::new(JournalKind::MemberAdded)
+            NewJournalEntry::new(JournalKind::MemberAdded)
                 .by(&admin)
                 .about(&created.name)
-                .with_detail(input.role.as_str());
-            journal::record(&state.pool, entry).await;
+                .with_detail(input.role.as_str())
+                .record(&state.pool)
+                .await;
             show_password(&state, &admin, csrf_token, i18n, created).await
         }
         Err(AppError::Validation(key)) => {
@@ -446,10 +446,11 @@ async fn issue_reset(
         return Err(AppError::validation("validation.cannot_reset_self"));
     }
     let (user, password) = AuthService::reset_member_password(&state.pool, user_id).await?;
-    let entry = NewJournalEntry::new(JournalKind::MemberPasswordReset)
+    NewJournalEntry::new(JournalKind::MemberPasswordReset)
         .by(admin)
-        .about(&user.display_name);
-    journal::record(&state.pool, entry).await;
+        .about(&user.display_name)
+        .record(&state.pool)
+        .await;
     Ok(CreatedAccount {
         name: user.display_name,
         email: user.email,
@@ -496,11 +497,12 @@ async fn apply_role(
         return Err(AppError::validation("validation.last_admin"));
     }
 
-    let entry = NewJournalEntry::new(JournalKind::MemberRoleChanged)
+    NewJournalEntry::new(JournalKind::MemberRoleChanged)
         .by(admin)
         .about(&target.display_name)
-        .with_detail(new_role.as_str());
-    journal::record(&state.pool, entry).await;
+        .with_detail(new_role.as_str())
+        .record(&state.pool)
+        .await;
     Ok(())
 }
 
@@ -539,10 +541,11 @@ async fn apply_toggle(state: &AppState, admin: &User, user_id: i64) -> Result<()
     } else {
         JournalKind::MemberDisabled
     };
-    let entry = NewJournalEntry::new(kind)
+    NewJournalEntry::new(kind)
         .by(admin)
-        .about(&target.display_name);
-    journal::record(&state.pool, entry).await;
+        .about(&target.display_name)
+        .record(&state.pool)
+        .await;
     Ok(())
 }
 
@@ -582,7 +585,9 @@ pub async fn remove_logo(
     State(state): State<AppState>,
 ) -> Result<Response, AppError> {
     LogoService::remove(&state.pool, &state.upload_dir).await?;
-    let entry = NewJournalEntry::new(JournalKind::LogoRemoved).by(&admin);
-    journal::record(&state.pool, entry).await;
+    NewJournalEntry::new(JournalKind::LogoRemoved)
+        .by(&admin)
+        .record(&state.pool)
+        .await;
     Ok(Redirect::to("/admin/settings?logo=removed").into_response())
 }

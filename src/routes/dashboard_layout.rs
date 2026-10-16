@@ -9,7 +9,6 @@ use serde::Deserialize;
 
 use crate::error::AppError;
 use crate::i18n::Locale;
-use crate::journal;
 use crate::middleware::{HtmlForm, RequireAdmin};
 use crate::models::{JournalKind, User};
 use crate::repositories::NewJournalEntry;
@@ -17,10 +16,11 @@ use crate::services::DashboardLayoutService;
 use crate::state::AppState;
 
 async fn record_arranged(state: &AppState, admin: &User, detail: String) {
-    let entry = NewJournalEntry::new(JournalKind::DashboardArranged)
+    NewJournalEntry::new(JournalKind::DashboardArranged)
         .by(admin)
-        .with_detail(detail);
-    journal::record(&state.pool, entry).await;
+        .with_detail(detail)
+        .record(&state.pool)
+        .await;
 }
 
 #[derive(Deserialize)]

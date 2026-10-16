@@ -71,7 +71,7 @@ fn entry_cells(entry: &JournalEntry, i18n: &I18n) -> [String; 7] {
         clock::local(&entry.created_at)
             .format("%Y-%m-%d %H:%M:%S")
             .to_string(),
-        i18n.t(entry.category.label_key()).to_string(),
+        i18n.t(entry.kind.category().label_key()).to_string(),
         essential.to_string(),
         entry.actor_name.clone().unwrap_or_default(),
         entry.sentence(i18n),

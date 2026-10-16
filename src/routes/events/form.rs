@@ -5,7 +5,6 @@ use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
-use super::record_on;
 use crate::clock;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
@@ -15,8 +14,8 @@ use crate::models::{
     SEPARATOR, Service, Severity, UpdateEventInput, User,
 };
 use crate::repositories::{
-    CreateTemplateInput, EventRepository, EventTemplateRepository, OutageRepository,
-    ServiceRepository,
+    CreateTemplateInput, EventRepository, EventTemplateRepository, NewJournalEntry,
+    OutageRepository, ServiceRepository,
 };
 use crate::routes::{Frame, render};
 use crate::services::{EventService, EventTemplateService, can_modify, read_next_update};
@@ -484,7 +483,11 @@ pub async fn create(
     };
     match created {
         Ok(event) => {
-            record_on(&state.pool, JournalKind::EventCreated, &user, &event.title).await;
+            NewJournalEntry::new(JournalKind::EventCreated)
+                .by(&user)
+                .about(&event.title)
+                .record(&state.pool)
+                .await;
             after_create(&state, &user, &input, kind).await;
             Ok(Redirect::to(&format!("/events/{}?published=1", event.id)).into_response())
         }
@@ -517,7 +520,13 @@ async fn after_create(state: &AppState, user: &User, input: &EventInput, kind: K
         created_by: user.id,
     };
     match EventTemplateService::create(&state.pool, template).await {
-        Ok(saved) => record_on(&state.pool, JournalKind::TemplateSaved, user, &saved.title).await,
+        Ok(saved) => {
+            NewJournalEntry::new(JournalKind::TemplateSaved)
+                .by(user)
+                .about(&saved.title)
+                .record(&state.pool)
+                .await;
+        }
         Err(e) => tracing::warn!(error = %e, "Failed to save event template"),
     }
 }
@@ -564,7 +573,11 @@ pub async fn update(
     let title = changes.title.clone();
     match EventService::update(&state.pool, id, changes, user.role).await {
         Ok(()) => {
-            record_on(&state.pool, JournalKind::EventEdited, &user, &title).await;
+            NewJournalEntry::new(JournalKind::EventEdited)
+                .by(&user)
+                .about(&title)
+                .record(&state.pool)
+                .await;
             Ok(Redirect::to(&format!("/events/{id}")).into_response())
         }
         Err(AppError::Validation(key)) => {
