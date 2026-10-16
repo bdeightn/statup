@@ -430,3 +430,46 @@ async fn a_link_lifts_the_lock_of_failed_sign_ins() {
     assert_eq!(status, StatusCode::SEE_OTHER);
     assert_eq!(location.as_deref(), Some("/"));
 }
+
+#[tokio::test]
+async fn the_journal_keeps_who_asked_and_chose_but_never_the_link_or_the_address() {
+    let (app, sink) = app_with_mail().await;
+    statup::journal::save_settings(&app.pool, true, 30)
+        .await
+        .expect("detailed capture");
+    let visitor = Visitor::new(&app);
+    visitor.ask_for_link("nobody@example.com").await;
+    let link = emailed_link(&visitor, &sink, 0).await;
+    visitor
+        .choose_password(&link, NEW_PASSWORD, NEW_PASSWORD)
+        .await;
+
+    let lines: Vec<(String, Option<String>, Option<String>)> =
+        sqlx::query_as("SELECT kind, subject, ip FROM journal_entries ORDER BY id")
+            .fetch_all(&app.pool)
+            .await
+            .expect("journal read");
+    let ana = Some("Ana".to_string());
+    let local = Some("127.0.0.1".to_string());
+    assert_eq!(
+        lines,
+        [
+            (
+                "password_reset_requested".into(),
+                ana.clone(),
+                local.clone()
+            ),
+            ("password_reset_completed".into(), ana, local),
+        ]
+    );
+    let everything: String = sqlx::query_scalar(
+        "SELECT group_concat(COALESCE(actor_name, '') || COALESCE(subject, '') \
+         || COALESCE(detail, '') || COALESCE(ip, '')) FROM journal_entries",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .expect("journal text");
+    let token = link.split_once("token=").map_or("", |(_, token)| token);
+    assert!(!token.is_empty() && !everything.contains(token));
+    assert!(!everything.contains("example.com"));
+}

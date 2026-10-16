@@ -24,16 +24,24 @@ pub struct ResetLink {
     pub token: String,
 }
 
+/// What a request for a link came to.
+pub enum LinkRequest {
+    /// No active account has this email.
+    NoAccount,
+    /// The account had its links for the hour.
+    LimitReached,
+    Issued(ResetLink),
+}
+
 pub struct PasswordResetService;
 
 impl PasswordResetService {
-    /// A new link for the active account with this email. `None` when there
-    /// is no such account or it had its links for the hour: the visitor is
-    /// told the same thing either way.
-    pub async fn request(pool: &DbPool, email: &str) -> Result<Option<ResetLink>, AppError> {
+    /// A new link for the active account with this email. The visitor is
+    /// told the same thing whatever the outcome.
+    pub async fn request(pool: &DbPool, email: &str) -> Result<LinkRequest, AppError> {
         PasswordResetRepository::delete_stale(pool).await?;
         let Some(user) = UserRepository::find_by_email(pool, email.trim()).await? else {
-            return Ok(None);
+            return Ok(LinkRequest::NoAccount);
         };
         let secret = new_secret();
         let secret_hash = AuthService::hash_password(&secret).await?;
@@ -44,11 +52,9 @@ impl PasswordResetService {
             LINKS_PER_HOUR,
         );
         let Some(id) = stored.await? else {
-            tracing::warn!(user_id = user.id, "Password reset link limit reached");
-            return Ok(None);
+            return Ok(LinkRequest::LimitReached);
         };
-        tracing::info!(user_id = user.id, "Password reset link issued");
-        Ok(Some(ResetLink {
+        Ok(LinkRequest::Issued(ResetLink {
             user,
             token: format!("{id}.{secret}"),
         }))
@@ -86,7 +92,6 @@ impl PasswordResetService {
         if !PasswordResetRepository::use_up(pool, user.id, &hash).await? {
             return Err(invalid());
         }
-        tracing::info!(user_id = user.id, "Password reset through an emailed link");
         UserRepository::find_by_id(pool, user.id)
             .await?
             .ok_or(AppError::NotFound)
@@ -125,11 +130,10 @@ mod tests {
     }
 
     async fn link(pool: &DbPool, email: &str) -> String {
-        PasswordResetService::request(pool, email)
-            .await
-            .unwrap()
-            .unwrap()
-            .token
+        match PasswordResetService::request(pool, email).await.unwrap() {
+            LinkRequest::Issued(link) => link.token,
+            _ => panic!("no link issued for {email}"),
+        }
     }
 
     #[tokio::test]
@@ -155,7 +159,7 @@ mod tests {
 
         for email in ["nobody@example.com", "ben@example.com"] {
             let sent = PasswordResetService::request(&pool, email).await.unwrap();
-            assert!(sent.is_none(), "{email}");
+            assert!(matches!(sent, LinkRequest::NoAccount), "{email}");
         }
     }
 
@@ -171,7 +175,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(fourth.is_none());
+        assert!(matches!(fourth, LinkRequest::LimitReached));
     }
 
     #[tokio::test]

@@ -22,7 +22,7 @@ pub use dashboard_layout_service::*;
 pub use event_service::*;
 pub use event_template_service::*;
 pub use icon_service::*;
-pub use login_rate_limiter::LoginRateLimiter;
+pub use login_rate_limiter::{LoginRateLimiter, ResetRequest};
 pub use logo_service::*;
 pub use member_notices::*;
 pub use monitoring::*;

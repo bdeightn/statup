@@ -19,14 +19,16 @@ use super::locale::locale_cookie;
 use super::render;
 use super::setup::{Preview, Progress};
 use crate::clock;
+use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
+use crate::journal;
 use crate::middleware::client_ip::client_ip;
 use crate::middleware::csrf::{form_token, renew_token};
 use crate::middleware::{FormCsrfToken, HtmlForm, OptionalUser};
-use crate::models::{User, check_display_name};
-use crate::repositories::UserRepository;
-use crate::services::{AuthService, SettingsService};
+use crate::models::{JournalKind, User, check_display_name};
+use crate::repositories::{NewJournalEntry, UserRepository};
+use crate::services::{AuthService, SettingsService, SignInRefusal};
 use crate::session::{USER_ID_KEY, rotate_id, stamp_credential, start_signed_in, write_value};
 use crate::state::AppState;
 
@@ -179,24 +181,68 @@ pub async fn login(
     HtmlForm(input): HtmlForm<LoginInput>,
 ) -> Result<Response, AppError> {
     let ip = request_ip(&state, &headers, connect_info);
-    let refusal = missing_credentials(&input).or_else(|| blocked(&state, &ip, &input.email));
-    if let Some(key) = refusal {
-        let message = Some(i18n.t(key).to_string());
-        return render_login(&state, csrf_token, i18n, message, input.email);
+    if let Some(key) = missing_credentials(&input) {
+        return render_refusal(&state, csrf_token, i18n, key, input.email);
+    }
+    if state.login_limiter.is_blocked(&ip, &input.email) {
+        return render_refusal(
+            &state,
+            csrf_token,
+            i18n,
+            "validation.rate_limited",
+            input.email,
+        );
     }
 
-    match AuthService::login(&state.pool, &input.email, &input.password).await {
+    match AuthService::login(&state.pool, &input.email, &input.password).await? {
         Ok(user) => {
             state.login_limiter.clear(&ip, &input.email);
+            record_sign_in(&state.pool, &user, &ip).await;
             open_session(&session, &user, input.remember_me.is_some()).await?;
             Ok(signed_in_redirect(&user, state.serves_https()))
         }
-        Err(AppError::Validation(key)) => {
-            state.login_limiter.record_failure(&ip, &input.email);
-            let message = Some(i18n.t(&key).to_string());
-            render_login(&state, csrf_token, i18n, message, input.email)
+        Err(refusal) => {
+            let blocks = state.login_limiter.record_failure(&ip, &input.email);
+            record_refusal(&state.pool, &refusal, &ip, blocks).await;
+            render_refusal(&state, csrf_token, i18n, refusal.message_key(), input.email)
         }
-        Err(e) => Err(e),
+    }
+}
+
+fn render_refusal(
+    state: &AppState,
+    csrf_token: String,
+    i18n: I18n,
+    key: &str,
+    email: String,
+) -> Result<Response, AppError> {
+    let message = Some(i18n.t(key).to_string());
+    render_login(state, csrf_token, i18n, message, email)
+}
+
+async fn record_sign_in(pool: &DbPool, user: &User, ip: &IpAddr) {
+    let entry = NewJournalEntry::new(JournalKind::SignedIn)
+        .by(user)
+        .about(&user.display_name)
+        .from_ip(ip.to_string());
+    journal::record(pool, entry).await;
+}
+
+/// The refused sign-in, then the block it may have started. An unknown
+/// account is kept without a name: what was typed is not.
+async fn record_refusal(pool: &DbPool, refusal: &SignInRefusal, ip: &IpAddr, blocks: bool) {
+    let mut entry = NewJournalEntry::new(JournalKind::SignInFailed)
+        .with_detail(refusal.reason())
+        .from_ip(ip.to_string());
+    if let Some(account) = refusal.account() {
+        entry = entry.by(account).about(&account.display_name);
+    }
+    journal::record(pool, entry).await;
+    if blocks {
+        let entry = NewJournalEntry::new(JournalKind::SignInBlocked)
+            .with_detail("too many attempts")
+            .from_ip(ip.to_string());
+        journal::record(pool, entry).await;
     }
 }
 
@@ -208,14 +254,6 @@ pub(super) fn request_ip(
 ) -> IpAddr {
     let peer = connect_info.map(|Extension(ConnectInfo(addr))| addr.ip());
     client_ip(headers, peer, &state.client_ip_source).unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
-}
-
-fn blocked(state: &AppState, ip: &IpAddr, email: &str) -> Option<&'static str> {
-    if !state.login_limiter.is_blocked(ip, email) {
-        return None;
-    }
-    tracing::warn!(ip = %ip, "Login blocked by rate limiter");
-    Some("validation.rate_limited")
 }
 
 fn missing_credentials(input: &LoginInput) -> Option<&'static str> {

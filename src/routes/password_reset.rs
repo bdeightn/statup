@@ -21,11 +21,15 @@ use super::render;
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
+use crate::journal;
 use crate::middleware::csrf::form_token;
 use crate::middleware::headers::no_store;
 use crate::middleware::{FormCsrfToken, HtmlForm, OptionalUser};
-use crate::models::User;
-use crate::services::{Notifier, PasswordResetService, ResetEmail, page_address};
+use crate::models::{JournalKind, User};
+use crate::repositories::NewJournalEntry;
+use crate::services::{
+    LinkRequest, Notifier, PasswordResetService, ResetEmail, ResetRequest, page_address,
+};
 use crate::state::AppState;
 
 const INVALID_LINK: &str = "validation.reset_link_invalid";
@@ -136,22 +140,43 @@ pub async fn forgot(
         return render_forgot(csrf_token, i18n, true, false);
     }
     let ip = request_ip(&state, &headers, connect_info);
-    if state.login_limiter.allow_reset_request(&ip) {
-        send_link_later(&state, email.to_string(), base, i18n.locale());
-    } else {
-        tracing::warn!(ip = %ip, "Password reset request blocked by rate limiter");
+    match state.login_limiter.count_reset_request(&ip) {
+        ResetRequest::Allowed => {
+            send_link_later(&state, ip, email.to_string(), base, i18n.locale());
+        }
+        ResetRequest::JustBlocked => record_requests_blocked_later(&state, ip),
+        ResetRequest::Blocked => {}
     }
     render_forgot(csrf_token, i18n, true, true)
 }
 
-fn send_link_later(state: &AppState, email: String, base: String, page_locale: &'static str) {
+fn send_link_later(
+    state: &AppState,
+    ip: IpAddr,
+    email: String,
+    base: String,
+    page_locale: &'static str,
+) {
     let pool = state.pool.clone();
     let notifier = Arc::clone(&state.notifier);
     tokio::spawn(async move {
-        if let Err(e) = send_link(&pool, &notifier, &email, &base, page_locale).await {
+        if let Err(e) = send_link(&pool, &notifier, &ip, &email, &base, page_locale).await {
             tracing::error!("Password reset link not issued: {e}");
         }
     });
+}
+
+/// Kept apart from the answer, which takes as long whatever the outcome.
+fn record_requests_blocked_later(state: &AppState, ip: IpAddr) {
+    let pool = state.pool.clone();
+    tokio::spawn(async move { record_requests_blocked(&pool, &ip).await });
+}
+
+async fn record_requests_blocked(pool: &DbPool, ip: &IpAddr) {
+    let entry = NewJournalEntry::new(JournalKind::PasswordResetBlocked)
+        .with_detail("too many requests")
+        .from_ip(ip.to_string());
+    journal::record(pool, entry).await;
 }
 
 /// Issues a link for the account, if there is one, and emails it in the
@@ -159,13 +184,27 @@ fn send_link_later(state: &AppState, email: String, base: String, page_locale: &
 async fn send_link(
     pool: &DbPool,
     notifier: &Notifier,
+    ip: &IpAddr,
     email: &str,
     base: &str,
     page_locale: &str,
 ) -> Result<(), AppError> {
-    let Some(link) = PasswordResetService::request(pool, email).await? else {
-        return Ok(());
+    let link = match PasswordResetService::request(pool, email).await? {
+        LinkRequest::NoAccount => return Ok(()),
+        LinkRequest::LimitReached => {
+            record_requests_blocked(pool, ip).await;
+            return Ok(());
+        }
+        LinkRequest::Issued(link) => link,
     };
+    record_reset(
+        pool,
+        JournalKind::PasswordResetRequested,
+        &link.user,
+        ip,
+        None,
+    )
+    .await;
     let i18n = I18n::new(link.user.preferred_locale.as_deref().unwrap_or(page_locale));
     let url = format!("{base}/password/reset?token={}", link.token);
     let instance = crate::brand_name();
@@ -176,9 +215,36 @@ async fn send_link(
         i18n: &i18n,
     };
     if let Err(failure) = notifier.send_password_reset(&mail).await {
-        tracing::warn!(user_id = link.user.id, failure = %failure.code(), "Password reset email not sent");
+        let code = failure.code();
+        record_reset(
+            pool,
+            JournalKind::PasswordResetNotSent,
+            &link.user,
+            ip,
+            Some(code),
+        )
+        .await;
     }
     Ok(())
+}
+
+/// A line about the member a reset concerns. Never the link or the address
+/// it was sent to.
+async fn record_reset(
+    pool: &DbPool,
+    kind: JournalKind,
+    member: &User,
+    ip: &IpAddr,
+    detail: Option<String>,
+) {
+    let mut entry = NewJournalEntry::new(kind)
+        .by(member)
+        .about(&member.display_name)
+        .from_ip(ip.to_string());
+    if let Some(detail) = detail {
+        entry = entry.with_detail(detail);
+    }
+    journal::record(pool, entry).await;
 }
 
 fn render_reset(page: &ResetTemplate) -> Result<Response, AppError> {
@@ -263,6 +329,14 @@ pub async fn reset(
     match redeemed.await {
         Ok(user) => {
             let ip = request_ip(&state, &headers, connect_info);
+            record_reset(
+                &state.pool,
+                JournalKind::PasswordResetCompleted,
+                &user,
+                &ip,
+                None,
+            )
+            .await;
             sign_in(&state, &session, &ip, &user).await
         }
         Err(AppError::Validation(key)) if key == INVALID_LINK => {

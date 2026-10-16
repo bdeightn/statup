@@ -275,3 +275,105 @@ async fn saving_the_general_settings_names_what_changed() {
         [line("settings_saved", true, None, Some("name"))]
     );
 }
+
+/// Posts the sign-in form with the token of `page`, which this client can
+/// open: the sign-in page itself only when nobody is signed in.
+async fn post_sign_in(app: &TestApp, page: &str, email: &str, password: &str) -> StatusCode {
+    let csrf = app.csrf_from(page).await;
+    let fields = [("email", email), ("password", password)];
+    app.post_form("/login", &csrf, &fields).await.0
+}
+
+async fn ips_of(app: &TestApp, kind: &str) -> Vec<Option<String>> {
+    sqlx::query_scalar("SELECT ip FROM journal_entries WHERE kind = ? ORDER BY id")
+        .bind(kind)
+        .fetch_all(&app.pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_sign_in_waits_for_the_detailed_capture_and_keeps_the_address() {
+    let app = spawn_with_admin().await;
+    assert!(
+        lines(&app).await.is_empty(),
+        "the essential capture skips it"
+    );
+    app.create_user("ana@test.com", "ana_password_123", "Ana", Role::Reader)
+        .await;
+    save_capture(&app, "detailed", "30").await;
+
+    let status = post_sign_in(&app, "/admin/journal", "ana@test.com", "ana_password_123").await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let kept = lines(&app).await;
+    assert_eq!(kept[1], line("signed_in", false, Some("Ana"), None));
+    assert_eq!(ips_of(&app, "signed_in").await, [Some("127.0.0.1".into())]);
+}
+
+#[tokio::test]
+async fn a_refused_sign_in_names_the_account_only_when_it_exists() {
+    let app = spawn_with_admin().await;
+    save_capture(&app, "detailed", "30").await;
+
+    let wrong = post_sign_in(&app, "/admin/journal", ADMIN_EMAIL, "not_the_password").await;
+    let unknown = post_sign_in(
+        &app,
+        "/admin/journal",
+        "ghost@nowhere.test",
+        "whatever_password",
+    )
+    .await;
+
+    assert_eq!((wrong, unknown), (StatusCode::OK, StatusCode::OK));
+    let kept = lines(&app).await;
+    assert_eq!(
+        kept[1..],
+        [
+            line(
+                "sign_in_failed",
+                false,
+                Some("Admin"),
+                Some("wrong password")
+            ),
+            line("sign_in_failed", false, None, Some("unknown account")),
+        ]
+    );
+    assert_eq!(ips_of(&app, "sign_in_failed").await.len(), 2);
+    let everything: String = sqlx::query_scalar(
+        "SELECT group_concat(COALESCE(actor_name, '') || COALESCE(subject, '') \
+         || COALESCE(detail, '') || COALESCE(ip, '')) FROM journal_entries",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    assert!(!everything.contains("ghost") && !everything.contains("not_the_password"));
+    let (_, page) = app.get("/admin/journal").await;
+    assert!(page.contains("Connexion refusée pour Admin"));
+    assert!(page.contains("Connexion refusée\u{a0}: compte inconnu"));
+}
+
+#[tokio::test]
+async fn too_many_failed_sign_ins_are_kept_once_even_in_the_essential_capture() {
+    let app = TestApp::spawn().await;
+    app.create_user("ana@test.com", "ana_password_123", "Ana", Role::Reader)
+        .await;
+
+    for _ in 0..6 {
+        post_sign_in(&app, "/login", "ana@test.com", "not_the_password").await;
+    }
+
+    assert_eq!(
+        lines(&app).await,
+        [line(
+            "sign_in_blocked",
+            true,
+            None,
+            Some("too many attempts")
+        )]
+    );
+    assert_eq!(
+        ips_of(&app, "sign_in_blocked").await,
+        [Some("127.0.0.1".into())]
+    );
+}

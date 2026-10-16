@@ -101,6 +101,22 @@ pub enum JournalKind {
     ProfileUpdated,
     /// A member changed their own password.
     OwnPasswordChanged,
+    /// Someone signed in.
+    SignedIn,
+    /// A sign-in was refused.
+    SignInFailed,
+    /// Too many failed sign-ins from one address.
+    SignInBlocked,
+    /// Too many wrong current passwords for one account.
+    PasswordCheckBlocked,
+    /// Someone asked for a link to choose a new password.
+    PasswordResetRequested,
+    /// Too many requests for a link from one address, or for one account.
+    PasswordResetBlocked,
+    /// The email with the link to a new password could not be sent.
+    PasswordResetNotSent,
+    /// Someone chose a new password through the emailed link.
+    PasswordResetCompleted,
 }
 
 impl JournalKind {
@@ -141,6 +157,14 @@ impl JournalKind {
             | Self::DashboardArranged
             | Self::ProfileUpdated
             | Self::OwnPasswordChanged => JournalCategory::Members,
+            Self::SignedIn
+            | Self::SignInFailed
+            | Self::SignInBlocked
+            | Self::PasswordCheckBlocked
+            | Self::PasswordResetRequested
+            | Self::PasswordResetBlocked
+            | Self::PasswordResetNotSent
+            | Self::PasswordResetCompleted => JournalCategory::Access,
         }
     }
 
@@ -163,7 +187,11 @@ impl JournalKind {
             | Self::MemberDisabled
             | Self::MemberEnabled
             | Self::MemberPasswordReset
-            | Self::EventDeleted => true,
+            | Self::EventDeleted
+            | Self::SignInBlocked
+            | Self::PasswordCheckBlocked
+            | Self::PasswordResetBlocked
+            | Self::PasswordResetNotSent => true,
             Self::AppWarning
             | Self::ServiceStatusSet
             | Self::ServicesReordered
@@ -182,7 +210,11 @@ impl JournalKind {
             | Self::IconDeleted
             | Self::DashboardArranged
             | Self::ProfileUpdated
-            | Self::OwnPasswordChanged => false,
+            | Self::OwnPasswordChanged
+            | Self::SignedIn
+            | Self::SignInFailed
+            | Self::PasswordResetRequested
+            | Self::PasswordResetCompleted => false,
         }
     }
 
@@ -190,7 +222,6 @@ impl JournalKind {
     pub fn level(self) -> Level {
         match self {
             Self::AppError => Level::ERROR,
-            Self::AppWarning => Level::WARN,
             Self::ServiceCreated
             | Self::ServiceUpdated
             | Self::ServiceDeleted
@@ -224,7 +255,16 @@ impl JournalKind {
             | Self::IconDeleted
             | Self::DashboardArranged
             | Self::ProfileUpdated
-            | Self::OwnPasswordChanged => Level::INFO,
+            | Self::OwnPasswordChanged
+            | Self::SignedIn
+            | Self::PasswordResetRequested
+            | Self::PasswordResetCompleted => Level::INFO,
+            Self::AppWarning
+            | Self::SignInFailed
+            | Self::SignInBlocked
+            | Self::PasswordCheckBlocked
+            | Self::PasswordResetBlocked
+            | Self::PasswordResetNotSent => Level::WARN,
         }
     }
 
@@ -232,7 +272,6 @@ impl JournalKind {
     pub fn tone(self) -> Tone {
         match self {
             Self::AppError => Tone::Crit,
-            Self::AppWarning => Tone::Minor,
             Self::ServiceCreated
             | Self::ServiceUpdated
             | Self::ServiceDeleted
@@ -266,7 +305,16 @@ impl JournalKind {
             | Self::IconDeleted
             | Self::DashboardArranged
             | Self::ProfileUpdated
-            | Self::OwnPasswordChanged => Tone::Neutral,
+            | Self::OwnPasswordChanged
+            | Self::SignedIn
+            | Self::SignInFailed
+            | Self::PasswordResetRequested
+            | Self::PasswordResetCompleted => Tone::Neutral,
+            Self::AppWarning
+            | Self::SignInBlocked
+            | Self::PasswordCheckBlocked
+            | Self::PasswordResetBlocked
+            | Self::PasswordResetNotSent => Tone::Minor,
         }
     }
 
@@ -309,6 +357,14 @@ impl JournalKind {
             Self::DashboardArranged => "Dashboard arranged",
             Self::ProfileUpdated => "Profile updated",
             Self::OwnPasswordChanged => "Own password changed",
+            Self::SignedIn => "Signed in",
+            Self::SignInFailed => "Sign-in refused",
+            Self::SignInBlocked => "Sign-ins blocked",
+            Self::PasswordCheckBlocked => "Password checks blocked",
+            Self::PasswordResetRequested => "Password reset requested",
+            Self::PasswordResetBlocked => "Password reset requests blocked",
+            Self::PasswordResetNotSent => "Password reset email not sent",
+            Self::PasswordResetCompleted => "Password reset completed",
         }
     }
 }
@@ -402,6 +458,15 @@ impl JournalEntry {
             JournalKind::DashboardArranged => "journal.dashboard_arranged",
             JournalKind::ProfileUpdated => "journal.profile_updated",
             JournalKind::OwnPasswordChanged => "journal.own_password_changed",
+            JournalKind::SignedIn => "journal.signed_in",
+            JournalKind::SignInFailed if self.subject.is_none() => "journal.sign_in_failed_unknown",
+            JournalKind::SignInFailed => "journal.sign_in_failed",
+            JournalKind::SignInBlocked => "journal.sign_in_blocked",
+            JournalKind::PasswordCheckBlocked => "journal.password_check_blocked",
+            JournalKind::PasswordResetRequested => "journal.password_reset_requested",
+            JournalKind::PasswordResetBlocked => "journal.password_reset_blocked",
+            JournalKind::PasswordResetNotSent => "journal.password_reset_not_sent",
+            JournalKind::PasswordResetCompleted => "journal.password_reset_completed",
         };
         i18n.tf(
             key,

@@ -91,7 +91,7 @@ impl NewJournalEntry {
         self
     }
 
-    /// The address the request came from, kept for sign-ins only.
+    /// The address the request came from, kept for the access lines.
     #[must_use]
     pub fn from_ip(mut self, ip: impl Into<String>) -> Self {
         self.ip = Some(ip.into());
