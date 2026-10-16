@@ -515,18 +515,35 @@
         text-wrap: balance;
     }
 
-    /* Two digits in the line of text: smaller than a full field. */
-    .outage-delay > .input {
-        display: inline-block;
-        width: 2.75rem;
-        min-height: 0;
-        height: 28px;
-        margin: 0 4px;
-        padding: 0 4px;
+    /* A number typed in a line of text: no box, a dotted underline that
+       turns solid while it is typed. */
+    .inline-number {
+        width: 3.5ch;
+        padding: 0 2px;
+        font: inherit;
         font-weight: 600;
-        text-align: center;
         font-variant-numeric: tabular-nums;
-        vertical-align: middle;
+        text-align: center;
+        color: var(--ink);
+        background: none;
+        border: 0;
+        border-bottom: 1px dashed var(--edge-input);
+        border-radius: 0;
+        transition: border-color 150ms ease, background-color 150ms ease;
+    }
+
+    .inline-number:hover {
+        border-bottom-color: var(--focus);
+    }
+
+    .inline-number:focus {
+        outline: none;
+        background: var(--hover);
+        border-bottom: 1px solid var(--focus);
+    }
+
+    .inline-number[aria-invalid="true"] {
+        border-bottom-color: var(--sem-crit-text);
     }
 
     /* A host, its port (five digits) and the button. */
