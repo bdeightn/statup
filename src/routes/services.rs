@@ -52,6 +52,8 @@ struct ServiceListTemplate {
     problems_first: bool,
     chosen_places: HashMap<i64, usize>,
     deleted_name: Option<String>,
+    folder_deleted: Option<String>,
+    new_folder: NewFolderForm,
     error: Option<String>,
     i18n: I18n,
 }
@@ -98,6 +100,18 @@ impl ServiceListTemplate {
     fn move_label(&self, key: &str, name: &str) -> String {
         self.i18n.tf(key, &[("name", name)])
     }
+
+    fn folder_deleted_notice(&self, name: &str) -> String {
+        self.i18n
+            .tf("services.folder_deleted_notice", &[("name", name)])
+    }
+}
+
+/// The panel of "New folder", open again with the refused name and why.
+#[derive(Default)]
+pub struct NewFolderForm {
+    value: String,
+    error: Option<String>,
 }
 
 /// The last check of a monitored service, as its row says it: the latency,
@@ -131,10 +145,11 @@ impl Pulse {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 pub struct ListQuery {
     saved: Option<i64>,
     deleted: Option<String>,
+    folder_deleted: Option<String>,
 }
 
 async fn render_list(
@@ -143,7 +158,7 @@ async fn render_list(
     csrf_token: String,
     i18n: I18n,
     query: ListQuery,
-    error: Option<String>,
+    (error, new_folder): (Option<String>, NewFolderForm),
 ) -> Result<Response, AppError> {
     let mut services = ServiceRepository::list_all(&state.pool).await?;
     let chosen_places = services
@@ -181,6 +196,8 @@ async fn render_list(
         problems_first,
         chosen_places,
         deleted_name: query.deleted,
+        folder_deleted: query.folder_deleted,
+        new_folder,
         error,
         i18n,
     })
@@ -193,7 +210,24 @@ pub async fn list(
     csrf_token: CsrfToken,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    render_list(&state, &user, csrf_token.0, i18n, query, None).await
+    let page = (None, NewFolderForm::default());
+    render_list(&state, &user, csrf_token.0, i18n, query, page).await
+}
+
+/// The list again, with the panel of "New folder" open on a refused name.
+pub(super) async fn new_folder_refused(
+    state: &AppState,
+    user: &User,
+    (csrf_token, i18n): (String, I18n),
+    key: &str,
+    name: String,
+) -> Result<Response, AppError> {
+    let new_folder = NewFolderForm {
+        error: Some(i18n.t(key).to_string()),
+        value: name,
+    };
+    let page = (None, new_folder);
+    render_list(state, user, csrf_token, i18n, ListQuery::default(), page).await
 }
 
 #[derive(Template)]
@@ -652,12 +686,16 @@ pub async fn delete(
             Ok(Redirect::to(&format!("/services?deleted={name}")).into_response())
         }
         Err(AppError::Validation(key)) => {
-            let error = Some(i18n.t(&key).to_string());
-            let query = ListQuery {
-                saved: None,
-                deleted: None,
-            };
-            render_list(&state, &user, csrf_token.0, i18n, query, error).await
+            let page = (Some(i18n.t(&key).to_string()), NewFolderForm::default());
+            render_list(
+                &state,
+                &user,
+                csrf_token.0,
+                i18n,
+                ListQuery::default(),
+                page,
+            )
+            .await
         }
         Err(e) => Err(e),
     }

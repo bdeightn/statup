@@ -112,8 +112,10 @@ fn detail_facts(kind: JournalKind, detail: &str, i18n: &I18n) -> Vec<String> {
             .ok()
             .map_or_else(|| vec![detail.to_string()], |role| said(role.i18n_key())),
         K::ServiceStatusSet => status_facts(detail, i18n),
-        K::ServiceVisibilityChanged => visibility_facts(detail, i18n),
-        K::GroupRenamed => vec![i18n.tf("journal.fact_formerly", &[("name", detail)])],
+        K::ServiceVisibilityChanged | K::FolderVisibilityChanged => visibility_facts(detail, i18n),
+        K::GroupRenamed | K::FolderRenamed => {
+            vec![i18n.tf("journal.fact_formerly", &[("name", detail)])]
+        }
         K::ProblemsFirstChanged => match detail {
             "on" => said("journal.fact_on"),
             _ => said("journal.fact_off"),

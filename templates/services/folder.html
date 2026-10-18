@@ -1,0 +1,142 @@
+{% extends "_layout.html" %}
+{% import "components/macros.html" as ui %}
+
+{% block title %}{{ folder.name }} | {{ crate::brand_name() }}{% endblock %}
+{% block section %}services{% endblock %}
+
+{% block scripts %}
+<script src="{{ crate::asset("js/list-filter.js") }}" defer></script>
+<script src="{{ crate::asset("js/access-field.js") }}" defer></script>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+    <header class="page-head">
+        <div>
+            <a href="/services" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("services.heading") }}</a>
+            <div class="group-title-row">
+                <h1 class="page-title wrap-anywhere">{{ folder.name }}</h1>
+                <details class="more-actions group-rename" data-more-actions{% if rename.error.is_some() %} open{% endif %}>
+                    <summary class="link">{{ i18n.t("admin.rename") }}</summary>
+                    <form class="more-actions-menu group-panel" method="post" action="/services/folders/{{ folder.id }}/rename">
+                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                        <label for="folder-name" class="field-label">{{ i18n.t("folders.name") }}</label>
+                        <input id="folder-name" name="name" type="text" class="input" required maxlength="{{ crate::models::FOLDER_NAME_MAX_CHARS }}" autocomplete="off"
+                               value="{% match rename.value %}{% when Some with (typed) %}{{ typed }}{% when None %}{{ folder.name }}{% endmatch %}"
+                               {% if rename.error.is_some() %}aria-invalid="true" aria-describedby="folder-name-error" autofocus{% endif %}>
+                        {% if let Some(message) = rename.error %}
+                        <p id="folder-name-error" class="field-error" role="alert">{{ message }}</p>
+                        {% endif %}
+                        <button type="submit" class="btn btn-primary group-panel-submit">{{ i18n.t("common.save") }}</button>
+                    </form>
+                </details>
+            </div>
+        </div>
+        {# Who sees the folder, said in one grey line; the setting folds
+           under "Edit", in a panel over the page. The services that
+           inherit it follow on saving. #}
+        <div class="journal-summary folder-summary">
+            <span>{{ self.visibility_line() }}&nbsp;<span aria-hidden="true">·</span></span>
+            <details class="more-actions journal-menu folder-menu" data-more-actions{% if visibility_open %} open{% endif %}>
+                <summary class="journal-edit">{{ i18n.t("folders.edit_visibility") }}{% call ui::caret_icon() %}{% endcall %}</summary>
+                <form class="more-actions-menu folder-panel" method="post" action="/services/folders/{{ folder.id }}/visibility">
+                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                    {% include "components/access_field.html" %}
+                    {% if let Some(text) = heirs %}
+                    <p class="folder-heirs">{{ text }}</p>
+                    {% endif %}
+                    <button type="submit" class="btn btn-primary journal-save">{{ i18n.t("common.save") }}</button>
+                </form>
+            </details>
+        </div>
+    </header>
+
+    {% if let Some(n) = notice %}
+    <div class="form-notice mb-5" role="status">
+        <p>
+            {% match n %}
+            {% when FolderNotice::Created %}{{ i18n.t("folders.notice_created") }}
+            {% when FolderNotice::Renamed %}{{ i18n.t("folders.notice_renamed") }}
+            {% when FolderNotice::VisibilitySaved %}{{ i18n.t("folders.notice_visibility_saved") }}
+            {% when FolderNotice::Added with (text) %}{{ text }}
+            {% when FolderNotice::Removed with (name) %}<q>{{ name }}</q> {{ i18n.t("folders.notice_removed") }}
+            {% endmatch %}
+        </p>
+    </div>
+    {% endif %}
+
+    {# Its services. Each action counts at once: services are added from
+       the panel under "Add services" and taken out from their row. #}
+    <section class="card" aria-labelledby="services-title">
+        <header class="card-head">
+            <h2 id="services-title" class="card-title">{{ i18n.t("folders.services_title") }} <span class="count">{{ services.len() }}</span></h2>
+            <details class="more-actions member-picker" data-more-actions data-filter-focus>
+                <summary class="card-action card-follow">{% call ui::plus() %}{% endcall %}{{ i18n.t("folders.add_services") }}</summary>
+                <form class="more-actions-menu group-panel member-picker-panel" method="post" action="/services/folders/{{ folder.id }}/services" data-filter-scope>
+                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                    {% if others.is_empty() %}
+                    <p class="picker-note">{{ i18n.t("folders.all_in_folder") }}</p>
+                    {% else %}
+                    {% if others.len() > crate::models::SEARCH_FROM %}
+                    <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("folders.search_service") }}" data-filter-input aria-label="{{ i18n.t("folders.search_service") }}">
+                    {% endif %}
+                    <div class="picker-list" role="group" aria-label="{{ i18n.t("folders.add_services") }}">
+                        {% for s in others %}
+                        <label class="svc-pick" data-filter-text="{{ s.name }}{% if let Some(name) = s.folder %} {{ name }}{% endif %}">
+                            <input type="checkbox" name="service_ids" value="{{ s.id }}" class="checkbox">
+                            <span class="svc-pick-name">{{ s.name }}</span>
+                            {% if let Some(name) = s.folder %}<span class="picker-email">{{ name }}</span>{% endif %}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <p class="picker-note picker-none" data-filter-none hidden>{{ i18n.t("folders.no_service_found") }}</p>
+                    {% if self.moves_any() %}
+                    <p class="picker-note folder-move-note">{{ i18n.t("folders.move_note") }}</p>
+                    {% endif %}
+                    <button type="submit" class="btn btn-primary group-panel-submit">{{ i18n.t("folders.add_services_submit") }}</button>
+                    {% endif %}
+                </form>
+            </details>
+        </header>
+        {% if services.is_empty() %}
+        <p class="groups-empty">{{ i18n.t("folders.no_service") }}</p>
+        {% else %}
+        <ul class="group-members">
+            {% for s in services %}
+            <li class="admin-row group-member">
+                <div class="admin-row-ident">
+                    <span class="svc-icon">{% call ui::service_icon(s) %}{% endcall %}</span>
+                    <div class="min-w-0">
+                        <p class="admin-row-name"><a href="/services/{{ s.id }}/edit" class="row-link">{{ s.name }}</a></p>
+                        {% if !s.follows_folder %}
+                        <p class="admin-row-sub">{{ i18n.t("folders.own_visibility") }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <form method="post" action="/services/folders/{{ folder.id }}/services/{{ s.id }}/remove">
+                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                    <button type="submit" class="text-action" aria-label="{{ self.remove_label(s.name) }}">{{ i18n.t("folders.remove") }}</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </section>
+
+    <section class="card danger-zone" aria-labelledby="delete-title">
+        <div class="danger-zone-text">
+            <h2 id="delete-title" class="card-title">{{ i18n.t("folders.delete_title") }}</h2>
+            <p class="field-hint">{{ self.delete_hint() }}</p>
+        </div>
+        <form method="post" action="/services/folders/{{ folder.id }}/delete" data-confirm>
+            <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+            <button type="button" class="btn btn-danger" data-confirm-open>{{ i18n.t("common.delete") }}</button>
+            <div class="confirm" role="group" aria-label="{{ i18n.t("folders.confirm_delete_aria") }}" aria-describedby="delete-q" data-confirm-box hidden>
+                <span id="delete-q" class="confirm-text">{{ i18n.t("common.question_open") }}{{ i18n.t("common.delete") }} <q>{{ folder.name }}</q>{{ i18n.t("common.question_mark") }}</span>
+                <button type="button" class="confirm-cancel" data-confirm-cancel>{{ i18n.t("common.cancel") }}</button>
+                <button type="submit" class="confirm-go" data-danger>{{ i18n.t("common.delete") }}</button>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

@@ -12,6 +12,7 @@ mod dashboard;
 mod dashboard_layout;
 mod events;
 mod feed;
+mod folders;
 mod groups;
 mod health;
 mod icons;
@@ -199,6 +200,28 @@ fn publisher_routes() -> Router<AppState> {
         .route(
             "/services/{id}/edit",
             get(services::edit_form).post(services::update),
+        )
+        .route("/services/folders/new", post(folders::create_folder))
+        .route("/services/folders/{id}", get(folders::folder_page))
+        .route(
+            "/services/folders/{id}/rename",
+            post(folders::rename_folder),
+        )
+        .route(
+            "/services/folders/{id}/visibility",
+            post(folders::save_visibility),
+        )
+        .route(
+            "/services/folders/{id}/services",
+            post(folders::add_services),
+        )
+        .route(
+            "/services/folders/{id}/services/{service_id}/remove",
+            post(folders::remove_service),
+        )
+        .route(
+            "/services/folders/{id}/delete",
+            post(folders::delete_folder),
         )
         .route("/services/order", post(services::save_order))
         .route(

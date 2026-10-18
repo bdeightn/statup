@@ -82,6 +82,18 @@ pub enum JournalKind {
     GroupMemberAdded,
     /// A member took someone out of a group.
     GroupMemberRemoved,
+    /// A member created a folder of services.
+    FolderCreated,
+    /// A member renamed a folder.
+    FolderRenamed,
+    /// A member deleted a folder; its services stay.
+    FolderDeleted,
+    /// A member changed who sees a folder.
+    FolderVisibilityChanged,
+    /// A member put a service in a folder.
+    FolderServiceAdded,
+    /// A member took a service out of a folder.
+    FolderServiceRemoved,
     /// A member published an event.
     EventCreated,
     /// A member edited an event.
@@ -212,6 +224,12 @@ impl JournalKind {
             Self::GroupDeleted => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Group deleted", "journal.group_deleted"),
             Self::GroupMemberAdded => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Group member added", "journal.group_member_added"),
             Self::GroupMemberRemoved => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Group member removed", "journal.group_member_removed"),
+            Self::FolderCreated => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Folder created", "journal.folder_created"),
+            Self::FolderRenamed => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Folder renamed", "journal.folder_renamed"),
+            Self::FolderDeleted => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Folder deleted", "journal.folder_deleted"),
+            Self::FolderVisibilityChanged => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Folder visibility changed", "journal.folder_visibility_changed"),
+            Self::FolderServiceAdded => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Service added to a folder", "journal.folder_service_added"),
+            Self::FolderServiceRemoved => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Service removed from a folder", "journal.folder_service_removed"),
             Self::EventCreated => row(Cat::Members, false, Level::INFO, Tone::Neutral, "Event created", "journal.event_created"),
             Self::EventEdited => row(Cat::Members, false, Level::INFO, Tone::Neutral, "Event edited", "journal.event_edited"),
             Self::EventUpdatePosted => row(Cat::Members, false, Level::INFO, Tone::Neutral, "Event update posted", "journal.event_update_posted"),

@@ -90,6 +90,19 @@ impl Audience {
         })
     }
 
+    /// Who sees a folder, as saved.
+    pub async fn of_folder(pool: &DbPool, id: i64) -> Result<Self, AppError> {
+        let folder = FolderRepository::find(pool, id)
+            .await?
+            .ok_or(AppError::NotFound)?;
+        Ok(Self {
+            mode: folder.visibility,
+            group_ids: FolderRepository::group_ids_of(pool, id).await?,
+            member_ids: FolderRepository::member_ids_of(pool, id).await?,
+            inherit: false,
+        })
+    }
+
     /// The journal gives counts, never names: a service can be open to
     /// dozens of groups and members.
     pub fn detail(&self) -> String {

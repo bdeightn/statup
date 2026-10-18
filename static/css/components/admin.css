@@ -1404,6 +1404,70 @@
         margin-top: 12px;
     }
 
+    /* Without a search box, the list starts at the top of its panel. */
+    .member-picker-panel > input[type="hidden"] + .picker-list {
+        margin-top: -8px;
+        border-top: 0;
+    }
+
+    .folder-move-note {
+        margin-top: 12px;
+    }
+
+    /* A folder's page: who sees it, in a panel under "Change" as for the
+       journal's settings, wide enough for a few tags. The panel to add
+       groups and members opens under the tags, across the panel. */
+    .folder-menu > .folder-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        width: 380px;
+        max-width: calc(100vw - 32px);
+        padding: 16px;
+        color: var(--ink);
+    }
+
+    .folder-panel > .access-field {
+        margin-top: 0;
+    }
+
+    .folder-panel .access-grants {
+        position: relative;
+        justify-self: stretch;
+    }
+
+    .folder-panel .grant-add {
+        position: static;
+    }
+
+    .folder-panel .more-actions > .grant-panel {
+        right: 0;
+        left: 0;
+        width: auto;
+    }
+
+    .folder-heirs {
+        margin: 8px 0 0;
+        font-size: var(--text-sm);
+        color: var(--ink-soft);
+    }
+
+    /* On a phone the line sits under the title: the panel opens from its
+       start rather than from "Change". */
+    @media (max-width: 639px) {
+        .folder-menu > .folder-panel {
+            right: auto;
+            left: 0;
+        }
+    }
+
+    /* "New folder" is followed by "New service", or starts a wrapped
+       line: its panel opens from its start at any width. */
+    .folder-new > .group-panel {
+        right: auto;
+        left: 0;
+    }
+
     @media (prefers-reduced-motion: reduce) {
         .icon-choices-chevron {
             transition: none;
