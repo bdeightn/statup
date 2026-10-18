@@ -609,3 +609,85 @@ async fn the_sweep_shows_the_group_service_to_a_publisher() {
     let fixture = Fixture::signed_in("publisher@x.com").await;
     assert_sees_the_restricted_service(&fixture).await;
 }
+
+/// The form of a service reserves it, puts it back for everyone, and asks
+/// when nothing is ticked.
+#[tokio::test]
+async fn an_editor_keeps_a_service_for_a_group_from_its_form() {
+    let app = TestApp::spawn_public().await;
+    app.create_user("editor@x.com", PASSWORD, "Editor", Role::Publisher)
+        .await;
+    let group = GroupRepository::create(&app.pool, "Paie").await.unwrap();
+    app.login("editor@x.com", PASSWORD).await;
+    let i18n = I18n::new(LANGUAGES[0].code);
+    let csrf = app.csrf_from("/services/new").await;
+    let group_id = group.to_string();
+
+    let fields = [
+        ("name", "Coffre"),
+        ("check_kind", "none"),
+        ("group_ids", group_id.as_str()),
+    ];
+    let (status, _, _) = app.post_form("/services/new", &csrf, &fields).await;
+    assert_eq!(status.as_u16(), 303);
+    let service = ServiceRepository::list_all(&app.pool)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|s| s.name == "Coffre")
+        .unwrap();
+    assert_eq!(service.visibility, Visibility::Groups);
+    let (_, list) = app.get("/services").await;
+    let kept = i18n.tf("services.visible_groups", &[("groups", "Paie")]);
+    assert!(list.contains(&kept), "the list says who sees it");
+    let edit = format!("/services/{}/edit", service.id);
+    let (_, form) = app.get(&edit).await;
+    let ticked = format!(r#"name="group_ids" value="{group}" class="checkbox" checked"#);
+    assert!(form.contains(&ticked), "the form shows the group ticked");
+
+    let nothing = [("name", "Coffre"), ("check_kind", "none")];
+    let (status, body, _) = app.post_form(&edit, &csrf, &nothing).await;
+    assert_eq!(status.as_u16(), 200);
+    assert!(body.contains(i18n.t("validation.visibility_required")));
+    let unchanged = ServiceRepository::find_by_id(&app.pool, service.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        unchanged.visibility,
+        Visibility::Groups,
+        "a refusal saves nothing"
+    );
+
+    let everyone = [
+        ("name", "Coffre"),
+        ("check_kind", "none"),
+        ("visibility_everyone", "on"),
+    ];
+    let (status, _, _) = app.post_form(&edit, &csrf, &everyone).await;
+    assert_eq!(status.as_u16(), 303);
+    let opened = ServiceRepository::find_by_id(&app.pool, service.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(opened.visibility, Visibility::Everyone);
+    assert_eq!(
+        ServiceRepository::group_ids_of(&app.pool, service.id)
+            .await
+            .unwrap(),
+        Vec::<i64>::new()
+    );
+}
+
+/// On a page for members only, "signed-in members" would mean the same as
+/// "everyone": the form leaves it out.
+#[tokio::test]
+async fn a_members_only_page_offers_no_signed_in_members_choice() {
+    let app = TestApp::spawn().await;
+    app.create_user("editor@x.com", PASSWORD, "Editor", Role::Publisher)
+        .await;
+    app.login("editor@x.com", PASSWORD).await;
+    let (_, form) = app.get("/services/new").await;
+    assert!(form.contains(r#"name="visibility_everyone""#));
+    assert!(!form.contains(r#"name="visibility_members""#));
+}

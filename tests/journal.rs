@@ -127,7 +127,11 @@ async fn adding_a_service_is_kept_as_an_essential_line() {
         .post_form(
             "/services/new",
             &csrf,
-            &[("name", " Billing "), ("description", "")],
+            &[
+                ("name", " Billing "),
+                ("description", ""),
+                ("visibility_everyone", "on"),
+            ],
         )
         .await;
 

@@ -308,6 +308,18 @@ impl ServiceRepository {
         tx.commit().await
     }
 
+    /// The groups each restricted service is kept for, as (service, group
+    /// name), by name.
+    pub async fn group_names(pool: &DbPool) -> Result<Vec<(i64, String)>, sqlx::Error> {
+        sqlx::query_as(
+            "SELECT a.service_id, g.name FROM service_access a \
+             JOIN member_groups g ON g.id = a.group_id \
+             ORDER BY g.name COLLATE NOCASE",
+        )
+        .fetch_all(pool)
+        .await
+    }
+
     pub async fn group_ids_of(pool: &DbPool, service_id: i64) -> Result<Vec<i64>, sqlx::Error> {
         sqlx::query_scalar(
             "SELECT group_id FROM service_access WHERE service_id = ? ORDER BY group_id",

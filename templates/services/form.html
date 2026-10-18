@@ -55,6 +55,30 @@
                     </div>
 
                     {% include "components/check_fields.html" %}
+
+                    {# Who sees the service: everyone by default; unticked, the
+                       signed-in members or some groups, in place. #}
+                    <fieldset class="form-block visibility-field"{% if visibility_error.is_some() %} aria-describedby="visibility-error"{% endif %}>
+                        <legend class="field-label">{{ i18n.t("services.visibility") }}</legend>
+                        <label class="check-row"><input id="visibility-everyone" type="checkbox" name="visibility_everyone" value="on" class="checkbox"{% if form.visibility.everyone %} checked{% endif %}><span>{{ i18n.t("services.visibility_everyone") }}</span></label>
+                        <div class="visibility-choices">
+                            {% if public_mode %}
+                            <label class="check-row"><input type="checkbox" name="visibility_members" value="on" class="checkbox"{% if form.visibility.members %} checked{% endif %}><span>{{ i18n.t("services.visibility_members") }}</span></label>
+                            {% endif %}
+                            {% if groups.is_empty() %}
+                            <p class="field-hint">{{ i18n.t("services.visibility_no_group") }}</p>
+                            {% else %}
+                            <div class="visibility-groups">
+                                {% for g in groups %}
+                                <label class="check-row"><input type="checkbox" name="group_ids" value="{{ g.id }}" class="checkbox"{% if form.visibility.has_group(g.id) %} checked{% endif %}><span>{{ g.name }}</span></label>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% if let Some(message) = visibility_error %}
+                        <p id="visibility-error" class="field-error" role="alert">{{ message }}</p>
+                        {% endif %}
+                    </fieldset>
                 </div>
                 <div class="form-col">
                     <div class="form-block">

@@ -667,6 +667,7 @@ async fn rejected_service_creation_gives_the_input_back() {
             &[
                 ("name", "  "),
                 ("description", "Handles checkout and refunds."),
+                ("visibility_everyone", "on"),
             ],
         )
         .await;
@@ -702,6 +703,7 @@ async fn a_service_saved_with_a_check_is_watched() {
                 ("check_url", " https://intranet.example.com "),
                 ("check_host", "left over from the other kind"),
                 ("check_internal_cert", "on"),
+                ("visibility_everyone", "on"),
             ],
         )
         .await;
@@ -785,7 +787,11 @@ async fn removing_the_check_clears_a_detected_outage() {
         .post_form(
             &format!("/services/{id}/edit"),
             &csrf,
-            &[("name", "Paie"), ("check_kind", "none")],
+            &[
+                ("name", "Paie"),
+                ("check_kind", "none"),
+                ("visibility_everyone", "on"),
+            ],
         )
         .await;
     assert_eq!(status, StatusCode::SEE_OTHER);
@@ -913,6 +919,7 @@ async fn each_service_keeps_the_delay_typed_for_it() {
             ("check_host", "10.0.0.7"),
             ("check_port", "9100"),
             ("check_outage_after", delay),
+            ("visibility_everyone", "on"),
         ]
     };
     let (status, _, _) = app.post_form("/services/new", &csrf, &fields("15")).await;
@@ -946,6 +953,7 @@ async fn each_service_keeps_the_delay_typed_for_it() {
             ("name", "Imprimante"),
             ("check_kind", "none"),
             ("check_outage_after", "left over"),
+            ("visibility_everyone", "on"),
         ],
     )
     .await;
@@ -2053,6 +2061,7 @@ async fn a_publisher_edits_a_service() {
             &[
                 ("name", "Billing API"),
                 ("description", "Handles invoices."),
+                ("visibility_everyone", "on"),
             ],
         )
         .await;
@@ -2077,7 +2086,11 @@ async fn an_empty_name_is_refused_on_the_service_edit_form() {
         .post_form(
             &format!("/services/{service_id}/edit"),
             &csrf,
-            &[("name", "  "), ("description", "Handles invoices.")],
+            &[
+                ("name", "  "),
+                ("description", "Handles invoices."),
+                ("visibility_everyone", "on"),
+            ],
         )
         .await;
 

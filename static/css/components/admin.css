@@ -1170,6 +1170,36 @@
         grid-template-columns: minmax(0, 1fr) auto;
     }
 
+    /* Who sees a service: the choices sit under "Everyone", in line with
+       its words, and leave while it is ticked; the groups leave too while
+       every signed-in member is ticked. */
+    .visibility-field {
+        min-width: 0;
+    }
+
+    .visibility-field > .field-label {
+        margin-bottom: 10px;
+    }
+
+    .visibility-choices,
+    .visibility-groups {
+        display: grid;
+        gap: 10px;
+    }
+
+    .visibility-choices {
+        margin: 10px 0 0 28px;
+    }
+
+    .visibility-field:has(#visibility-everyone:checked) .visibility-choices,
+    .visibility-field:has([name="visibility_members"]:checked) .visibility-groups {
+        display: none;
+    }
+
+    .visibility-field > .field-error {
+        margin-top: 8px;
+    }
+
     /* The members a group can take in, narrowed by the search. */
     .picker-list {
         max-height: 280px;

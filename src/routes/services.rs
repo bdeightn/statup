@@ -16,11 +16,11 @@ use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::is_htmx;
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher, Viewer};
 use crate::models::{
-    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, JournalKind, Service,
-    ServiceStatus, User, find_builtin_icon,
+    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, JournalKind, MemberGroup,
+    Service, ServiceStatus, User, Visibility, find_builtin_icon,
 };
 use crate::modules::services::{LONG_DAYS, ServiceRow, Strip, service_history, strips};
-use crate::repositories::{EventRepository, NewJournalEntry, ServiceRepository};
+use crate::repositories::{EventRepository, GroupRepository, NewJournalEntry, ServiceRepository};
 use crate::services::{
     DEFAULT_OUTAGE_AFTER, IconService, LastCheck, ServiceService, put_problems_first,
 };
@@ -44,6 +44,8 @@ struct ServiceListTemplate {
     pulses: HashMap<i64, Pulse>,
     /// Each service's last ninety days, drawn small on its row.
     histories: HashMap<i64, Strip>,
+    /// Who sees each service kept from everyone, in a few words.
+    audiences: HashMap<i64, String>,
     /// Services with a problem are listed first; the ordering mode puts
     /// back the chosen order, kept here as each service's place.
     problems_first: bool,
@@ -84,6 +86,11 @@ impl ServiceListTemplate {
     #[allow(clippy::trivially_copy_pass_by_ref)]
     fn history_of(&self, id: &i64) -> Option<&Strip> {
         self.histories.get(id)
+    }
+
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    fn audience_of(&self, id: &i64) -> Option<String> {
+        self.audiences.get(id).cloned()
     }
 
     #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -165,6 +172,7 @@ async fn render_list(
         .map(|service| (service.id, Pulse::new(state.checks.get(service.id), &i18n)))
         .collect();
     let histories = strips(&state.pool, &services, LONG_DAYS, &i18n).await?;
+    let audiences = audiences(&state.pool, &services, &i18n).await?;
     render(&ServiceListTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
         services,
@@ -175,12 +183,45 @@ async fn render_list(
         saved_monitored,
         pulses,
         histories,
+        audiences,
         problems_first,
         chosen_places,
         deleted_name: query.deleted,
         error,
         i18n,
     })
+}
+
+/// "Kept for Accounting": who sees a service that not everyone sees, so
+/// an editor knows it before opening it. A service whose groups are all
+/// gone is seen by the team alone.
+async fn audiences(
+    pool: &DbPool,
+    services: &[Service],
+    i18n: &I18n,
+) -> Result<HashMap<i64, String>, AppError> {
+    let names = ServiceRepository::group_names(pool).await?;
+    let mut audiences = HashMap::new();
+    for service in services {
+        let label = match service.visibility {
+            Visibility::Everyone => continue,
+            Visibility::Members => i18n.t("services.visible_members").to_string(),
+            Visibility::Groups => {
+                let groups: Vec<&str> = names
+                    .iter()
+                    .filter(|(id, _)| *id == service.id)
+                    .map(|(_, name)| name.as_str())
+                    .collect();
+                if groups.is_empty() {
+                    i18n.t("services.visible_team").to_string()
+                } else {
+                    i18n.tf("services.visible_groups", &[("groups", &groups.join(", "))])
+                }
+            }
+        };
+        audiences.insert(service.id, label);
+    }
+    Ok(audiences)
 }
 
 pub async fn list(
@@ -201,8 +242,13 @@ struct ServiceFormTemplate {
     name_error: Option<String>,
     check_error: Option<String>,
     outage_error: Option<String>,
+    visibility_error: Option<String>,
     edit_id: Option<i64>,
     form: ServiceFormData,
+    /// The groups a service can be kept for.
+    groups: Vec<MemberGroup>,
+    /// "Signed-in members" only differs from "Everyone" on an open page.
+    public_mode: bool,
     selected_icon_id: Option<i64>,
     selected_icon_url: Option<String>,
     selected_icon_name: Option<String>,
@@ -254,7 +300,50 @@ pub struct ServiceFormData {
     pub description: String,
     pub status: ServiceStatus,
     pub check: CheckFields,
+    pub visibility: VisibilityFields,
 }
+
+/// Who sees the service, as its form holds it: "Everyone" ticked, or the
+/// signed-in members, or some groups.
+pub struct VisibilityFields {
+    pub everyone: bool,
+    pub members: bool,
+    pub group_ids: Vec<i64>,
+}
+
+impl VisibilityFields {
+    fn saved(visibility: Visibility, group_ids: Vec<i64>) -> Self {
+        Self {
+            everyone: visibility == Visibility::Everyone,
+            members: visibility == Visibility::Members,
+            group_ids,
+        }
+    }
+
+    // Askama hands a field over by reference.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    fn has_group(&self, id: &i64) -> bool {
+        self.group_ids.contains(id)
+    }
+
+    /// What to save: everyone wins over the members, the members over the
+    /// groups. With nothing ticked, nobody but the team would see it, so
+    /// the form asks.
+    fn choice(&self) -> Result<(Visibility, &[i64]), AppError> {
+        if self.everyone {
+            return Ok((Visibility::Everyone, &[]));
+        }
+        if self.members {
+            return Ok((Visibility::Members, &[]));
+        }
+        if self.group_ids.is_empty() {
+            return Err(AppError::validation(VISIBILITY_REQUIRED));
+        }
+        Ok((Visibility::Groups, &self.group_ids))
+    }
+}
+
+const VISIBILITY_REQUIRED: &str = "validation.visibility_required";
 
 impl ServiceFormData {
     fn empty() -> Self {
@@ -266,12 +355,14 @@ impl ServiceFormData {
                 outage_after: Some(DEFAULT_OUTAGE_AFTER.to_string()),
                 ..CheckFields::default()
             },
+            visibility: VisibilityFields::saved(Visibility::Everyone, Vec::new()),
         }
     }
 
     /// An edited service as saved.
-    fn from_service(service: Service) -> Self {
+    fn from_service(service: Service, group_ids: Vec<i64>) -> Self {
         Self {
+            visibility: VisibilityFields::saved(service.visibility, group_ids),
             check: CheckFields {
                 outage_after: Some(service.outage_after_minutes.to_string()),
                 ..CheckFields::from_saved(
@@ -306,6 +397,12 @@ pub struct ServiceInput {
     icon_id: Option<String>,
     #[serde(default)]
     icon_name: Option<String>,
+    #[serde(default)]
+    visibility_everyone: Option<String>,
+    #[serde(default)]
+    visibility_members: Option<String>,
+    #[serde(default)]
+    group_ids: Vec<i64>,
     #[serde(flatten)]
     check: CheckInput,
 }
@@ -322,12 +419,21 @@ impl ServiceInput {
         self.icon_name.clone().filter(|name| !name.is_empty())
     }
 
+    fn visibility(&self) -> VisibilityFields {
+        VisibilityFields {
+            everyone: self.visibility_everyone.is_some(),
+            members: self.visibility_members.is_some(),
+            group_ids: self.group_ids.clone(),
+        }
+    }
+
     fn into_page(self, edit_id: Option<i64>, status: ServiceStatus, error_key: String) -> FormPage {
         FormPage {
             edit_id,
             icon_id: self.icon_id(),
             icon_name: self.icon_name(),
             form: ServiceFormData {
+                visibility: self.visibility(),
                 check: self.check.fields_and_delay(),
                 name: self.name,
                 description: self.description,
@@ -358,16 +464,18 @@ async fn render_form(
             .is_some_and(|service| !service.has_history),
         None => false,
     };
-    let (error, name_error, check_error, outage_error) =
-        place_error(page.error_key.as_deref(), &i18n);
+    let placed = place_error(page.error_key.as_deref(), &i18n);
     render(&ServiceFormTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
-        error,
-        name_error,
-        check_error,
-        outage_error,
+        error: placed.form,
+        name_error: placed.name,
+        check_error: placed.check,
+        outage_error: placed.outage,
+        visibility_error: placed.visibility,
         edit_id: page.edit_id,
         form: page.form,
+        groups: GroupRepository::list(&state.pool).await?,
+        public_mode: state.is_public_mode(),
         selected_icon_id: page.icon_id.filter(|_| selected_icon_url.is_some()),
         selected_icon_url,
         selected_icon_name: page.icon_name,
@@ -380,29 +488,48 @@ async fn render_form(
 }
 
 /// One message per place a refusal can be said: above the form, under the
-/// name, under the address to check, under the delay.
-type PlacedError = (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-);
+/// name, under the address to check, under the delay, under who sees it.
+#[derive(Default)]
+struct PlacedError {
+    form: Option<String>,
+    name: Option<String>,
+    check: Option<String>,
+    outage: Option<String>,
+    visibility: Option<String>,
+}
 
 /// A refusal is said under its field when it has one: the name, the
-/// address to check, the delay; anything else above the form.
+/// address to check, the delay, who sees it; anything else above the form.
 fn place_error(key: Option<&str>, i18n: &I18n) -> PlacedError {
     let Some(key) = key else {
-        return (None, None, None, None);
+        return PlacedError::default();
     };
     let message = Some(i18n.t(key).to_string());
     if key.starts_with("validation.service_name_") {
-        (None, message, None, None)
+        PlacedError {
+            name: message,
+            ..PlacedError::default()
+        }
     } else if key.starts_with("validation.check_") {
-        (None, None, message, None)
+        PlacedError {
+            check: message,
+            ..PlacedError::default()
+        }
     } else if key == OUTAGE_AFTER_INVALID {
-        (None, None, None, message)
+        PlacedError {
+            outage: message,
+            ..PlacedError::default()
+        }
+    } else if key == VISIBILITY_REQUIRED {
+        PlacedError {
+            visibility: message,
+            ..PlacedError::default()
+        }
     } else {
-        (message, None, None, None)
+        PlacedError {
+            form: message,
+            ..PlacedError::default()
+        }
     }
 }
 
@@ -446,9 +573,11 @@ pub async fn create(
     }
 }
 
-/// The check is read first, so a refused address or delay saves nothing.
+/// The check and who sees it are read first, so a refusal saves nothing.
 async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<Service, AppError> {
     let monitoring = input.check.monitoring()?;
+    let audience = input.visibility();
+    let (visibility, group_ids) = audience.choice()?;
     let icon_name = input.icon_name();
     let service = ServiceService::create(
         pool,
@@ -459,11 +588,14 @@ async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<Service, AppErr
     )
     .await?;
     ServiceService::set_monitoring(pool, service.id, monitoring.as_ref()).await?;
+    ServiceRepository::set_visibility(pool, service.id, visibility, group_ids).await?;
     Ok(service)
 }
 
 async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), AppError> {
     let monitoring = input.check.monitoring()?;
+    let audience = input.visibility();
+    let (visibility, group_ids) = audience.choice()?;
     let icon_name = input.icon_name();
     ServiceService::update(
         pool,
@@ -474,7 +606,9 @@ async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), A
         icon_name.as_deref(),
     )
     .await?;
-    ServiceService::set_monitoring(pool, id, monitoring.as_ref()).await
+    ServiceService::set_monitoring(pool, id, monitoring.as_ref()).await?;
+    ServiceRepository::set_visibility(pool, id, visibility, group_ids).await?;
+    Ok(())
 }
 
 pub async fn edit_form(
@@ -487,11 +621,12 @@ pub async fn edit_form(
     let service = ServiceRepository::find_by_id(&state.pool, id)
         .await?
         .ok_or(AppError::NotFound)?;
+    let group_ids = ServiceRepository::group_ids_of(&state.pool, id).await?;
     let page = FormPage {
         edit_id: Some(id),
         icon_id: service.icon_id,
         icon_name: service.icon_name.clone(),
-        form: ServiceFormData::from_service(service),
+        form: ServiceFormData::from_service(service, group_ids),
         error_key: None,
     };
     render_form(&state, &user, csrf_token.0, i18n, page).await
@@ -745,4 +880,41 @@ pub async fn drawer_content(
         can_edit: viewer.user.is_some_and(|u| u.role.can_publish()),
         i18n,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn input(body: &str) -> ServiceInput {
+        serde_html_form::from_str(body).unwrap()
+    }
+
+    #[test]
+    fn groups_ticked_beside_the_monitoring_fields_are_read() {
+        let form =
+            input("name=Paie&check_kind=http&check_url=https%3A%2F%2Fpaie&group_ids=3&group_ids=7");
+        assert_eq!(form.group_ids, vec![3, 7]);
+        assert!(form.check.monitoring().is_ok());
+    }
+
+    #[test]
+    fn everyone_wins_over_the_members_and_the_members_over_the_groups() {
+        let choice = |body: &str| {
+            let fields = input(body).visibility();
+            fields
+                .choice()
+                .map(|(visibility, groups)| (visibility, groups.to_vec()))
+        };
+        let all = choice("visibility_everyone=on&visibility_members=on&group_ids=3");
+        assert_eq!(all.ok(), Some((Visibility::Everyone, Vec::new())));
+        let members = choice("visibility_members=on&group_ids=3");
+        assert_eq!(members.ok(), Some((Visibility::Members, Vec::new())));
+        let groups = choice("group_ids=3&group_ids=7");
+        assert_eq!(groups.ok(), Some((Visibility::Groups, vec![3, 7])));
+        assert!(matches!(
+            choice("name=Paie"),
+            Err(AppError::Validation(key)) if key == VISIBILITY_REQUIRED
+        ));
+    }
 }
