@@ -137,6 +137,20 @@ impl TestApp {
         (status, body)
     }
 
+    /// GET as htmx does for a refresh: same route, the fragment answer.
+    pub async fn get_htmx(&self, path: &str) -> (StatusCode, String) {
+        let resp = self
+            .client
+            .get(self.url(path))
+            .header("HX-Request", "true")
+            .send()
+            .await
+            .expect("GET request failed");
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        (status, body)
+    }
+
     pub async fn get_response(&self, path: &str) -> reqwest::Response {
         self.client
             .get(self.url(path))
