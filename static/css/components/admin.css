@@ -1166,93 +1166,205 @@
         }
     }
 
-    /* Who sees a service: one menu, the face of a select, its panel over
-       the page. A check marks the choice; the groups show under "Some
-       groups" only. */
-    .visibility-picker {
-        display: block;
-        max-width: 360px;
-    }
-
-    .visibility-picker > .cs-trigger {
-        cursor: pointer;
-    }
-
-    .visibility-picker > .visibility-panel {
-        right: auto;
-        left: 0;
-        display: block;
-        width: 100%;
-        min-width: 260px;
-        padding: 6px;
-    }
-
-    .visibility-modes {
-        display: grid;
-        gap: 2px;
-    }
-
-    .visibility-mode {
-        display: grid;
-        grid-template-columns: 16px minmax(0, 1fr);
-        column-gap: 8px;
-        align-items: center;
-        min-height: 36px;
-        padding: 7px 10px;
-        font-size: var(--text-sm);
-        color: var(--ink);
-        border-radius: 4px;
-        cursor: pointer;
-    }
-
-    .visibility-mode:hover {
-        background: var(--hover);
-    }
-
-    .visibility-mode:has(:focus-visible) {
-        outline: 2px solid var(--focus);
-        outline-offset: -2px;
-    }
-
-    .visibility-mode::before {
-        content: "";
-        width: 10px;
-        height: 6px;
-        border-bottom: 2px solid currentColor;
-        border-left: 2px solid currentColor;
-        transform: translateY(-2px) rotate(-45deg);
-        opacity: 0;
-    }
-
-    .visibility-mode:has(:checked) {
-        font-weight: 600;
-    }
-
-    .visibility-mode:has(:checked)::before {
-        opacity: 1;
-    }
-
-    .visibility-groups {
-        margin: 6px -6px -6px;
-        padding: 12px 16px 14px;
-        border-top: 1px solid var(--line);
-    }
-
-    .visibility-panel:not(:has([value="groups"]:checked)) .visibility-groups {
-        display: none;
-    }
-
-    .visibility-groups > .picker-list:first-child {
-        margin-top: -12px;
-        border-top: 0;
-    }
-
-    .visibility-field > .field-label {
+    /* Who sees a service or a folder: three choices as buttons, the groups
+       and members granted as tags, and the sentence of what it does. A
+       service that inherits from its folder shows that setting, dimmed. */
+    .access-field > .field-label {
         display: block;
         margin-bottom: 6px;
     }
 
-    .visibility-field > .field-error {
+    .access-inherit {
+        margin-bottom: 10px;
+    }
+
+    .access-body {
+        display: grid;
+        justify-items: start;
+        gap: 10px;
+    }
+
+    .access-field:has([data-access-inherit]:checked) .access-body {
+        opacity: 0.55;
+    }
+
+    /* Inherited, the tags are read only: nothing to take off or add. */
+    .access-field:has([data-access-inherit]:checked) :is(.grant-remove, .grant-add) {
+        display: none;
+    }
+
+    .access-field:not(:has([name="visibility"][value="groups"]:checked)) .access-grants {
+        display: none;
+    }
+
+    .access-modes {
+        margin: 0;
+    }
+
+    .access-grants {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        max-width: 560px;
+    }
+
+    .grant {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 28px;
+        padding: 0 3px 0 8px;
+        font-size: var(--text-sm);
+        color: var(--ink);
+        white-space: nowrap;
+        background: var(--card);
+        border: 1px solid var(--edge-input);
+        border-radius: 4px;
+    }
+
+    .grant.is-extra {
+        display: none;
+    }
+
+    .grant > svg {
+        flex: none;
+        width: 14px;
+        height: 14px;
+        color: var(--muted);
+    }
+
+    .grant-meta {
+        font-size: var(--text-xs);
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+    }
+
+    .grant-remove {
+        display: inline-grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        color: var(--muted);
+        border-radius: 3px;
+        cursor: pointer;
+    }
+
+    .grant-remove svg {
+        width: 12px;
+        height: 12px;
+    }
+
+    .grant-remove:hover {
+        color: var(--ink);
+        background: var(--hover);
+    }
+
+    .grant-remove:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: -2px;
+    }
+
+    .grant-more {
+        font-size: var(--text-sm);
+        color: var(--ink);
+        text-decoration: underline;
+        text-decoration-color: var(--line-strong);
+        text-underline-offset: 3px;
+        cursor: pointer;
+    }
+
+    .grant-add {
+        position: relative;
+    }
+
+    /* On a phone the panel opens from the start of the tags, so it stays
+       on the screen. */
+    @media (max-width: 639px) {
+        .access-grants {
+            position: relative;
+        }
+
+        .grant-add {
+            position: static;
+        }
+    }
+
+    .grant-add > summary {
+        list-style: none;
+        cursor: pointer;
+    }
+
+    .grant-add > summary::-webkit-details-marker {
+        display: none;
+    }
+
+    /* The panel to add from: 16px all around, one left edge, the groups
+       then the members, the button at the foot on the right. */
+    .more-actions > .grant-panel {
+        right: auto;
+        left: 0;
+        display: flex;
+        flex-direction: column;
+        width: 340px;
+        max-width: calc(100vw - 32px);
+        padding: 16px;
+        color: var(--ink);
+    }
+
+    .grant-section {
+        margin: 14px 0 0;
+        font-size: var(--text-xs);
+        font-weight: 600;
+        color: var(--muted);
+    }
+
+    .grant-panel > .grant-section:first-child {
+        margin-top: 0;
+    }
+
+    .grant-panel .picker-list {
+        max-height: 220px;
+        margin-top: 4px;
+        border-top: 0;
+    }
+
+    /* The name stays whole; the address or the count gives way. */
+    .grant-panel .svc-pick {
+        display: flex;
+    }
+
+    .grant-panel .svc-pick-name {
+        flex: 0 1 auto;
+    }
+
+    .grant-panel .picker-email {
+        flex: 1 1 0;
+        min-width: 0;
+        overflow: hidden;
+        text-align: right;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        overflow-wrap: normal;
+    }
+
+    .grant-panel > .picker-note {
+        margin-top: 12px;
+    }
+
+    .grant-submit {
+        align-self: flex-end;
+        margin-top: 16px;
+    }
+
+    .access-effect {
+        max-width: 62ch;
+        margin: 0;
+        font-size: var(--text-sm);
+        color: var(--ink-soft);
+    }
+
+    .access-field > .field-error {
         margin-top: 6px;
     }
 

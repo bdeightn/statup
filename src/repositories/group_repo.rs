@@ -142,6 +142,19 @@ impl GroupRepository {
         Ok(result.rows_affected() == 1)
     }
 
+    /// The active readers of every group, as (group, reader) pairs: what a
+    /// group opens a restricted service to.
+    pub async fn reader_ids(pool: &DbPool) -> Result<Vec<(i64, i64)>, sqlx::Error> {
+        sqlx::query_as(
+            "SELECT gm.group_id, gm.user_id FROM group_members gm \
+             JOIN users u ON u.id = gm.user_id \
+             WHERE u.role = 'reader' AND u.is_active = 1 \
+             ORDER BY gm.group_id, gm.user_id",
+        )
+        .fetch_all(pool)
+        .await
+    }
+
     /// How many restricted services have this group as their only one and
     /// no member opened to by name: once it is deleted, only publishers and
     /// admins see them.

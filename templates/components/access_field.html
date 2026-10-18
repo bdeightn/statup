@@ -1,0 +1,70 @@
+{% import "components/macros.html" as ui %}
+{# Who sees a service or a folder. Three choices as buttons; when
+   restricted, the groups and members granted as tags, added from a panel
+   and taken off one by one. A service in a folder may inherit its setting,
+   shown read only. The sentence under it says who will see it; the script
+   redraws it while the choice changes. #}
+<div class="form-block field access-field" data-access-field data-public="{{ access.public_mode }}" data-effect-public="{{ i18n.t("services.effect_public") }}" data-effect-all-members="{{ i18n.t("services.effect_all_members") }}" data-effect-members="{{ i18n.t("services.effect_members") }}" data-effect-one="{{ i18n.t("services.effect_restricted.one") }}" data-effect-other="{{ i18n.t("services.effect_restricted.other") }}" data-effect-staff="{{ i18n.t("services.effect_staff_only") }}">
+    <p id="access-label" class="field-label">{{ i18n.t("services.visibility") }}</p>
+    {% if let Some(label) = access.inherit_label %}
+    <label class="check-row access-inherit"><input type="checkbox" name="inherit" value="on" class="checkbox" data-access-inherit{% if access.audience.inherit %} checked{% endif %}><span>{{ label }}</span></label>
+    {% endif %}
+    <div class="access-body" data-access-body{% if access.audience.inherit %} inert{% endif %}>
+        <div class="choice-row access-modes" role="radiogroup" aria-labelledby="access-label"{% if access.error.is_some() %} aria-describedby="access-error"{% endif %}>
+            <label class="choice"><input type="radio" name="visibility" value="everyone" class="sr-only"{% if access.is("everyone") %} checked{% endif %}><span>{% if access.public_mode %}{{ i18n.t("services.visibility_everyone") }}{% else %}{{ i18n.t("services.visibility_everyone_private") }}{% endif %}</span></label>
+            {% if access.offers_members() %}
+            <label class="choice"><input type="radio" name="visibility" value="members" class="sr-only"{% if access.is("members") %} checked{% endif %}><span>{{ i18n.t("services.visibility_members") }}</span></label>
+            {% endif %}
+            <label class="choice"><input type="radio" name="visibility" value="groups" class="sr-only"{% if access.is("groups") %} checked{% endif %}><span>{{ i18n.t("services.visibility_groups") }}</span></label>
+        </div>
+        <div class="access-grants" role="list" data-access-grants aria-label="{{ i18n.t("services.access_granted") }}">
+            {% for tag in access.tags() %}
+            <span class="grant{% if tag.extra %} is-extra{% endif %}" role="listitem" data-grant="{{ tag.field }}:{{ tag.choice.id }}"{% if !tag.choice.granted %} hidden{% endif %}>
+                {% if tag.is_group %}{% call ui::group_icon() %}{% endcall %}{% else %}{% call ui::person_icon() %}{% endcall %}{% endif %}
+                <span class="grant-name">{{ tag.choice.name }}</span>
+                {% if let Some(size) = tag.choice.size %}<span class="grant-meta">{{ size }}</span>{% endif %}
+                <input type="hidden" name="{{ tag.field }}" value="{{ tag.choice.id }}" data-readers="{{ tag.choice.readers }}"{% if !tag.choice.granted %} disabled{% endif %}>
+                <button type="button" class="grant-remove" data-grant-remove aria-label="{{ i18n.t("services.access_remove") }} {{ tag.choice.name }}">{% call ui::close_icon() %}{% endcall %}</button>
+            </span>
+            {% endfor %}
+            {% if let Some(label) = access.more_label %}
+            <button type="button" class="grant-more" data-grant-more>{{ label }}</button>
+            {% endif %}
+            <details class="more-actions grant-add" data-more-actions data-filter-focus>
+                <summary class="card-action card-follow">{% call ui::plus() %}{% endcall %}{{ i18n.t("services.access_add") }}</summary>
+                <div class="more-actions-menu grant-panel" data-filter-scope>
+                    {% if access.searchable() %}
+                    <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("services.access_search") }}" data-filter-input aria-label="{{ i18n.t("services.access_search") }}">
+                    {% endif %}
+                    {% if access.groups.is_empty() && access.members.is_empty() %}
+                    <p class="picker-note">{{ i18n.t("services.access_none") }}</p>
+                    {% else %}
+                    {% if !access.groups.is_empty() %}
+                    <p class="grant-section" data-grant-section>{{ i18n.t("services.access_groups") }}</p>
+                    <div class="picker-list" role="group" aria-label="{{ i18n.t("services.access_groups") }}">
+                        {% for g in access.groups %}
+                        <label class="svc-pick" data-choice-text="{{ g.name }}"{% if !g.granted %} data-filter-text="{{ g.name }}"{% endif %} data-grant-choice="group_ids:{{ g.id }}"{% if g.granted %} hidden{% endif %}><input type="checkbox" name="group_ids" value="{{ g.id }}" class="checkbox"><span class="svc-pick-name">{{ g.name }}</span><span class="picker-email{% if g.is_empty_group() %} is-empty{% endif %}">{{ g.meta }}</span></label>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    {% if !access.members.is_empty() %}
+                    <p class="grant-section" data-grant-section>{{ i18n.t("services.access_members") }}</p>
+                    <div class="picker-list" role="group" aria-label="{{ i18n.t("services.access_members") }}">
+                        {% for m in access.members %}
+                        <label class="svc-pick" data-choice-text="{{ m.name }} {{ m.meta }}"{% if !m.granted %} data-filter-text="{{ m.name }} {{ m.meta }}"{% endif %} data-grant-choice="member_ids:{{ m.id }}"{% if m.granted %} hidden{% endif %}><input type="checkbox" name="member_ids" value="{{ m.id }}" class="checkbox"><span class="svc-pick-name">{{ m.name }}</span><span class="picker-email">{{ m.meta }}</span></label>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <p class="picker-note picker-none" data-filter-none hidden>{{ i18n.t("services.access_no_match") }}</p>
+                    <p class="picker-note">{{ i18n.t("services.access_staff_note") }}</p>
+                    <button type="button" class="btn btn-primary grant-submit" data-grant-add>{{ i18n.t("services.access_add") }}</button>
+                    {% endif %}
+                </div>
+            </details>
+        </div>
+        <p class="access-effect" aria-live="polite" data-access-effect>{{ access.effect }}</p>
+    </div>
+    {% if let Some(message) = access.error %}
+    <p id="access-error" class="field-error" role="alert">{{ message }}</p>
+    {% endif %}
+</div>

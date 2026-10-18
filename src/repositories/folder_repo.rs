@@ -180,6 +180,28 @@ impl FolderRepository {
         Ok(joined)
     }
 
+    /// Makes a service in this folder follow it again: it takes the
+    /// folder's setting. Returns false when the service is not in the folder.
+    pub async fn follow(
+        pool: &DbPool,
+        folder_id: i64,
+        service_id: i64,
+    ) -> Result<bool, sqlx::Error> {
+        let mut tx = pool.begin().await?;
+        let result =
+            sqlx::query("UPDATE services SET follows_folder = 1 WHERE id = ? AND folder_id = ?")
+                .bind(service_id)
+                .bind(folder_id)
+                .execute(&mut *tx)
+                .await?;
+        if result.rows_affected() == 0 {
+            return Ok(false);
+        }
+        propagate(&mut tx, folder_id).await?;
+        tx.commit().await?;
+        Ok(true)
+    }
+
     /// Takes the service out of the folder and keeps its copy of the
     /// setting: whoever saw it still does. Returns false when the service
     /// was not in this folder.
@@ -746,6 +768,29 @@ mod tests {
         let wiki = find_service(&pool, wiki).await;
         assert!(!wiki.follows_folder);
         assert_eq!(wiki.visibility, Visibility::Groups);
+    }
+
+    #[tokio::test]
+    async fn a_service_follows_its_folder_again() {
+        let pool = test_pool().await;
+        let g1 = group(&pool, "G1").await;
+        let folder = folder_with(&pool, "Guarded", Visibility::Groups, &[g1]).await;
+        let other = FolderRepository::create(&pool, "Other").await.unwrap();
+        let wiki = service(&pool, "Wiki").await;
+        FolderRepository::add_services(&pool, folder, &[wiki])
+            .await
+            .unwrap();
+        ServiceRepository::set_visibility(&pool, wiki, Visibility::Everyone, Grants::default())
+            .await
+            .unwrap();
+
+        assert!(!FolderRepository::follow(&pool, other, wiki).await.unwrap());
+        assert!(FolderRepository::follow(&pool, folder, wiki).await.unwrap());
+
+        let wiki = find_service(&pool, wiki).await;
+        assert!(wiki.follows_folder);
+        assert_eq!(wiki.visibility, Visibility::Groups);
+        assert_followers_match(&pool).await;
     }
 
     #[tokio::test]

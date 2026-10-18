@@ -10,7 +10,7 @@
 <script src="{{ crate::asset("js/icon-picker.js") }}" defer></script>
 <script src="{{ crate::asset("js/service-check.js") }}" defer></script>
 <script src="{{ crate::asset("js/list-filter.js") }}" defer></script>
-<script src="{{ crate::asset("js/visibility-picker.js") }}" defer></script>
+<script src="{{ crate::asset("js/access-field.js") }}" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -42,7 +42,7 @@
                 <div class="form-col">
                     <div class="field">
                         <label for="name" class="field-label">{{ i18n.t("services.name_label") }}</label>
-                        <input id="name" name="name" type="text" class="input" required maxlength="100"
+                        <input id="name" name="name" type="text" class="input input-name" required maxlength="100"
                                value="{{ form.name }}" placeholder="{{ i18n.t("services.name_placeholder") }}"
                                {% if name_error.is_some() %}aria-invalid="true" aria-describedby="name-error" autofocus{% endif %}>
                         {% if let Some(message) = name_error %}
@@ -52,51 +52,13 @@
 
                     <div class="form-block field">
                         <label for="description" class="field-label">{{ i18n.t("services.description") }} <span class="field-note">{{ i18n.t("common.optional") }}</span></label>
-                        <textarea id="description" name="description" class="input" rows="3" maxlength="500"
+                        <textarea id="description" name="description" class="input input-brief" rows="2" maxlength="500"
                                   placeholder="{{ i18n.t("services.description_placeholder") }}">{{ form.description }}</textarea>
                     </div>
 
                     {% include "components/check_fields.html" %}
 
-                    {# Who sees the service, in one menu that says the choice
-                       while closed: everyone, the signed-in members, or some
-                       groups, searched when they are many. #}
-                    <div class="form-block field visibility-field">
-                        <span id="visibility-label" class="field-label">{{ i18n.t("services.visibility") }}</span>
-                        <details class="more-actions visibility-picker" data-more-actions data-visibility-picker data-filter-focus data-more="{{ i18n.t("services.visibility_more") }}"{% if visibility_error.is_some() %} open{% endif %}>
-                            <summary class="cs-trigger" aria-labelledby="visibility-label visibility-summary"{% if visibility_error.is_some() %} aria-describedby="visibility-error"{% endif %}>
-                                <span id="visibility-summary" class="cs-label" data-visibility-summary>{{ self.visibility_summary() }}</span>
-                                <span class="cs-caret">{% call ui::caret_icon() %}{% endcall %}</span>
-                            </summary>
-                            <div class="more-actions-menu visibility-panel">
-                                <div class="visibility-modes" role="radiogroup" aria-labelledby="visibility-label">
-                                    <label class="visibility-mode"><input type="radio" name="visibility" value="everyone" class="sr-only"{% if form.visibility.mode == crate::models::Visibility::Everyone %} checked{% endif %}><span>{{ i18n.t("services.visibility_everyone") }}</span></label>
-                                    {% if public_mode || form.visibility.mode == crate::models::Visibility::Members %}
-                                    <label class="visibility-mode"><input type="radio" name="visibility" value="members" class="sr-only"{% if form.visibility.mode == crate::models::Visibility::Members %} checked{% endif %}><span>{{ i18n.t("services.visibility_members") }}</span></label>
-                                    {% endif %}
-                                    <label class="visibility-mode"><input type="radio" name="visibility" value="groups" class="sr-only"{% if form.visibility.mode == crate::models::Visibility::Groups %} checked{% endif %}><span>{{ i18n.t("services.visibility_groups") }}</span></label>
-                                </div>
-                                <div class="visibility-groups" data-filter-scope>
-                                    {% if groups.is_empty() %}
-                                    <p class="picker-note">{{ i18n.t("services.visibility_no_group") }}</p>
-                                    {% else %}
-                                    {% if groups.len() > crate::models::SEARCH_FROM %}
-                                    <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("services.visibility_search") }}" data-filter-input aria-label="{{ i18n.t("services.visibility_search") }}">
-                                    {% endif %}
-                                    <div class="picker-list" role="group" aria-label="{{ i18n.t("services.visibility_groups") }}">
-                                        {% for g in groups %}
-                                        <label class="svc-pick" data-filter-text="{{ g.name }}"><input type="checkbox" name="group_ids" value="{{ g.id }}" class="checkbox"{% if form.visibility.has_group(g.id) %} checked{% endif %}><span class="svc-pick-name">{{ g.name }}</span></label>
-                                        {% endfor %}
-                                    </div>
-                                    <p class="picker-note picker-none" data-filter-none hidden>{{ i18n.t("services.visibility_no_match") }}</p>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </details>
-                        {% if let Some(message) = visibility_error %}
-                        <p id="visibility-error" class="field-error" role="alert">{{ message }}</p>
-                        {% endif %}
-                    </div>
+                    {% include "components/access_field.html" %}
                 </div>
                 <div class="form-col">
                     <div class="form-block">

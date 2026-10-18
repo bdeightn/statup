@@ -5,6 +5,7 @@
 //! health check skip them.
 
 mod admin;
+mod audience;
 mod auth;
 mod checks;
 mod dashboard;

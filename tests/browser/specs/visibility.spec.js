@@ -36,9 +36,11 @@ async function createGroup(page) {
 async function createReservedService(page) {
     await page.goto("/services/new");
     await page.getByLabel("Nom", { exact: true }).fill(SERVICE);
-    await page.locator("[data-visibility-picker] > summary").click();
-    await page.getByText("Certains groupes", { exact: true }).click();
-    await page.getByLabel(GROUP, { exact: true }).check();
+    await page.getByText("Restreinte", { exact: true }).click();
+    await page.locator("[data-access-field] .grant-add > summary").click();
+    await page.getByRole("checkbox", { name: new RegExp(`^${GROUP}`) }).check();
+    await page.locator("[data-grant-add]").click();
+    await expect(page.locator(`[data-access-field] [data-grant]:not([hidden])`)).toHaveText(new RegExp(GROUP));
     await page.getByRole("button", { name: "Créer le service" }).click();
     await expect(page).toHaveURL(/\/services\?saved=/);
     const href = await page.getByRole("link", { name: SERVICE, exact: true }).first().getAttribute("href");

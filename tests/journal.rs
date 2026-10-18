@@ -345,7 +345,7 @@ async fn a_service_leaves_a_line_only_when_the_people_who_see_it_change() {
                 "service_visibility_changed",
                 true,
                 Some("Wiki"),
-                Some("groups:2")
+                Some("groups:2;members:0")
             ),
             line("service_updated", true, Some("Wiki"), None),
             line("service_updated", true, Some("Wiki"), None),

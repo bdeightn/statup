@@ -289,6 +289,11 @@
         transition: border-color 150ms ease, box-shadow 150ms ease;
     }
 
+    /* A name is short: its box stops at 360px. */
+    .input-name {
+        max-width: 360px;
+    }
+
     .input:hover {
         border-color: var(--focus);
     }
@@ -312,6 +317,11 @@
         min-height: 104px;
         line-height: 1.55;
         resize: vertical;
+    }
+
+    /* A sentence or two: two lines, longer on demand. */
+    textarea.input-brief {
+        min-height: 62px;
     }
 
     /* Custom select over a native one; the list is portaled to the body. */

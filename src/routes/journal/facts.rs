@@ -149,18 +149,29 @@ fn status_facts(detail: &str, i18n: &I18n) -> Vec<String> {
     facts
 }
 
-/// `everyone`, `members` or `groups:3`: who sees the service.
+/// Who sees the service: `everyone`, `members`, `folder` (it follows its
+/// folder), or `groups:2;members:1`. Lines written before members could be
+/// granted say `groups:3` alone.
 fn visibility_facts(detail: &str, i18n: &I18n) -> Vec<String> {
-    let said = match detail.parse::<Visibility>() {
-        Ok(mode @ (Visibility::Everyone | Visibility::Members)) => {
-            i18n.t(mode.i18n_key()).to_string()
-        }
-        _ => match detail.strip_prefix("groups:").and_then(leading_number) {
-            Some(count) => i18n.plural("journal.fact_groups", count),
-            None => detail.to_string(),
-        },
+    if detail == "folder" {
+        return vec![i18n.t("journal.fact_inherited").to_string()];
+    }
+    if let Ok(mode @ (Visibility::Everyone | Visibility::Members)) = detail.parse::<Visibility>() {
+        return vec![i18n.t(mode.i18n_key()).to_string()];
+    }
+    let Some(counts) = detail.strip_prefix("groups:") else {
+        return vec![detail.to_string()];
     };
-    vec![said]
+    let (groups, members) = counts.split_once(";members:").unwrap_or((counts, "0"));
+    match (leading_number(groups), leading_number(members)) {
+        (Some(groups), Some(0)) => vec![i18n.plural("journal.fact_groups", groups)],
+        (Some(0), Some(members)) => vec![i18n.plural("journal.fact_members", members)],
+        (Some(groups), Some(members)) => vec![
+            i18n.plural("journal.fact_groups", groups),
+            i18n.plural("journal.fact_members", members),
+        ],
+        _ => vec![detail.to_string()],
+    }
 }
 
 /// `name, logo, time_zone, access`, as the settings page names them.
@@ -385,10 +396,14 @@ mod tests {
     #[test]
     fn who_sees_a_service_is_said_in_the_reader_s_words() {
         let said = |detail| said(JournalKind::ServiceVisibilityChanged, detail);
-        assert_eq!(said("everyone"), ["Tout le monde"]);
-        assert_eq!(said("members"), ["Les membres connectés"]);
+        assert_eq!(said("everyone"), ["Publique"]);
+        assert_eq!(said("members"), ["Membres"]);
+        assert_eq!(said("folder"), ["héritée du dossier"]);
         assert_eq!(said("groups:1"), ["1 groupe"]);
         assert_eq!(said("groups:12"), ["12 groupes"]);
+        assert_eq!(said("groups:2;members:0"), ["2 groupes"]);
+        assert_eq!(said("groups:0;members:3"), ["3 membres"]);
+        assert_eq!(said("groups:1;members:1"), ["1 groupe", "1 membre"]);
         assert_eq!(said("somebody"), ["somebody"]);
         assert_eq!(
             super::facts(

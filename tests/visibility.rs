@@ -10,7 +10,7 @@ use statup::i18n::{I18n, LANGUAGES};
 use statup::models::{
     Category, CreateEventInput, Grants, Kind, Lifecycle, Role, Severity, Visibility,
 };
-use statup::repositories::{GroupRepository, ServiceRepository, UserRepository};
+use statup::repositories::{FolderRepository, GroupRepository, ServiceRepository, UserRepository};
 use statup::services::{EventService, ServiceService};
 
 const PASSWORD: &str = "correct horse battery staple";
@@ -671,12 +671,14 @@ async fn an_editor_keeps_a_service_for_a_group_from_its_form() {
     assert_eq!(service.visibility, Visibility::Groups);
     let edit = format!("/services/{}/edit", service.id);
     let (_, form) = app.get(&edit).await;
+    let tag = format!(r#"data-grant="group_ids:{group}">"#);
+    assert!(form.contains(&tag), "the group granted shows as a tag");
+    let sent = format!(r#"name="group_ids" value="{group}" data-readers="">"#);
+    assert!(form.contains(&sent), "and is sent with the form");
     assert!(
-        form.contains("data-visibility-summary>Paie</span>"),
-        "the closed menu says who sees it"
+        form.contains(i18n.t("services.effect_staff_only")),
+        "a group with no reader opens it to the team alone, and says so"
     );
-    let ticked = format!(r#"name="group_ids" value="{group}" class="checkbox" checked"#);
-    assert!(form.contains(&ticked), "the form shows the group ticked");
 
     let nothing = [
         ("name", "Coffre"),
@@ -777,4 +779,116 @@ async fn a_visitor_who_sees_no_service_is_asked_to_sign_in() {
     assert!(body.contains(i18n.t("banner.nothing_visible")));
     assert!(body.contains(i18n.t("banner.nothing_visible_hint")));
     assert!(!body.contains(i18n.t("banner.nothing_watched")));
+}
+
+/// The form opens a service to a single member, makes a service in a folder
+/// follow it, and refuses what would open a service by mistake.
+#[tokio::test]
+async fn an_editor_opens_a_service_to_a_member_or_hands_it_to_its_folder() {
+    let app = TestApp::spawn_public().await;
+    app.create_user("editor@x.com", PASSWORD, "Editor", Role::Publisher)
+        .await;
+    let reader = app
+        .create_user("reader@x.com", PASSWORD, "Reader", Role::Reader)
+        .await;
+    let group = GroupRepository::create(&app.pool, "Paie").await.unwrap();
+    let folder = FolderRepository::create(&app.pool, "Finance")
+        .await
+        .unwrap();
+    FolderRepository::set_visibility(
+        &app.pool,
+        folder,
+        Visibility::Groups,
+        Grants::groups(&[group]),
+    )
+    .await
+    .unwrap();
+    let service = ServiceRepository::create(&app.pool, "Coffre", "coffre", None, None, None)
+        .await
+        .unwrap();
+    app.login("editor@x.com", PASSWORD).await;
+    let i18n = I18n::new(LANGUAGES[0].code);
+    let edit = format!("/services/{}/edit", service.id);
+    let csrf = app.csrf_from(&edit).await;
+    let reader_id = reader.to_string();
+
+    let member = [
+        ("name", "Coffre"),
+        ("check_kind", "none"),
+        ("visibility", "groups"),
+        ("member_ids", reader_id.as_str()),
+    ];
+    let (status, _, _) = app.post_form(&edit, &csrf, &member).await;
+    assert_eq!(status.as_u16(), 303);
+    assert_eq!(
+        ServiceRepository::member_ids_of(&app.pool, service.id)
+            .await
+            .unwrap(),
+        vec![reader]
+    );
+    let (_, form) = app.get(&edit).await;
+    assert!(
+        form.contains(&i18n.plural("services.effect_restricted", 1)),
+        "the sentence counts the member"
+    );
+
+    let lost = [
+        ("name", "Coffre"),
+        ("check_kind", "none"),
+        ("inherit", "on"),
+    ];
+    let (status, body, _) = app.post_form(&edit, &csrf, &lost).await;
+    assert_eq!(status.as_u16(), 200, "no folder to inherit from");
+    let refused = i18n
+        .t("validation.visibility_no_folder")
+        .replace('\'', "&#39;");
+    assert!(body.contains(&refused));
+
+    let unknown = [
+        ("name", "Coffre"),
+        ("check_kind", "none"),
+        ("visibility", "anyone"),
+    ];
+    let (status, body, _) = app.post_form(&edit, &csrf, &unknown).await;
+    assert_eq!(status.as_u16(), 200, "an unknown choice is refused");
+    assert!(body.contains(i18n.t("validation.visibility_choice")));
+    let kept = ServiceRepository::find_by_id(&app.pool, service.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        kept.visibility,
+        Visibility::Groups,
+        "a refusal never opens it"
+    );
+
+    FolderRepository::add_services(&app.pool, folder, &[service.id])
+        .await
+        .unwrap();
+    let (status, _, _) = app.post_form(&edit, &csrf, &lost).await;
+    assert_eq!(status.as_u16(), 303);
+    let follower = ServiceRepository::find_by_id(&app.pool, service.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(follower.follows_folder);
+    assert_eq!(
+        ServiceRepository::group_ids_of(&app.pool, service.id)
+            .await
+            .unwrap(),
+        vec![group]
+    );
+    assert_eq!(
+        ServiceRepository::member_ids_of(&app.pool, service.id)
+            .await
+            .unwrap(),
+        Vec::<i64>::new()
+    );
+    let (_, form) = app.get(&edit).await;
+    let inherit = i18n.tf("services.visibility_inherit", &[("folder", "Finance")]);
+    assert!(form.contains(&inherit), "the box names the folder");
+    assert!(
+        form.contains(r#"data-access-inherit checked"#),
+        "and is ticked"
+    );
 }

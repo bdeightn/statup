@@ -4,7 +4,7 @@ All notable changes to Statup are listed here. The project is pre-v1: until 1.0,
 
 ## Unreleased
 
-- Groups of colleagues decide who sees each service. Administrators create groups in Settings → Team and add or remove members from each group's own page. A service's form says who sees it, in one menu: everyone (the default), signed-in members (when the page is open to everyone) or some groups, with a search when there are many. Incidents, maintenance and announcements follow their services; editors and administrators see everything; someone who may not see a service finds no trace of it, and the feed always shows what a visitor without an account sees. The journal records group changes and who sees a service. The database is upgraded on start, and every service stays visible to everyone until you choose otherwise.
+- Groups of colleagues decide who sees each service. Administrators create groups in Settings → Team and add or remove members from each group's own page. A service's form sets its visibility: Public (the default), Members (signed-in members, when the page is open to everyone) or Restricted to chosen groups and members, shown as tags with a search when there are many, and a sentence saying how many members will see it. Incidents, maintenance and announcements follow their services; editors and administrators see everything; someone who may not see a service finds no trace of it, and the feed always shows what a visitor without an account sees. The journal records group changes and who sees a service. The database is upgraded on start, and every service stays visible to everyone until you choose otherwise.
 
 ## 0.6.0, 2026-10-16
 
