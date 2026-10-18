@@ -10,7 +10,7 @@ use super::record_event;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher, Viewer};
-use crate::models::{JournalKind, Scope};
+use crate::models::JournalKind;
 use crate::routes::render;
 use crate::services::EventService;
 use crate::state::AppState;
@@ -47,10 +47,7 @@ pub async fn publish_review(
         }
         Err(AppError::Validation(key)) => {
             let review_form = input.refused(&key, &i18n);
-            let viewer = Viewer {
-                user: Some(user),
-                scope: Scope::All,
-            };
+            let viewer = Viewer::of(&state.pool, Some(user)).await?;
             let page = detail_page(
                 &state,
                 id,

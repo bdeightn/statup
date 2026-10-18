@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 
 use super::outage_repo::{close_outage, delete_open_outage, open_outage};
 use crate::db::DbPool;
-use crate::models::{CheckedService, Service, ServiceCheck, ServiceStatus, Visibility};
+use crate::models::{CheckedService, Scope, Service, ServiceCheck, ServiceStatus, Visibility};
 
 pub struct ServiceRepository;
 
@@ -65,6 +65,13 @@ impl ServiceRepository {
         sqlx::query_as::<_, Service>(&format!("{WITH_ICON} ORDER BY {CHOSEN_ORDER}"))
             .fetch_all(pool)
             .await
+    }
+
+    /// The services a viewer may see, in the chosen order.
+    pub async fn list_visible(pool: &DbPool, scope: &Scope) -> Result<Vec<Service>, sqlx::Error> {
+        let mut services = Self::list_all(pool).await?;
+        services.retain(|service| scope.sees_service(service.id));
+        Ok(services)
     }
 
     /// Saves the order of every service, first to last. Returns false, and

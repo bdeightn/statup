@@ -132,9 +132,8 @@ impl Module for StatusBannerModule {
     }
 
     async fn render(&self, ctx: &ModuleRenderContext<'_>) -> Result<String, AppError> {
-        let mut services = ServiceRepository::list_all(ctx.pool).await?;
-        let any_service = !services.is_empty();
-        services.retain(|service| ctx.scope.sees_service(service.id));
+        let services = ServiceRepository::list_visible(ctx.pool, ctx.scope).await?;
+        let any_service = !services.is_empty() || ServiceRepository::any(ctx.pool).await?;
         let events = EventRepository::list_open_for_banner(ctx.pool, ctx.scope).await?;
         let maintenance = EventRepository::list_open_maintenance(ctx.pool, ctx.scope).await?;
         // Only a service the checks found down has an outage to date.

@@ -9,7 +9,9 @@ use chrono::{DateTime, Utc};
 
 use crate::clock;
 use crate::i18n::I18n;
-use crate::models::{ChannelKind, JournalEntry, JournalKind, Kind, Lifecycle, Role, ServiceStatus};
+use crate::models::{
+    ChannelKind, JournalEntry, JournalKind, Kind, Lifecycle, Role, ServiceStatus, Visibility,
+};
 use crate::routes::notifications::reason_of;
 
 /// The separator the app writes between the parts of a detail.
@@ -149,12 +151,13 @@ fn status_facts(detail: &str, i18n: &I18n) -> Vec<String> {
 
 /// `everyone`, `members` or `groups:3`: who sees the service.
 fn visibility_facts(detail: &str, i18n: &I18n) -> Vec<String> {
-    let said = match detail {
-        "everyone" => i18n.t("services.visibility_everyone").to_string(),
-        "members" => i18n.t("services.visibility_members").to_string(),
-        other => match other.strip_prefix("groups:").and_then(leading_number) {
+    let said = match detail.parse::<Visibility>() {
+        Ok(mode @ (Visibility::Everyone | Visibility::Members)) => {
+            i18n.t(mode.i18n_key()).to_string()
+        }
+        _ => match detail.strip_prefix("groups:").and_then(leading_number) {
             Some(count) => i18n.plural("journal.fact_groups", count),
-            None => other.to_string(),
+            None => detail.to_string(),
         },
     };
     vec![said]

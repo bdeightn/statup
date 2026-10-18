@@ -70,11 +70,11 @@
                             </summary>
                             <div class="more-actions-menu visibility-panel">
                                 <div class="visibility-modes" role="radiogroup" aria-labelledby="visibility-label">
-                                    <label class="visibility-mode"><input type="radio" name="visibility" value="everyone" class="sr-only"{% if form.visibility.is("everyone") %} checked{% endif %}><span>{{ i18n.t("services.visibility_everyone") }}</span></label>
-                                    {% if public_mode || form.visibility.is("members") %}
-                                    <label class="visibility-mode"><input type="radio" name="visibility" value="members" class="sr-only"{% if form.visibility.is("members") %} checked{% endif %}><span>{{ i18n.t("services.visibility_members") }}</span></label>
+                                    <label class="visibility-mode"><input type="radio" name="visibility" value="everyone" class="sr-only"{% if form.visibility.mode == crate::models::Visibility::Everyone %} checked{% endif %}><span>{{ i18n.t("services.visibility_everyone") }}</span></label>
+                                    {% if public_mode || form.visibility.mode == crate::models::Visibility::Members %}
+                                    <label class="visibility-mode"><input type="radio" name="visibility" value="members" class="sr-only"{% if form.visibility.mode == crate::models::Visibility::Members %} checked{% endif %}><span>{{ i18n.t("services.visibility_members") }}</span></label>
                                     {% endif %}
-                                    <label class="visibility-mode"><input type="radio" name="visibility" value="groups" class="sr-only"{% if form.visibility.is("groups") %} checked{% endif %}><span>{{ i18n.t("services.visibility_groups") }}</span></label>
+                                    <label class="visibility-mode"><input type="radio" name="visibility" value="groups" class="sr-only"{% if form.visibility.mode == crate::models::Visibility::Groups %} checked{% endif %}><span>{{ i18n.t("services.visibility_groups") }}</span></label>
                                 </div>
                                 <div class="visibility-groups" data-filter-scope>
                                     {% if groups.is_empty() %}

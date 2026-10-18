@@ -1,5 +1,7 @@
 //! Who sees a service, and the set of services one viewer may see.
 
+use std::str::FromStr;
+
 /// What a service shows to visitors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
 #[sqlx(type_name = "TEXT", rename_all = "lowercase")]
@@ -19,6 +21,29 @@ impl Visibility {
             Self::Members => "members",
             Self::Groups => "groups",
         }
+    }
+
+    pub fn i18n_key(self) -> &'static str {
+        match self {
+            Self::Everyone => "services.visibility_everyone",
+            Self::Members => "services.visibility_members",
+            Self::Groups => "services.visibility_groups",
+        }
+    }
+}
+
+/// A visibility name that is not `everyone`, `members` or `groups`.
+#[derive(Debug, PartialEq, Eq)]
+pub struct UnknownVisibility;
+
+impl FromStr for Visibility {
+    type Err = UnknownVisibility;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        [Self::Everyone, Self::Members, Self::Groups]
+            .into_iter()
+            .find(|mode| mode.as_str() == s)
+            .ok_or(UnknownVisibility)
     }
 }
 
@@ -72,6 +97,19 @@ impl Scope {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_visibility_parses_from_its_name() {
+        for mode in [
+            Visibility::Everyone,
+            Visibility::Members,
+            Visibility::Groups,
+        ] {
+            assert_eq!(mode.as_str().parse::<Visibility>(), Ok(mode));
+        }
+        assert!("Members".parse::<Visibility>().is_err());
+        assert!("".parse::<Visibility>().is_err());
+    }
 
     #[test]
     fn visible_sorts_and_removes_duplicates() {

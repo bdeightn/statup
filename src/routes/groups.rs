@@ -186,9 +186,7 @@ pub async fn rename_group(
         }
         Err(e) => return Err(e),
     };
-    if !GroupRepository::rename(&state.pool, id, &name).await? {
-        return Err(AppError::NotFound);
-    }
+    GroupRepository::rename(&state.pool, id, &name).await?;
     if group.name != name {
         NewJournalEntry::new(JournalKind::GroupRenamed)
             .by(&admin)
@@ -210,19 +208,20 @@ pub async fn add_members(
         .await?
         .ok_or(AppError::NotFound)?;
     // Only an active member outside the group joins: the others are passed over.
-    let joining: Vec<String> = GroupRepository::outsiders(&state.pool, id)
+    let joining: Vec<GroupMember> = GroupRepository::outsiders(&state.pool, id)
         .await?
         .into_iter()
         .filter(|member| input.user_ids.contains(&member.id))
-        .map(|member| member.display_name)
         .collect();
-    let added = GroupRepository::add_members(&state.pool, id, &input.user_ids).await?;
-    for name in &joining {
+    let joining_ids: Vec<i64> = joining.iter().map(|member| member.id).collect();
+    GroupRepository::add_members(&state.pool, id, &joining_ids).await?;
+    for member in &joining {
         let kind = JournalKind::GroupMemberAdded;
-        membership_line(kind, &admin, name, &group)
+        membership_line(kind, &admin, &member.display_name, &group)
             .record(&state.pool)
             .await;
     }
+    let added = joining.len();
     Ok(Redirect::to(&format!("/admin/groups/{id}?added={added}")).into_response())
 }
 
@@ -271,9 +270,7 @@ pub async fn delete_group(
     let group = GroupRepository::find(&state.pool, id)
         .await?
         .ok_or(AppError::NotFound)?;
-    if !GroupRepository::delete(&state.pool, id).await? {
-        return Err(AppError::NotFound);
-    }
+    GroupRepository::delete(&state.pool, id).await?;
     NewJournalEntry::new(JournalKind::GroupDeleted)
         .by(&admin)
         .about(&group.name)

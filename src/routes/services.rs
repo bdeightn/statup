@@ -230,19 +230,16 @@ impl ServiceFormTemplate {
             .filter(|group| fields.group_ids.contains(&group.id))
             .map(|group| group.name.as_str())
             .collect();
-        let key = match (fields.mode, names.as_slice()) {
-            (Visibility::Everyone, _) => "services.visibility_everyone",
-            (Visibility::Members, _) => "services.visibility_members",
-            (Visibility::Groups, []) => "services.visibility_groups",
-            (Visibility::Groups, [one]) => return (*one).to_string(),
-            (Visibility::Groups, [first, second]) => return format!("{first}, {second}"),
+        match (fields.mode, names.as_slice()) {
+            (Visibility::Groups, [one]) => (*one).to_string(),
+            (Visibility::Groups, [first, second]) => format!("{first}, {second}"),
             (Visibility::Groups, [first, rest @ ..]) => {
                 let others = rest.len().to_string();
                 let args = [("first", *first), ("n", others.as_str())];
-                return self.i18n.tf("services.visibility_more", &args);
+                self.i18n.tf("services.visibility_more", &args)
             }
-        };
-        self.i18n.t(key).to_string()
+            (mode, _) => self.i18n.t(mode.i18n_key()).to_string(),
+        }
     }
 
     /// "Currently Operational." under the title of an edited service.
@@ -289,50 +286,33 @@ pub struct ServiceFormData {
 
 /// Who sees the service, as its form holds it: everyone, the signed-in
 /// members, or some groups, and the groups ticked.
+#[derive(PartialEq, Eq)]
 pub struct VisibilityFields {
     pub mode: Visibility,
     pub group_ids: Vec<i64>,
 }
 
 impl VisibilityFields {
+    const EVERYONE: Self = Self {
+        mode: Visibility::Everyone,
+        group_ids: Vec::new(),
+    };
+
     // Askama hands a field over by reference.
     #[allow(clippy::trivially_copy_pass_by_ref)]
     fn has_group(&self, id: &i64) -> bool {
         self.group_ids.contains(id)
     }
 
-    fn is(&self, mode: &str) -> bool {
-        self.mode.as_str() == mode
-    }
-
-    /// What to save. "Some groups" with none ticked would leave the service
-    /// to the team alone, so the form asks.
-    fn choice(&self) -> Result<(Visibility, &[i64]), AppError> {
+    /// What to save: the groups only count in "some groups".
+    fn choice(&self) -> (Visibility, &[i64]) {
         match self.mode {
-            Visibility::Groups if self.group_ids.is_empty() => {
-                Err(AppError::validation(VISIBILITY_REQUIRED))
-            }
-            Visibility::Groups => Ok((Visibility::Groups, &self.group_ids)),
-            other => Ok((other, &[])),
+            Visibility::Groups => (Visibility::Groups, &self.group_ids),
+            other => (other, &[]),
         }
     }
-}
 
-const VISIBILITY_REQUIRED: &str = "validation.visibility_required";
-
-/// Who sees a service, as saved: the groups are those that exist.
-#[derive(PartialEq, Eq)]
-struct Audience {
-    mode: Visibility,
-    group_ids: Vec<i64>,
-}
-
-impl Audience {
-    const EVERYONE: Self = Self {
-        mode: Visibility::Everyone,
-        group_ids: Vec::new(),
-    };
-
+    /// Who sees a service, as saved: the groups are those that exist.
     async fn saved(pool: &DbPool, id: i64) -> Result<Self, AppError> {
         let service = ServiceRepository::find_by_id(pool, id)
             .await?
@@ -353,15 +333,17 @@ impl Audience {
     }
 }
 
+const VISIBILITY_REQUIRED: &str = "validation.visibility_required";
+
 /// Records a change of audience; a save that changes nothing leaves no
 /// line. A line that cannot be written never fails the save it follows.
 async fn record_audience_change(
     pool: &DbPool,
     user: &User,
     (id, name): (i64, &str),
-    before: &Audience,
+    before: &VisibilityFields,
 ) {
-    let after = match Audience::saved(pool, id).await {
+    let after = match VisibilityFields::saved(pool, id).await {
         Ok(after) => after,
         Err(error) => {
             tracing::warn!(%error, "Audience of a saved service not read");
@@ -389,10 +371,7 @@ impl ServiceFormData {
                 outage_after: Some(DEFAULT_OUTAGE_AFTER.to_string()),
                 ..CheckFields::default()
             },
-            visibility: VisibilityFields {
-                mode: Visibility::Everyone,
-                group_ids: Vec::new(),
-            },
+            visibility: VisibilityFields::EVERYONE,
         }
     }
 
@@ -459,13 +438,8 @@ impl ServiceInput {
 
     /// An unknown or missing choice is everyone, as a new service starts.
     fn visibility(&self) -> VisibilityFields {
-        let mode = match self.visibility.as_str() {
-            "members" => Visibility::Members,
-            "groups" => Visibility::Groups,
-            _ => Visibility::Everyone,
-        };
         VisibilityFields {
-            mode,
+            mode: self.visibility.parse().unwrap_or(Visibility::Everyone),
             group_ids: self.group_ids.clone(),
         }
     }
@@ -618,7 +592,7 @@ pub async fn create(
                 .record(&state.pool)
                 .await;
             let saved = (service.id, service.name.as_str());
-            record_audience_change(&state.pool, &user, saved, &Audience::EVERYONE).await;
+            record_audience_change(&state.pool, &user, saved, &VisibilityFields::EVERYONE).await;
             Ok(Redirect::to(&format!("/services?saved={}", service.id)).into_response())
         }
         Err(AppError::Validation(key)) => {
@@ -629,14 +603,14 @@ pub async fn create(
     }
 }
 
-/// "Some groups" needs one that still exists: a group deleted while the
-/// form was open would otherwise leave the service to the team alone,
-/// without a word.
+/// "Some groups" needs one that still exists: with none ticked, or a group
+/// deleted while the form was open, the service would be left to the team
+/// alone, without a word.
 async fn checked_choice<'a>(
     pool: &DbPool,
     audience: &'a VisibilityFields,
 ) -> Result<(Visibility, &'a [i64]), AppError> {
-    let (visibility, group_ids) = audience.choice()?;
+    let (visibility, group_ids) = audience.choice();
     if visibility == Visibility::Groups && GroupRepository::count_of(pool, group_ids).await? == 0 {
         return Err(AppError::validation(VISIBILITY_REQUIRED));
     }
@@ -710,7 +684,7 @@ pub async fn update(
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<ServiceInput>,
 ) -> Result<Response, AppError> {
-    let before = Audience::saved(&state.pool, id).await?;
+    let before = VisibilityFields::saved(&state.pool, id).await?;
     match save_edit(&state.pool, id, &input).await {
         Ok(()) => {
             let name = input.name.trim();
@@ -973,24 +947,19 @@ mod tests {
     }
 
     #[test]
-    fn some_groups_need_one_group_and_the_others_need_none() {
+    fn only_some_groups_keep_the_groups_ticked() {
         let choice = |body: &str| {
             let fields = input(body).visibility();
-            fields
-                .choice()
-                .map(|(visibility, groups)| (visibility, groups.to_vec()))
+            let (visibility, groups) = fields.choice();
+            (visibility, groups.to_vec())
         };
         let all = choice("visibility=everyone&group_ids=3");
-        assert_eq!(all.ok(), Some((Visibility::Everyone, Vec::new())));
+        assert_eq!(all, (Visibility::Everyone, Vec::new()));
         let members = choice("visibility=members&group_ids=3");
-        assert_eq!(members.ok(), Some((Visibility::Members, Vec::new())));
+        assert_eq!(members, (Visibility::Members, Vec::new()));
         let groups = choice("visibility=groups&group_ids=3&group_ids=7");
-        assert_eq!(groups.ok(), Some((Visibility::Groups, vec![3, 7])));
-        assert!(matches!(
-            choice("visibility=groups"),
-            Err(AppError::Validation(key)) if key == VISIBILITY_REQUIRED
-        ));
+        assert_eq!(groups, (Visibility::Groups, vec![3, 7]));
         let missing = choice("name=Paie");
-        assert_eq!(missing.ok(), Some((Visibility::Everyone, Vec::new())));
+        assert_eq!(missing, (Visibility::Everyone, Vec::new()));
     }
 }

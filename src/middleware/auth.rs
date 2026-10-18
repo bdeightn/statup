@@ -70,6 +70,14 @@ pub struct Viewer {
     pub scope: Scope,
 }
 
+impl Viewer {
+    /// A viewer whose scope is read for the user, `None` for a visitor.
+    pub async fn of(pool: &DbPool, user: Option<User>) -> Result<Self, AppError> {
+        let scope = scope_of(pool, user.as_ref()).await?;
+        Ok(Self { user, scope })
+    }
+}
+
 impl<S> FromRequestParts<S> for Viewer
 where
     S: Send + Sync,
@@ -79,8 +87,7 @@ where
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let user = signed_in_user(parts, state).await;
-        let scope = scope_of(&DbPool::from_ref(state), user.as_ref()).await?;
-        Ok(Viewer { user, scope })
+        Viewer::of(&DbPool::from_ref(state), user).await
     }
 }
 

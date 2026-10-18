@@ -1166,10 +1166,6 @@
         }
     }
 
-    .group-member {
-        grid-template-columns: minmax(0, 1fr) auto;
-    }
-
     /* Who sees a service: one menu, the face of a select, its panel over
        the page. A check marks the choice; the groups show under "Some
        groups" only. */
@@ -1180,15 +1176,6 @@
 
     .visibility-picker > .cs-trigger {
         cursor: pointer;
-    }
-
-    .visibility-picker[open] > .cs-trigger {
-        border-color: var(--focus);
-        box-shadow: 0 0 0 3px var(--focus-halo);
-    }
-
-    .visibility-picker[open] .cs-caret {
-        transform: rotate(180deg);
     }
 
     .visibility-picker > .visibility-panel {
@@ -1279,10 +1266,6 @@
         max-width: 360px;
     }
 
-    .group-links > [hidden] {
-        display: none;
-    }
-
     /* The members a group can take in, narrowed by the search. */
     .picker-list {
         max-height: 280px;
@@ -1291,10 +1274,6 @@
         overflow-y: auto;
         overscroll-behavior: contain;
         border-top: 1px solid var(--line);
-    }
-
-    .picker-list > [hidden] {
-        display: none;
     }
 
     .picker-email {

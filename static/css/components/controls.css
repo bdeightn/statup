@@ -357,7 +357,8 @@
     }
 
     .cs-trigger:focus-visible,
-    .cs-open .cs-trigger {
+    .cs-open .cs-trigger,
+    details[open] > .cs-trigger {
         border-color: var(--focus);
         box-shadow: 0 0 0 3px var(--focus-halo);
         outline: none;
@@ -391,7 +392,8 @@
         transition: transform 150ms ease;
     }
 
-    .cs-open .cs-caret {
+    .cs-open .cs-caret,
+    details[open] > .cs-trigger .cs-caret {
         transform: rotate(180deg);
     }
 

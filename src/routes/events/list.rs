@@ -207,8 +207,7 @@ pub async fn list(
     if let Some(u) = user {
         UserRepository::mark_seen(&state.pool, u.id).await;
     }
-    let mut services = ServiceRepository::list_all(&state.pool).await?;
-    services.retain(|service| viewer.scope.sees_service(service.id));
+    let services = ServiceRepository::list_visible(&state.pool, &viewer.scope).await?;
     render(&EventListTemplate {
         frame,
         results,
