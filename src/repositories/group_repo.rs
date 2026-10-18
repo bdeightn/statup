@@ -1,6 +1,5 @@
 //! Group repository: named sets of members, used to choose who sees a service.
 
-use super::service_repo::CHOSEN_ORDER;
 use crate::db::DbPool;
 use crate::models::{GroupMember, MemberGroup};
 
@@ -132,23 +131,23 @@ impl GroupRepository {
         Ok(result.rows_affected() == 1)
     }
 
-    /// Names of the restricted services whose only group is this one: once
-    /// it is deleted, only publishers and admins see them.
+    /// How many restricted services have this group as their only one:
+    /// once it is deleted, only publishers and admins see them.
     pub async fn services_closed_by_deleting(
         pool: &DbPool,
         group_id: i64,
-    ) -> Result<Vec<String>, sqlx::Error> {
-        sqlx::query_scalar(&format!(
-            "SELECT s.name FROM services s \
+    ) -> Result<usize, sqlx::Error> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM services s \
              WHERE s.visibility = 'groups' \
              AND EXISTS (SELECT 1 FROM service_access a \
                          WHERE a.service_id = s.id AND a.group_id = ?) \
-             AND (SELECT COUNT(*) FROM service_access a WHERE a.service_id = s.id) = 1 \
-             ORDER BY {CHOSEN_ORDER}"
-        ))
+             AND (SELECT COUNT(*) FROM service_access a WHERE a.service_id = s.id) = 1",
+        )
         .bind(group_id)
-        .fetch_all(pool)
-        .await
+        .fetch_one(pool)
+        .await?;
+        Ok(usize::try_from(count).unwrap_or(0))
     }
 }
 
@@ -371,6 +370,6 @@ mod tests {
         let closed = GroupRepository::services_closed_by_deleting(&pool, support)
             .await
             .unwrap();
-        assert_eq!(closed, vec!["Only"]);
+        assert_eq!(closed, 1, "only the service it alone opens");
     }
 }

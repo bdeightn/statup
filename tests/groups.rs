@@ -114,7 +114,7 @@ fn member_rows(body: &str) -> &str {
 
 /// The checkboxes of the "Add members" panel.
 fn picker(body: &str) -> &str {
-    between(body, r#"class="picker-list""#, "data-member-none")
+    between(body, r#"class="picker-list""#, "data-filter-none")
 }
 
 /// The link to a group on the Team page.
@@ -354,19 +354,17 @@ async fn deleting_a_group_names_what_it_closes_and_clears_its_traces() {
 
     let body = page(&app, &format!("/admin/groups/{paie}")).await;
     assert!(body.contains(&text("admin.delete_group_members")));
-    assert!(body.contains(&format!(
-        "{} Coffre Zephyr.",
-        text("admin.delete_group_closes")
-    )));
+    let one_closes = I18n::new(LANGUAGES[0].code).plural("admin.delete_group_closes", 1);
     assert!(
-        !body.contains("Annuaire K2"),
-        "another group still opens it"
+        body.contains(&one_closes),
+        "it counts the service only it opens, not the one another group also opens"
+    );
+    assert!(
+        !body.contains("Coffre Zephyr"),
+        "a count, not a list of names"
     );
     let body = page(&app, &format!("/admin/groups/{compta}")).await;
-    assert!(
-        !body.contains(&text("admin.delete_group_closes")),
-        "nothing closes"
-    );
+    assert!(!body.contains(&one_closes), "nothing closes");
 
     let path = format!("/admin/groups/{paie}/delete");
     let (status, _, location) = post_team(&app, &path, &[]).await;

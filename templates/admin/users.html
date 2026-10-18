@@ -7,6 +7,7 @@
 {% block scripts %}
 <script src="{{ crate::asset("js/custom-select.js") }}" defer></script>
 <script src="{{ crate::asset("js/team.js") }}" defer></script>
+<script src="{{ crate::asset("js/list-filter.js") }}" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -155,7 +156,7 @@
 
     {# The groups: a link to each group's page, where its members are
        added and removed. A new group starts from its name. #}
-    <section id="groups" class="card groups-card" aria-labelledby="groups-title">
+    <section id="groups" class="card groups-card" aria-labelledby="groups-title" data-filter-scope>
         <header class="card-head">
             <h2 id="groups-title" class="card-title">{{ i18n.t("admin.groups_heading") }}{% if !groups.is_empty() %} <span class="count">{{ groups.len() }}</span>{% endif %}</h2>
             <details class="more-actions group-new" data-more-actions{% if new_group.error.is_some() %} open{% endif %}>
@@ -175,11 +176,17 @@
         {% if groups.is_empty() %}
         <p class="groups-empty">{{ i18n.t("admin.groups_empty") }}</p>
         {% else %}
+        {% if groups.len() > crate::models::SEARCH_FROM %}
+        <div class="groups-search">
+            <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("admin.search_group") }}" aria-label="{{ i18n.t("admin.search_group") }}" data-filter-input>
+        </div>
+        {% endif %}
         <ul class="group-links">
             {% for g in groups %}
-            <li><a class="group-link" href="/admin/groups/{{ g.id }}"><span class="group-link-name">{{ g.name }}</span><span class="group-link-meta">{{ g.members }}</span>{% call ui::chevron_right() %}{% endcall %}</a></li>
+            <li data-filter-text="{{ g.name }}"><a class="group-link" href="/admin/groups/{{ g.id }}"><span class="group-link-name">{{ g.name }}</span><span class="group-link-meta">{{ g.members }}</span>{% call ui::chevron_right() %}{% endcall %}</a></li>
             {% endfor %}
         </ul>
+        <p class="groups-empty" data-filter-none hidden>{{ i18n.t("admin.no_group_found") }}</p>
         {% endif %}
     </section>
 </div>

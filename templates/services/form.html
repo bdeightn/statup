@@ -9,6 +9,8 @@
 {% block scripts %}
 <script src="{{ crate::asset("js/icon-picker.js") }}" defer></script>
 <script src="{{ crate::asset("js/service-check.js") }}" defer></script>
+<script src="{{ crate::asset("js/list-filter.js") }}" defer></script>
+<script src="{{ crate::asset("js/visibility-picker.js") }}" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -56,29 +58,45 @@
 
                     {% include "components/check_fields.html" %}
 
-                    {# Who sees the service: everyone by default; unticked, the
-                       signed-in members or some groups, in place. #}
-                    <fieldset class="form-block visibility-field"{% if visibility_error.is_some() %} aria-describedby="visibility-error"{% endif %}>
-                        <legend class="field-label">{{ i18n.t("services.visibility") }}</legend>
-                        <label class="check-row"><input id="visibility-everyone" type="checkbox" name="visibility_everyone" value="on" class="checkbox"{% if form.visibility.everyone %} checked{% endif %}><span>{{ i18n.t("services.visibility_everyone") }}</span></label>
-                        <div class="visibility-choices">
-                            {% if public_mode %}
-                            <label class="check-row"><input type="checkbox" name="visibility_members" value="on" class="checkbox"{% if form.visibility.members %} checked{% endif %}><span>{{ i18n.t("services.visibility_members") }}</span></label>
-                            {% endif %}
-                            {% if groups.is_empty() %}
-                            <p class="field-hint">{{ i18n.t("services.visibility_no_group") }}</p>
-                            {% else %}
-                            <div class="visibility-groups">
-                                {% for g in groups %}
-                                <label class="check-row"><input type="checkbox" name="group_ids" value="{{ g.id }}" class="checkbox"{% if form.visibility.has_group(g.id) %} checked{% endif %}><span>{{ g.name }}</span></label>
-                                {% endfor %}
+                    {# Who sees the service, in one menu that says the choice
+                       while closed: everyone, the signed-in members, or some
+                       groups, searched when they are many. #}
+                    <div class="form-block field visibility-field">
+                        <span id="visibility-label" class="field-label">{{ i18n.t("services.visibility") }}</span>
+                        <details class="more-actions visibility-picker" data-more-actions data-visibility-picker data-filter-focus data-more="{{ i18n.t("services.visibility_more") }}"{% if visibility_error.is_some() %} open{% endif %}>
+                            <summary class="cs-trigger" aria-labelledby="visibility-label visibility-summary"{% if visibility_error.is_some() %} aria-describedby="visibility-error"{% endif %}>
+                                <span id="visibility-summary" class="cs-label" data-visibility-summary>{{ self.visibility_summary() }}</span>
+                                <span class="cs-caret">{% call ui::caret_icon() %}{% endcall %}</span>
+                            </summary>
+                            <div class="more-actions-menu visibility-panel">
+                                <div class="visibility-modes" role="radiogroup" aria-labelledby="visibility-label">
+                                    <label class="visibility-mode"><input type="radio" name="visibility" value="everyone" class="sr-only"{% if form.visibility.is("everyone") %} checked{% endif %}><span>{{ i18n.t("services.visibility_everyone") }}</span></label>
+                                    {% if public_mode || form.visibility.is("members") %}
+                                    <label class="visibility-mode"><input type="radio" name="visibility" value="members" class="sr-only"{% if form.visibility.is("members") %} checked{% endif %}><span>{{ i18n.t("services.visibility_members") }}</span></label>
+                                    {% endif %}
+                                    <label class="visibility-mode"><input type="radio" name="visibility" value="groups" class="sr-only"{% if form.visibility.is("groups") %} checked{% endif %}><span>{{ i18n.t("services.visibility_groups") }}</span></label>
+                                </div>
+                                <div class="visibility-groups" data-filter-scope>
+                                    {% if groups.is_empty() %}
+                                    <p class="picker-note">{{ i18n.t("services.visibility_no_group") }}</p>
+                                    {% else %}
+                                    {% if groups.len() > crate::models::SEARCH_FROM %}
+                                    <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("services.visibility_search") }}" aria-label="{{ i18n.t("services.visibility_search") }}" data-filter-input>
+                                    {% endif %}
+                                    <div class="picker-list" role="group" aria-label="{{ i18n.t("services.visibility_groups") }}">
+                                        {% for g in groups %}
+                                        <label class="svc-pick" data-filter-text="{{ g.name }}"><input type="checkbox" name="group_ids" value="{{ g.id }}" class="checkbox"{% if form.visibility.has_group(g.id) %} checked{% endif %}><span class="svc-pick-name">{{ g.name }}</span></label>
+                                        {% endfor %}
+                                    </div>
+                                    <p class="picker-note picker-none" data-filter-none hidden>{{ i18n.t("services.visibility_no_match") }}</p>
+                                    {% endif %}
+                                </div>
                             </div>
-                            {% endif %}
-                        </div>
+                        </details>
                         {% if let Some(message) = visibility_error %}
                         <p id="visibility-error" class="field-error" role="alert">{{ message }}</p>
                         {% endif %}
-                    </fieldset>
+                    </div>
                 </div>
                 <div class="form-col">
                     <div class="form-block">

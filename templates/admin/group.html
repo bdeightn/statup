@@ -5,7 +5,7 @@
 {% block section %}admin{% endblock %}
 
 {% block scripts %}
-<script src="{{ crate::asset("js/groups.js") }}" defer></script>
+<script src="{{ crate::asset("js/list-filter.js") }}" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -51,25 +51,26 @@
     <section class="card" aria-labelledby="members-title">
         <header class="card-head">
             <h2 id="members-title" class="card-title">{{ i18n.t("admin.group_members_title") }} <span class="count">{{ members.len() }}</span></h2>
-            <details class="more-actions member-picker" data-more-actions data-member-picker>
+            <details class="more-actions member-picker" data-more-actions data-filter-focus>
                 <summary class="card-action card-follow">{% call ui::plus() %}{% endcall %}{{ i18n.t("admin.add_members") }}</summary>
-                <form class="more-actions-menu group-panel member-picker-panel" method="post" action="/admin/groups/{{ group.id }}/members">
+                <form class="more-actions-menu group-panel member-picker-panel" method="post" action="/admin/groups/{{ group.id }}/members" data-filter-scope>
                     <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
                     {% if outsiders.is_empty() %}
                     <p class="picker-note">{{ i18n.t("admin.everyone_in_group") }}</p>
                     {% else %}
-                    <label for="member-search" class="sr-only">{{ i18n.t("admin.search_member") }}</label>
-                    <input id="member-search" type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("admin.search_member") }}" data-member-search>
+                    {% if outsiders.len() > crate::models::SEARCH_FROM %}
+                    <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("admin.search_member") }}" aria-label="{{ i18n.t("admin.search_member") }}" data-filter-input>
+                    {% endif %}
                     <div class="picker-list" role="group" aria-label="{{ i18n.t("admin.add_members") }}">
                         {% for m in outsiders %}
-                        <label class="svc-pick" data-member-name="{{ m.display_name }} {{ m.email }}">
+                        <label class="svc-pick" data-filter-text="{{ m.display_name }} {{ m.email }}">
                             <input type="checkbox" name="user_ids" value="{{ m.id }}" class="checkbox">
                             <span class="svc-pick-name">{{ m.display_name }}</span>
                             <span class="picker-email">{{ m.email }}</span>
                         </label>
                         {% endfor %}
                     </div>
-                    <p class="picker-note picker-none" data-member-none hidden>{{ i18n.t("admin.no_member_found") }}</p>
+                    <p class="picker-note picker-none" data-filter-none hidden>{{ i18n.t("admin.no_member_found") }}</p>
                     <button type="submit" class="btn btn-primary group-panel-submit">{{ i18n.t("admin.add_members_submit") }}</button>
                     {% endif %}
                 </form>
@@ -98,7 +99,7 @@
     <section class="card danger-zone" aria-labelledby="delete-title">
         <div class="danger-zone-text">
             <h2 id="delete-title" class="card-title">{{ i18n.t("admin.delete_group_title") }}</h2>
-            <p class="field-hint">{{ i18n.t("admin.delete_group_members") }}{% if !closes.is_empty() %} {{ i18n.t("admin.delete_group_closes") }} {{ self.closes_label() }}.{% endif %}</p>
+            <p class="field-hint">{{ i18n.t("admin.delete_group_members") }}{% if closes > 0 %} {{ self.closes_label() }}{% endif %}</p>
         </div>
         <form method="post" action="/admin/groups/{{ group.id }}/delete" data-confirm>
             <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">

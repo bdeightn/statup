@@ -130,7 +130,7 @@ async fn adding_a_service_is_kept_as_an_essential_line() {
             &[
                 ("name", " Billing "),
                 ("description", ""),
-                ("visibility_everyone", "on"),
+                ("visibility", "everyone"),
             ],
         )
         .await;

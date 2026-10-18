@@ -24,8 +24,8 @@ struct GroupTemplate {
     members: Vec<GroupMember>,
     /// Active members not in the group, offered by "Add members".
     outsiders: Vec<GroupMember>,
-    /// Services only this group opens, named before it is deleted.
-    closes: Vec<String>,
+    /// How many services only this group opens, said before it is deleted.
+    closes: usize,
     notice: Option<GroupNotice>,
     rename: RenameForm,
     i18n: I18n,
@@ -33,7 +33,7 @@ struct GroupTemplate {
 
 impl GroupTemplate {
     fn closes_label(&self) -> String {
-        self.closes.join(", ")
+        self.i18n.plural("admin.delete_group_closes", self.closes)
     }
 }
 

@@ -1170,34 +1170,117 @@
         grid-template-columns: minmax(0, 1fr) auto;
     }
 
-    /* Who sees a service: the choices sit under "Everyone", in line with
-       its words, and leave while it is ticked; the groups leave too while
-       every signed-in member is ticked. */
-    .visibility-field {
-        min-width: 0;
+    /* Who sees a service: one menu, the face of a select, its panel over
+       the page. A check marks the choice; the groups show under "Some
+       groups" only. */
+    .visibility-picker {
+        display: block;
+        max-width: 360px;
     }
 
-    .visibility-field > .field-label {
-        margin-bottom: 10px;
+    .visibility-picker > .cs-trigger {
+        cursor: pointer;
     }
 
-    .visibility-choices,
-    .visibility-groups {
+    .visibility-picker[open] > .cs-trigger {
+        border-color: var(--focus);
+        box-shadow: 0 0 0 3px var(--focus-halo);
+    }
+
+    .visibility-picker[open] .cs-caret {
+        transform: rotate(180deg);
+    }
+
+    .visibility-picker > .visibility-panel {
+        right: auto;
+        left: 0;
+        display: block;
+        width: 100%;
+        min-width: 260px;
+        padding: 6px;
+    }
+
+    .visibility-modes {
         display: grid;
-        gap: 10px;
+        gap: 2px;
     }
 
-    .visibility-choices {
-        margin: 10px 0 0 28px;
+    .visibility-mode {
+        display: grid;
+        grid-template-columns: 16px minmax(0, 1fr);
+        column-gap: 8px;
+        align-items: center;
+        min-height: 36px;
+        padding: 7px 10px;
+        font-size: var(--text-sm);
+        color: var(--ink);
+        border-radius: 4px;
+        cursor: pointer;
     }
 
-    .visibility-field:has(#visibility-everyone:checked) .visibility-choices,
-    .visibility-field:has([name="visibility_members"]:checked) .visibility-groups {
+    .visibility-mode:hover {
+        background: var(--hover);
+    }
+
+    .visibility-mode:has(:focus-visible) {
+        outline: 2px solid var(--focus);
+        outline-offset: -2px;
+    }
+
+    .visibility-mode::before {
+        content: "";
+        width: 10px;
+        height: 6px;
+        border-bottom: 2px solid currentColor;
+        border-left: 2px solid currentColor;
+        transform: translateY(-2px) rotate(-45deg);
+        opacity: 0;
+    }
+
+    .visibility-mode:has(:checked) {
+        font-weight: 600;
+    }
+
+    .visibility-mode:has(:checked)::before {
+        opacity: 1;
+    }
+
+    .visibility-groups {
+        margin: 6px -6px -6px;
+        padding: 12px 16px 14px;
+        border-top: 1px solid var(--line);
+    }
+
+    .visibility-panel:not(:has([value="groups"]:checked)) .visibility-groups {
         display: none;
     }
 
+    .visibility-groups > .picker-list:first-child {
+        margin-top: -12px;
+        border-top: 0;
+    }
+
+    .visibility-field > .field-label {
+        display: block;
+        margin-bottom: 6px;
+    }
+
     .visibility-field > .field-error {
-        margin-top: 8px;
+        margin-top: 6px;
+    }
+
+    /* The groups of a large team are searched before they are listed. */
+    .groups-search {
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--line);
+    }
+
+    .groups-search > .input {
+        max-width: 360px;
+    }
+
+    .group-links > [hidden] {
+        display: none;
     }
 
     /* The members a group can take in, narrowed by the search. */

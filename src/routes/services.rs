@@ -44,8 +44,6 @@ struct ServiceListTemplate {
     pulses: HashMap<i64, Pulse>,
     /// Each service's last ninety days, drawn small on its row.
     histories: HashMap<i64, Strip>,
-    /// Who sees each service kept from everyone, in a few words.
-    audiences: HashMap<i64, String>,
     /// Services with a problem are listed first; the ordering mode puts
     /// back the chosen order, kept here as each service's place.
     problems_first: bool,
@@ -86,11 +84,6 @@ impl ServiceListTemplate {
     #[allow(clippy::trivially_copy_pass_by_ref)]
     fn history_of(&self, id: &i64) -> Option<&Strip> {
         self.histories.get(id)
-    }
-
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    fn audience_of(&self, id: &i64) -> Option<String> {
-        self.audiences.get(id).cloned()
     }
 
     #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -172,7 +165,6 @@ async fn render_list(
         .map(|service| (service.id, Pulse::new(state.checks.get(service.id), &i18n)))
         .collect();
     let histories = strips(&state.pool, &services, LONG_DAYS, &i18n).await?;
-    let audiences = audiences(&state.pool, &services, &i18n).await?;
     render(&ServiceListTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
         services,
@@ -183,45 +175,12 @@ async fn render_list(
         saved_monitored,
         pulses,
         histories,
-        audiences,
         problems_first,
         chosen_places,
         deleted_name: query.deleted,
         error,
         i18n,
     })
-}
-
-/// "Kept for Accounting": who sees a service that not everyone sees, so
-/// an editor knows it before opening it. A service whose groups are all
-/// gone is seen by the team alone.
-async fn audiences(
-    pool: &DbPool,
-    services: &[Service],
-    i18n: &I18n,
-) -> Result<HashMap<i64, String>, AppError> {
-    let names = ServiceRepository::group_names(pool).await?;
-    let mut audiences = HashMap::new();
-    for service in services {
-        let label = match service.visibility {
-            Visibility::Everyone => continue,
-            Visibility::Members => i18n.t("services.visible_members").to_string(),
-            Visibility::Groups => {
-                let groups: Vec<&str> = names
-                    .iter()
-                    .filter(|(id, _)| *id == service.id)
-                    .map(|(_, name)| name.as_str())
-                    .collect();
-                if groups.is_empty() {
-                    i18n.t("services.visible_team").to_string()
-                } else {
-                    i18n.tf("services.visible_groups", &[("groups", &groups.join(", "))])
-                }
-            }
-        };
-        audiences.insert(service.id, label);
-    }
-    Ok(audiences)
 }
 
 pub async fn list(
@@ -261,6 +220,31 @@ struct ServiceFormTemplate {
 }
 
 impl ServiceFormTemplate {
+    /// What the "Who sees it" menu says while closed: the choice, or the
+    /// groups ticked, the first one and how many others past two.
+    fn visibility_summary(&self) -> String {
+        let fields = &self.form.visibility;
+        let names: Vec<&str> = self
+            .groups
+            .iter()
+            .filter(|group| fields.group_ids.contains(&group.id))
+            .map(|group| group.name.as_str())
+            .collect();
+        let key = match (fields.mode, names.as_slice()) {
+            (Visibility::Everyone, _) => "services.visibility_everyone",
+            (Visibility::Members, _) => "services.visibility_members",
+            (Visibility::Groups, []) => "services.visibility_groups",
+            (Visibility::Groups, [one]) => return (*one).to_string(),
+            (Visibility::Groups, [first, second]) => return format!("{first}, {second}"),
+            (Visibility::Groups, [first, rest @ ..]) => {
+                let others = rest.len().to_string();
+                let args = [("first", *first), ("n", others.as_str())];
+                return self.i18n.tf("services.visibility_more", &args);
+            }
+        };
+        self.i18n.t(key).to_string()
+    }
+
     /// "Currently Operational." under the title of an edited service.
     fn status_line(&self) -> String {
         let status = self.i18n.t(self.form.status.i18n_key());
@@ -303,43 +287,34 @@ pub struct ServiceFormData {
     pub visibility: VisibilityFields,
 }
 
-/// Who sees the service, as its form holds it: "Everyone" ticked, or the
-/// signed-in members, or some groups.
+/// Who sees the service, as its form holds it: everyone, the signed-in
+/// members, or some groups, and the groups ticked.
 pub struct VisibilityFields {
-    pub everyone: bool,
-    pub members: bool,
+    pub mode: Visibility,
     pub group_ids: Vec<i64>,
 }
 
 impl VisibilityFields {
-    fn saved(visibility: Visibility, group_ids: Vec<i64>) -> Self {
-        Self {
-            everyone: visibility == Visibility::Everyone,
-            members: visibility == Visibility::Members,
-            group_ids,
-        }
-    }
-
     // Askama hands a field over by reference.
     #[allow(clippy::trivially_copy_pass_by_ref)]
     fn has_group(&self, id: &i64) -> bool {
         self.group_ids.contains(id)
     }
 
-    /// What to save: everyone wins over the members, the members over the
-    /// groups. With nothing ticked, nobody but the team would see it, so
-    /// the form asks.
+    fn is(&self, mode: &str) -> bool {
+        self.mode.as_str() == mode
+    }
+
+    /// What to save. "Some groups" with none ticked would leave the service
+    /// to the team alone, so the form asks.
     fn choice(&self) -> Result<(Visibility, &[i64]), AppError> {
-        if self.everyone {
-            return Ok((Visibility::Everyone, &[]));
+        match self.mode {
+            Visibility::Groups if self.group_ids.is_empty() => {
+                Err(AppError::validation(VISIBILITY_REQUIRED))
+            }
+            Visibility::Groups => Ok((Visibility::Groups, &self.group_ids)),
+            other => Ok((other, &[])),
         }
-        if self.members {
-            return Ok((Visibility::Members, &[]));
-        }
-        if self.group_ids.is_empty() {
-            return Err(AppError::validation(VISIBILITY_REQUIRED));
-        }
-        Ok((Visibility::Groups, &self.group_ids))
     }
 }
 
@@ -355,14 +330,20 @@ impl ServiceFormData {
                 outage_after: Some(DEFAULT_OUTAGE_AFTER.to_string()),
                 ..CheckFields::default()
             },
-            visibility: VisibilityFields::saved(Visibility::Everyone, Vec::new()),
+            visibility: VisibilityFields {
+                mode: Visibility::Everyone,
+                group_ids: Vec::new(),
+            },
         }
     }
 
     /// An edited service as saved.
     fn from_service(service: Service, group_ids: Vec<i64>) -> Self {
         Self {
-            visibility: VisibilityFields::saved(service.visibility, group_ids),
+            visibility: VisibilityFields {
+                mode: service.visibility,
+                group_ids,
+            },
             check: CheckFields {
                 outage_after: Some(service.outage_after_minutes.to_string()),
                 ..CheckFields::from_saved(
@@ -398,9 +379,7 @@ pub struct ServiceInput {
     #[serde(default)]
     icon_name: Option<String>,
     #[serde(default)]
-    visibility_everyone: Option<String>,
-    #[serde(default)]
-    visibility_members: Option<String>,
+    visibility: String,
     #[serde(default)]
     group_ids: Vec<i64>,
     #[serde(flatten)]
@@ -419,10 +398,15 @@ impl ServiceInput {
         self.icon_name.clone().filter(|name| !name.is_empty())
     }
 
+    /// An unknown or missing choice is everyone, as a new service starts.
     fn visibility(&self) -> VisibilityFields {
+        let mode = match self.visibility.as_str() {
+            "members" => Visibility::Members,
+            "groups" => Visibility::Groups,
+            _ => Visibility::Everyone,
+        };
         VisibilityFields {
-            everyone: self.visibility_everyone.is_some(),
-            members: self.visibility_members.is_some(),
+            mode,
             group_ids: self.group_ids.clone(),
         }
     }
@@ -465,6 +449,10 @@ async fn render_form(
         None => false,
     };
     let placed = place_error(page.error_key.as_deref(), &i18n);
+    let groups = ticked_first(
+        GroupRepository::list(&state.pool).await?,
+        &page.form.visibility,
+    );
     render(&ServiceFormTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
         error: placed.form,
@@ -474,7 +462,7 @@ async fn render_form(
         visibility_error: placed.visibility,
         edit_id: page.edit_id,
         form: page.form,
-        groups: GroupRepository::list(&state.pool).await?,
+        groups,
         public_mode: state.is_public_mode(),
         selected_icon_id: page.icon_id.filter(|_| selected_icon_url.is_some()),
         selected_icon_url,
@@ -485,6 +473,13 @@ async fn render_form(
         upload_error: None,
         i18n,
     })
+}
+
+/// The groups ticked come first, so a long list shows them without a
+/// search; each part keeps its order by name.
+fn ticked_first(mut groups: Vec<MemberGroup>, fields: &VisibilityFields) -> Vec<MemberGroup> {
+    groups.sort_by_key(|group| !fields.group_ids.contains(&group.id));
+    groups
 }
 
 /// One message per place a refusal can be said: above the form, under the
@@ -892,29 +887,32 @@ mod tests {
 
     #[test]
     fn groups_ticked_beside_the_monitoring_fields_are_read() {
-        let form =
-            input("name=Paie&check_kind=http&check_url=https%3A%2F%2Fpaie&group_ids=3&group_ids=7");
+        let form = input(
+            "name=Paie&check_kind=http&check_url=https%3A%2F%2Fpaie&visibility=groups&group_ids=3&group_ids=7",
+        );
         assert_eq!(form.group_ids, vec![3, 7]);
         assert!(form.check.monitoring().is_ok());
     }
 
     #[test]
-    fn everyone_wins_over_the_members_and_the_members_over_the_groups() {
+    fn some_groups_need_one_group_and_the_others_need_none() {
         let choice = |body: &str| {
             let fields = input(body).visibility();
             fields
                 .choice()
                 .map(|(visibility, groups)| (visibility, groups.to_vec()))
         };
-        let all = choice("visibility_everyone=on&visibility_members=on&group_ids=3");
+        let all = choice("visibility=everyone&group_ids=3");
         assert_eq!(all.ok(), Some((Visibility::Everyone, Vec::new())));
-        let members = choice("visibility_members=on&group_ids=3");
+        let members = choice("visibility=members&group_ids=3");
         assert_eq!(members.ok(), Some((Visibility::Members, Vec::new())));
-        let groups = choice("group_ids=3&group_ids=7");
+        let groups = choice("visibility=groups&group_ids=3&group_ids=7");
         assert_eq!(groups.ok(), Some((Visibility::Groups, vec![3, 7])));
         assert!(matches!(
-            choice("name=Paie"),
+            choice("visibility=groups"),
             Err(AppError::Validation(key)) if key == VISIBILITY_REQUIRED
         ));
+        let missing = choice("name=Paie");
+        assert_eq!(missing.ok(), Some((Visibility::Everyone, Vec::new())));
     }
 }

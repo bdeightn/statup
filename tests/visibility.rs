@@ -626,6 +626,7 @@ async fn an_editor_keeps_a_service_for_a_group_from_its_form() {
     let fields = [
         ("name", "Coffre"),
         ("check_kind", "none"),
+        ("visibility", "groups"),
         ("group_ids", group_id.as_str()),
     ];
     let (status, _, _) = app.post_form("/services/new", &csrf, &fields).await;
@@ -637,15 +638,20 @@ async fn an_editor_keeps_a_service_for_a_group_from_its_form() {
         .find(|s| s.name == "Coffre")
         .unwrap();
     assert_eq!(service.visibility, Visibility::Groups);
-    let (_, list) = app.get("/services").await;
-    let kept = i18n.tf("services.visible_groups", &[("groups", "Paie")]);
-    assert!(list.contains(&kept), "the list says who sees it");
     let edit = format!("/services/{}/edit", service.id);
     let (_, form) = app.get(&edit).await;
+    assert!(
+        form.contains("data-visibility-summary>Paie</span>"),
+        "the closed menu says who sees it"
+    );
     let ticked = format!(r#"name="group_ids" value="{group}" class="checkbox" checked"#);
     assert!(form.contains(&ticked), "the form shows the group ticked");
 
-    let nothing = [("name", "Coffre"), ("check_kind", "none")];
+    let nothing = [
+        ("name", "Coffre"),
+        ("check_kind", "none"),
+        ("visibility", "groups"),
+    ];
     let (status, body, _) = app.post_form(&edit, &csrf, &nothing).await;
     assert_eq!(status.as_u16(), 200);
     assert!(body.contains(i18n.t("validation.visibility_required")));
@@ -662,7 +668,7 @@ async fn an_editor_keeps_a_service_for_a_group_from_its_form() {
     let everyone = [
         ("name", "Coffre"),
         ("check_kind", "none"),
-        ("visibility_everyone", "on"),
+        ("visibility", "everyone"),
     ];
     let (status, _, _) = app.post_form(&edit, &csrf, &everyone).await;
     assert_eq!(status.as_u16(), 303);
@@ -688,6 +694,6 @@ async fn a_members_only_page_offers_no_signed_in_members_choice() {
         .await;
     app.login("editor@x.com", PASSWORD).await;
     let (_, form) = app.get("/services/new").await;
-    assert!(form.contains(r#"name="visibility_everyone""#));
-    assert!(!form.contains(r#"name="visibility_members""#));
+    assert!(form.contains(r#"name="visibility" value="everyone""#));
+    assert!(!form.contains(r#"name="visibility" value="members""#));
 }

@@ -3,6 +3,9 @@
 /// Longest group name, in characters.
 pub const GROUP_NAME_MAX_CHARS: usize = 100;
 
+/// A list of groups or members gets a search box past this many entries.
+pub const SEARCH_FROM: usize = 8;
+
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct MemberGroup {
     pub id: i64,
