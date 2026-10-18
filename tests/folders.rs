@@ -627,3 +627,79 @@ async fn the_page_of_an_unknown_folder_is_not_found() {
 
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn the_services_page_shows_one_card_per_folder_after_the_services_in_none() {
+    let app = spawn_with_publisher().await;
+    create_service(&app, "Mail").await;
+    let vpn = create_service(&app, "VPN").await;
+    let network = create_folder(&app, "Network").await;
+    let empty = create_folder(&app, "Empty").await;
+    FolderRepository::add_services(&app.pool, network, &[vpn])
+        .await
+        .unwrap();
+
+    let (status, body) = app.get("/services").await;
+
+    assert_eq!(status, StatusCode::OK);
+    let at = |needle: &str| {
+        body.find(needle)
+            .unwrap_or_else(|| panic!("{needle} is on the page"))
+    };
+    let order = [
+        at(r#"data-service-name="Mail""#),
+        at(&format!(r#"id="folder-{network}""#)),
+        at(r#"data-service-name="VPN""#),
+        at(&format!(r#"id="folder-{empty}""#)),
+    ];
+    assert!(order.is_sorted(), "{order:?}");
+    assert!(body.contains(&format!(r#"href="/services/folders/{network}""#)));
+    let empty_card = &body[at(&format!(r#"id="folder-{empty}""#))..];
+    assert!(
+        empty_card.contains(&text("folders.no_service")),
+        "an empty folder stays within reach"
+    );
+}
+
+#[tokio::test]
+async fn a_publisher_sets_the_order_of_folders() {
+    let app = spawn_with_publisher().await;
+    let ids = [
+        create_folder(&app, "Network").await.to_string(),
+        create_folder(&app, "Mail").await.to_string(),
+        create_folder(&app, "Payroll").await.to_string(),
+    ];
+
+    let order = [
+        ("order", &*ids[2]),
+        ("order", &*ids[0]),
+        ("order", &*ids[1]),
+    ];
+    let (status, _, _) = post(&app, "/services/folders/order", &order).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(folder_names(&app).await, ["Payroll", "Network", "Mail"]);
+
+    let stale = [("order", &*ids[1]), ("order", &*ids[0])];
+    let (status, _, _) = post(&app, "/services/folders/order", &stale).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "a list missing a folder");
+    assert_eq!(folder_names(&app).await, ["Payroll", "Network", "Mail"]);
+}
+
+#[tokio::test]
+async fn a_reader_cannot_set_the_order_of_folders() {
+    let app = TestApp::spawn().await;
+    app.create_user(READER_EMAIL, READER_PASSWORD, "Reader", Role::Reader)
+        .await;
+    app.login(READER_EMAIL, READER_PASSWORD).await;
+    let first = create_folder(&app, "Network").await.to_string();
+    let second = create_folder(&app, "Mail").await.to_string();
+    let csrf = app.csrf_from("/").await;
+
+    let order = [("order", &*second), ("order", &*first)];
+    let (status, _, _) = app
+        .post_form("/services/folders/order", &csrf, &order)
+        .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(folder_names(&app).await, ["Network", "Mail"]);
+}

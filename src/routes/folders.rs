@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use askama::Template;
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
@@ -451,6 +452,29 @@ pub async fn remove_service(
         .record(&state.pool)
         .await;
     Ok(Redirect::to(&format!("/services/folders/{id}?removed={service_id}")).into_response())
+}
+
+#[derive(Deserialize)]
+pub struct FolderOrderForm {
+    #[serde(default)]
+    order: Vec<i64>,
+}
+
+/// Saves the order of the folders set by the Services page's script, which
+/// reloads the page on a refusal: a folder was added or deleted meanwhile.
+pub async fn save_order(
+    RequirePublisher(user): RequirePublisher,
+    State(state): State<AppState>,
+    HtmlForm(form): HtmlForm<FolderOrderForm>,
+) -> Result<Response, AppError> {
+    if !FolderRepository::reorder(&state.pool, &form.order).await? {
+        return Err(AppError::validation("error.invalid_data"));
+    }
+    NewJournalEntry::new(JournalKind::ServicesReordered)
+        .by(&user)
+        .record(&state.pool)
+        .await;
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 /// Its services stay, out of any folder, seen by the same people.

@@ -202,6 +202,7 @@ fn publisher_routes() -> Router<AppState> {
             get(services::edit_form).post(services::update),
         )
         .route("/services/folders/new", post(folders::create_folder))
+        .route("/services/folders/order", post(folders::save_order))
         .route("/services/folders/{id}", get(folders::folder_page))
         .route(
             "/services/folders/{id}/rename",

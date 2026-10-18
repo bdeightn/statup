@@ -374,8 +374,30 @@
         display: none;
     }
 
+    /* The Services page: one card per folder, after the services in none. */
+    .svc-groups {
+        display: grid;
+        gap: 16px;
+    }
+
+    .svc-rows {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    /* The folder's name and arrows on the edges of its rows. */
+    .svc-group > .card-head {
+        padding-inline: 20px;
+    }
+
     /* Choosing the order: each row keeps its name and gains two arrows
-       where its pencil was; its state, pencil and history step aside. */
+       where its pencil was; its state, pencil and history step aside. A
+       folder's arrows take the place of "Manage folder". */
+    .is-ordering .svc-group-manage {
+        display: none;
+    }
+
     .svc-move {
         display: none;
         gap: 4px;

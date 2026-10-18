@@ -20,7 +20,7 @@ use crate::middleware::headers::is_htmx;
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher, Viewer};
 use crate::models::{
     BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, JournalKind, Service,
-    ServiceStatus, User, find_builtin_icon,
+    ServiceFolder, ServiceStatus, User, find_builtin_icon,
 };
 use crate::modules::services::{LONG_DAYS, ServiceRow, Strip, service_history, strips};
 use crate::repositories::{EventRepository, FolderRepository, NewJournalEntry, ServiceRepository};
@@ -33,7 +33,10 @@ use crate::state::AppState;
 #[template(path = "services/list.html")]
 struct ServiceListTemplate {
     frame: Frame,
-    services: Vec<Service>,
+    /// The services under their folders, in the chosen order.
+    groups: Vec<ServiceGroup>,
+    service_count: usize,
+    folder_count: usize,
     /// The event holding each service in its state, by service.
     drivers: HashMap<i64, (i64, String)>,
     /// The list renders the status control at rest, never a receipt.
@@ -101,10 +104,43 @@ impl ServiceListTemplate {
         self.i18n.tf(key, &[("name", name)])
     }
 
+    /// Arrows move services within their folder and folders among themselves.
+    fn orderable(&self) -> bool {
+        self.service_count > 1 || self.folder_count > 1
+    }
+
     fn folder_deleted_notice(&self, name: &str) -> String {
         self.i18n
             .tf("services.folder_deleted_notice", &[("name", name)])
     }
+}
+
+/// A card of the list: the services of a folder, or of none, untitled.
+struct ServiceGroup {
+    folder: Option<ServiceFolder>,
+    services: Vec<Service>,
+}
+
+/// Those in no folder first, then each folder in its order, empty ones
+/// included so that their page stays within reach.
+fn grouped(services: Vec<Service>, folders: Vec<ServiceFolder>) -> Vec<ServiceGroup> {
+    let mut by_folder: HashMap<Option<i64>, Vec<Service>> = HashMap::new();
+    for service in services {
+        by_folder
+            .entry(service.folder_id)
+            .or_default()
+            .push(service);
+    }
+    let loose = by_folder.remove(&None).unwrap_or_default();
+    let first = (!loose.is_empty()).then_some(ServiceGroup {
+        folder: None,
+        services: loose,
+    });
+    let folders = folders.into_iter().map(|folder| ServiceGroup {
+        services: by_folder.remove(&Some(folder.id)).unwrap_or_default(),
+        folder: Some(folder),
+    });
+    first.into_iter().chain(folders).collect()
 }
 
 /// The panel of "New folder", open again with the refused name and why.
@@ -183,9 +219,12 @@ async fn render_list(
         .map(|service| (service.id, Pulse::new(state.checks.get(service.id), &i18n)))
         .collect();
     let histories = strips(&state.pool, &services, LONG_DAYS, &i18n).await?;
+    let folders = FolderRepository::list(&state.pool).await?;
     render(&ServiceListTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
-        services,
+        service_count: services.len(),
+        folder_count: folders.len(),
+        groups: grouped(services, folders),
         drivers: EventRepository::state_drivers(&state.pool, None).await?,
         previous: None,
         saved_id: query.saved,
