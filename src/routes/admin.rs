@@ -12,7 +12,7 @@ use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::no_store;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
-use crate::models::{JournalKind, MemberGroup, Role, User, check_display_name};
+use crate::models::{JournalKind, Role, User, check_display_name};
 use crate::repositories::{
     GroupRepository, NewJournalEntry, NotificationRepository, UserRepository,
 };
@@ -153,21 +153,22 @@ struct UsersListTemplate {
     /// The add-member fold opens itself when its form came back refused.
     add_open: bool,
     groups: Vec<GroupRow>,
-    /// A group name that came back refused, kept in its field, and why.
-    new_group_name: String,
-    group_error: Option<String>,
+    new_group: NewGroupForm,
     i18n: I18n,
 }
 
-impl UsersListTemplate {
-    fn names_of(&self, ids: &[i64]) -> String {
-        self.groups
-            .iter()
-            .filter(|group| ids.contains(&group.id))
-            .map(|group| group.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
+/// A group on the Team page: a link to its own page.
+struct GroupRow {
+    id: i64,
+    name: String,
+    members: String,
+}
+
+/// The "New group" panel, open again with the refused name and why.
+#[derive(Default)]
+struct NewGroupForm {
+    value: String,
+    error: Option<String>,
 }
 
 struct UserRow {
@@ -177,31 +178,6 @@ struct UserRow {
     role: Role,
     is_active: bool,
     last_seen_at: Option<String>,
-    group_ids: Vec<i64>,
-}
-
-impl UserRow {
-    // Askama hands a field over by reference.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    fn in_group(&self, id: &i64) -> bool {
-        self.group_ids.contains(id)
-    }
-}
-
-/// A group on the Team page, with what deleting it would do.
-struct GroupRow {
-    id: i64,
-    name: String,
-    members: String,
-    /// Services only this group opens: once it is gone, only editors and
-    /// administrators see them.
-    closes: Vec<String>,
-}
-
-impl GroupRow {
-    fn closes_label(&self) -> String {
-        self.closes.join(", ")
-    }
 }
 
 struct Notice {
@@ -213,9 +189,6 @@ enum NoticeKind {
     RoleUpdated(Role),
     Disabled,
     Enabled,
-    MemberGroups,
-    GroupCreated,
-    GroupRenamed,
     GroupDeleted,
 }
 
@@ -232,70 +205,37 @@ struct AddMemberForm {
     display_name: String,
     email: String,
     role: String,
-    group_ids: Vec<i64>,
-}
-
-impl AddMemberForm {
-    // Askama hands a field over by reference.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    fn has_group(&self, id: &i64) -> bool {
-        self.group_ids.contains(id)
-    }
 }
 
 #[derive(Deserialize)]
 pub struct UsersQuery {
     role: Option<i64>,
     toggled: Option<i64>,
-    groups_of: Option<i64>,
-    group_created: Option<i64>,
-    group_renamed: Option<i64>,
     group_deleted: Option<u8>,
 }
 
 impl UsersQuery {
-    fn notice(&self, users: &[UserRow], groups: &[MemberGroup]) -> Option<Notice> {
-        self.member_notice(users)
-            .or_else(|| self.group_notice(groups))
-    }
-
-    fn member_notice(&self, users: &[UserRow]) -> Option<Notice> {
-        let find = |id: Option<i64>| id.and_then(|id| users.iter().find(|u| u.id == id));
-        let notice = |user: &UserRow, kind| Notice {
-            name: user.display_name.clone(),
-            kind,
-        };
-        if let Some(user) = find(self.role) {
-            return Some(notice(user, NoticeKind::RoleUpdated(user.role)));
-        }
-        if let Some(user) = find(self.groups_of) {
-            return Some(notice(user, NoticeKind::MemberGroups));
-        }
-        find(self.toggled).map(|user| {
-            let kind = if user.is_active {
-                NoticeKind::Enabled
-            } else {
-                NoticeKind::Disabled
-            };
-            notice(user, kind)
-        })
-    }
-
-    fn group_notice(&self, groups: &[MemberGroup]) -> Option<Notice> {
+    fn notice(&self, users: &[UserRow]) -> Option<Notice> {
         if self.group_deleted.is_some() {
             return Some(Notice {
                 name: String::new(),
                 kind: NoticeKind::GroupDeleted,
             });
         }
-        let (id, kind) = match (self.group_created, self.group_renamed) {
-            (Some(id), _) => (id, NoticeKind::GroupCreated),
-            (None, Some(id)) => (id, NoticeKind::GroupRenamed),
-            (None, None) => return None,
-        };
-        groups.iter().find(|g| g.id == id).map(|group| Notice {
-            name: group.name.clone(),
-            kind,
+        let find = |id: Option<i64>| id.and_then(|id| users.iter().find(|u| u.id == id));
+        if let Some(user) = find(self.role) {
+            return Some(Notice {
+                name: user.display_name.clone(),
+                kind: NoticeKind::RoleUpdated(user.role),
+            });
+        }
+        find(self.toggled).map(|user| Notice {
+            name: user.display_name.clone(),
+            kind: if user.is_active {
+                NoticeKind::Enabled
+            } else {
+                NoticeKind::Disabled
+            },
         })
     }
 }
@@ -308,8 +248,6 @@ pub struct AddMemberInput {
     email: String,
     #[serde(default)]
     role: String,
-    #[serde(default)]
-    group_ids: Vec<i64>,
 }
 
 #[derive(Deserialize)]
@@ -318,12 +256,7 @@ pub struct RoleInput {
     role: String,
 }
 
-fn to_user_row(u: User, memberships: &[(i64, i64)], i18n: &I18n) -> UserRow {
-    let group_ids = memberships
-        .iter()
-        .filter(|(member, _)| *member == u.id)
-        .map(|(_, group)| *group)
-        .collect();
+fn to_user_row(u: User, i18n: &I18n) -> UserRow {
     UserRow {
         id: u.id,
         email: u.email,
@@ -331,7 +264,6 @@ fn to_user_row(u: User, memberships: &[(i64, i64)], i18n: &I18n) -> UserRow {
         role: u.role,
         is_active: u.is_active,
         last_seen_at: u.last_seen_at.map(|dt| i18n.format_datetime(&dt)),
-        group_ids,
     }
 }
 
@@ -382,9 +314,8 @@ pub async fn users_list(
     Query(query): Query<UsersQuery>,
 ) -> Result<Response, AppError> {
     let users = load_rows(&state, &i18n).await?;
-    let groups = GroupRepository::list(&state.pool).await?;
     let page = ListPage {
-        notice: query.notice(&users, &groups),
+        notice: query.notice(&users),
         ..ListPage::default()
     };
     render_users(&state, &user, csrf_token, i18n, users, page).await
@@ -409,52 +340,48 @@ async fn show_password(
     Ok(no_store(response))
 }
 
-async fn load_rows(state: &AppState, i18n: &I18n) -> Result<Vec<UserRow>, AppError> {
-    let memberships = GroupRepository::memberships(&state.pool).await?;
-    Ok(UserRepository::list_all(&state.pool)
+async fn load_groups(state: &AppState, i18n: &I18n) -> Result<Vec<GroupRow>, AppError> {
+    Ok(GroupRepository::list(&state.pool)
         .await?
         .into_iter()
-        .map(|u| to_user_row(u, &memberships, i18n))
+        .map(|group| GroupRow {
+            members: i18n.plural(
+                "admin.group_members",
+                usize::try_from(group.member_count).unwrap_or(0),
+            ),
+            id: group.id,
+            name: group.name,
+        })
         .collect())
 }
 
-async fn load_groups(state: &AppState, i18n: &I18n) -> Result<Vec<GroupRow>, AppError> {
-    let mut rows = Vec::new();
-    for group in GroupRepository::list(&state.pool).await? {
-        let closes = GroupRepository::services_closed_by_deleting(&state.pool, group.id).await?;
-        let count = usize::try_from(group.member_count).unwrap_or(0);
-        rows.push(GroupRow {
-            id: group.id,
-            name: group.name,
-            members: i18n.plural("admin.group_members", count),
-            closes,
-        });
-    }
-    Ok(rows)
-}
-
-/// The Team page again, saying what was refused: under the new group's
-/// field, with the name kept, when `new_group_name` is given, at the top
-/// otherwise.
+/// The Team page again, with the "New group" panel open on the refused
+/// name and why.
 pub(super) async fn refused_page(
     state: &AppState,
     admin: &User,
     csrf_token: String,
     i18n: I18n,
     key: &str,
-    new_group_name: Option<String>,
+    name: String,
 ) -> Result<Response, AppError> {
     let users = load_rows(state, &i18n).await?;
-    let message = i18n.t(key).to_string();
-    let page = match new_group_name {
-        Some(name) => ListPage {
-            new_group_name: name,
-            group_error: Some(message),
-            ..ListPage::default()
+    let page = ListPage {
+        new_group: NewGroupForm {
+            error: Some(i18n.t(key).to_string()),
+            value: name,
         },
-        None => ListPage::refused(message),
+        ..ListPage::default()
     };
     render_users(state, admin, csrf_token, i18n, users, page).await
+}
+
+async fn load_rows(state: &AppState, i18n: &I18n) -> Result<Vec<UserRow>, AppError> {
+    Ok(UserRepository::list_all(&state.pool)
+        .await?
+        .into_iter()
+        .map(|u| to_user_row(u, i18n))
+        .collect())
 }
 
 /// What the list says on top of the rows themselves.
@@ -465,8 +392,7 @@ struct ListPage {
     error: Option<String>,
     add_form: AddMemberForm,
     add_open: bool,
-    new_group_name: String,
-    group_error: Option<String>,
+    new_group: NewGroupForm,
 }
 
 impl ListPage {
@@ -497,8 +423,7 @@ async fn render_users(
         add_form: page.add_form,
         add_open: page.add_open,
         groups: load_groups(state, &i18n).await?,
-        new_group_name: page.new_group_name,
-        group_error: page.group_error,
+        new_group: page.new_group,
         i18n,
     })
 }
@@ -529,7 +454,6 @@ pub async fn add_member(
                     display_name: input.display_name,
                     email: input.email,
                     role: input.role,
-                    group_ids: input.group_ids,
                 },
                 add_open: true,
                 ..ListPage::default()
@@ -551,7 +475,6 @@ async fn create_member(
         .parse()
         .map_err(|_| AppError::validation("validation.invalid_role"))?;
     let (user, password) = AuthService::add_member(&state.pool, &input.email, &name, role).await?;
-    GroupRepository::set_member_groups(&state.pool, user.id, &input.group_ids).await?;
     Ok(CreatedAccount {
         name: user.display_name,
         email: user.email,

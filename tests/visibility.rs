@@ -69,7 +69,7 @@ impl Fixture {
             .await;
         let pool = &app.pool;
         let group = GroupRepository::create(pool, "Paie").await.unwrap();
-        GroupRepository::set_member_groups(pool, inside, &[group])
+        GroupRepository::add_members(pool, group, &[inside])
             .await
             .unwrap();
         let (open, restricted, members) = seed_services(pool, group).await;

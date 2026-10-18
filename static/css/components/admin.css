@@ -1050,143 +1050,154 @@
         margin-top: 6px;
     }
 
-    /* The groups of a new member: boxes on one or two lines. */
-    .member-groups-field {
-        min-width: 0;
-    }
-
-    .member-groups-boxes {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px 24px;
-        margin-top: 4px;
-    }
-
-    /* The groups of a member, one grey line under the name, changed in a
-       panel over the page that opens from its start. */
-    .member-groups {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 2px 6px;
-    }
-
-    .member-groups-edit {
-        display: inline-flex;
-        align-items: center;
-        gap: 2px;
-        color: var(--ink);
-        cursor: pointer;
-    }
-
-    .member-groups-menu > .member-groups-panel {
-        right: auto;
-        left: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 0;
-        width: 280px;
-        max-width: calc(100vw - 32px);
-        padding: 16px;
-        color: var(--ink);
-    }
-
-    /* On a phone the panel opens from the start of the line rather than
-       from "Change", so it stays on the screen. */
-    @media (max-width: 639px) {
-        .member-groups {
-            position: relative;
-        }
-
-        .member-groups > .member-groups-menu {
-            position: static;
-        }
-    }
-
-    .member-groups-label {
-        margin: 0 0 12px;
-        font-size: var(--text-xs);
-        font-weight: 500;
-        color: var(--muted);
-        overflow-wrap: anywhere;
-    }
-
-    .member-groups-list {
-        display: grid;
-        gap: 12px;
-    }
-
-    .member-groups-save,
-    .group-rename-save {
-        width: 100%;
-        margin-top: 16px;
-    }
-
-    /* The groups themselves, on their own card under the team. */
+    /* The groups of the team, on their own card under it: one link per
+       group to its page. */
     .groups-card {
         margin-top: 40px;
     }
 
-    .groups-list {
+    .group-links,
+    .group-members {
         margin: 0;
         padding: 0;
         list-style: none;
     }
 
-    /* A group's buttons beside its name from 640px, under it on a phone;
-       a question opened in the row takes the full width under it. */
-    @media (min-width: 640px) {
-        .group-row .admin-row-actions {
-            grid-column: 2;
-        }
-
-        .group-row .admin-row-actions:has(.confirm:not([hidden])) {
-            grid-column: 1 / -1;
-        }
+    .group-link {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto 16px;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 20px;
+        color: var(--ink);
+        border-bottom: 1px solid var(--line);
+        transition: background-color 120ms ease;
     }
 
-    .group-row .admin-row-actions:has(.confirm:not([hidden])) > .group-rename {
-        display: none;
+    .group-links li:last-child .group-link {
+        border-bottom: 0;
+    }
+
+    .group-link:hover {
+        background: var(--surface-hover);
+    }
+
+    .group-link-name {
+        min-width: 0;
+        font-size: var(--text-md);
+        font-weight: 600;
+        overflow-wrap: anywhere;
+    }
+
+    .group-link-meta {
+        font-size: var(--text-sm);
+        color: var(--muted);
+        white-space: nowrap;
+    }
+
+    .group-link svg {
+        width: 16px;
+        height: 16px;
+        color: var(--muted);
     }
 
     .groups-empty {
-        padding: 16px 20px 0;
+        padding: 16px 20px;
         font-size: var(--text-md);
         color: var(--ink-soft);
     }
 
-    .group-rename > .group-rename-panel {
+    /* A panel over the page: a name to give, or members to add. 16px all
+       around, one left edge, the button across the foot. */
+    .more-actions > .group-panel {
         display: flex;
         flex-direction: column;
-        width: 280px;
+        gap: 0;
+        width: 320px;
         max-width: calc(100vw - 32px);
         padding: 16px;
+        color: var(--ink);
     }
 
-    .group-rename > summary.btn {
-        cursor: pointer;
+    .group-panel > .field-label {
+        margin-bottom: 6px;
     }
 
-    .groups-new {
-        padding: 16px 20px 20px;
-        border-top: 1px solid var(--line);
-    }
-
-    .groups-list:empty + .groups-new,
-    .groups-empty + .groups-new {
-        border-top: 0;
-    }
-
-    .groups-new-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
+    .group-panel > .field-error {
         margin-top: 6px;
     }
 
-    .groups-new-row .input {
-        flex: 1 1 240px;
-        max-width: 360px;
+    .group-panel-submit {
+        width: 100%;
+        margin-top: 16px;
+    }
+
+    .more-actions > summary.card-action,
+    .group-rename > summary {
+        cursor: pointer;
+    }
+
+    /* A group's page: its name with "Rename" beside it. */
+    .group-title-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 16px;
+    }
+
+    .group-rename > summary {
+        font-size: var(--text-sm);
+    }
+
+    .group-rename > .group-panel {
+        right: auto;
+        left: 0;
+    }
+
+    /* On a phone the panel opens from the start of the title line, so it
+       stays on the screen. */
+    @media (max-width: 639px) {
+        .group-title-row {
+            position: relative;
+        }
+
+        .group-title-row > .group-rename {
+            position: static;
+        }
+    }
+
+    .group-member {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    /* The members a group can take in, narrowed by the search. */
+    .picker-list {
+        max-height: 280px;
+        margin: 12px -16px 0;
+        padding: 0 12px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        border-top: 1px solid var(--line);
+    }
+
+    .picker-list > [hidden] {
+        display: none;
+    }
+
+    .picker-email {
+        font-size: var(--text-sm);
+        color: var(--muted);
+        overflow-wrap: anywhere;
+    }
+
+    .picker-note {
+        margin: 0;
+        font-size: var(--text-sm);
+        color: var(--muted);
+    }
+
+    .picker-none {
+        margin-top: 12px;
     }
 
     @media (prefers-reduced-motion: reduce) {

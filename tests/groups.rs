@@ -1,6 +1,6 @@
-//! Groups of members on the Team page: creating, renaming and deleting a
-//! group, choosing the groups of a member, and keeping all of it to
-//! administrators.
+//! Groups of members: created from the Team page, then managed from their
+//! own page (rename, add and remove members, delete), all of it for
+//! administrators only.
 
 mod common;
 
@@ -20,8 +20,8 @@ fn text(key: &str) -> String {
     I18n::new(LANGUAGES[0].code).t(key).to_string()
 }
 
-fn member_count(n: usize) -> String {
-    I18n::new(LANGUAGES[0].code).plural("admin.group_members", n)
+fn plural(key: &str, n: usize) -> String {
+    I18n::new(LANGUAGES[0].code).plural(key, n)
 }
 
 /// An instance with a signed-in administrator.
@@ -44,6 +44,12 @@ async fn create_group(app: &TestApp, name: &str) -> i64 {
         .expect("failed to create group")
 }
 
+async fn add_to_group(app: &TestApp, group: i64, user_ids: &[i64]) {
+    GroupRepository::add_members(&app.pool, group, user_ids)
+        .await
+        .expect("failed to add members");
+}
+
 async fn group_names(app: &TestApp) -> Vec<String> {
     GroupRepository::list(&app.pool)
         .await
@@ -53,6 +59,16 @@ async fn group_names(app: &TestApp) -> Vec<String> {
         .collect()
 }
 
+async fn member_ids(app: &TestApp, group: i64) -> Vec<i64> {
+    GroupRepository::members(&app.pool, group)
+        .await
+        .expect("failed to list members")
+        .into_iter()
+        .map(|member| member.id)
+        .collect()
+}
+
+/// POST a form with a token taken from the Team page.
 async fn post_team(
     app: &TestApp,
     path: &str,
@@ -62,47 +78,70 @@ async fn post_team(
     app.post_form(path, &csrf, fields).await
 }
 
-/// Follow a redirect to the Team page and return its body.
-async fn page_after(app: &TestApp, location: Option<String>) -> String {
-    let location = location.expect("a redirect to the team page");
-    let path = location.split('#').next().unwrap_or_default().to_string();
-    let (status, body) = app.get(&path).await;
-    assert_eq!(status, StatusCode::OK);
+/// GET a page that must exist.
+async fn page(app: &TestApp, path: &str) -> String {
+    let (status, body) = app.get(path).await;
+    assert_eq!(status, StatusCode::OK, "{path}");
     body
 }
 
-/// The grey line of groups under a member, without the edit panel.
-fn groups_line(body: &str, member_id: i64) -> String {
-    let row = &body[body
-        .find(&format!(r#"id="member-{member_id}""#))
-        .expect("member row not found")..];
-    let start = row
-        .find(r#"member-groups">"#)
-        .expect("groups line not found");
-    let line = &row[start..];
-    let end = line.find("&nbsp;").expect("end of groups line not found");
-    line[..end].to_string()
+/// Follow a redirect and return the page it leads to.
+async fn page_after(app: &TestApp, location: Option<String>) -> String {
+    let location = location.expect("a redirect");
+    let path = location.split('#').next().unwrap_or_default().to_string();
+    page(app, &path).await
 }
 
-/// What the "new group" field holds.
-fn new_group_field(body: &str) -> String {
-    let input = &body[body.find(r#"id="new-group""#).expect("field not found")..];
-    let input = &input[..input.find('>').expect("end of field not found")];
-    let start = input.find(r#"value=""#).expect("field value not found") + r#"value=""#.len();
-    let len = input[start..].find('"').expect("end of value not found");
-    input[start..start + len].to_string()
+/// The part of a page between two markers.
+fn between<'a>(body: &'a str, from: &str, to: &str) -> &'a str {
+    let rest = &body[body
+        .find(from)
+        .unwrap_or_else(|| panic!("{from} not found"))..];
+    &rest[..rest.find(to).unwrap_or_else(|| panic!("{to} not found"))]
 }
 
-/// Whether the group's box is ticked in a form of the page, from `from`.
-fn box_ticked(body: &str, from: &str, group_id: i64) -> bool {
-    let after = &body[body.find(from).expect("form not found")..];
-    after.contains(&format!(
-        r#"name="group_ids" value="{group_id}" class="checkbox" checked"#
-    ))
+/// What the text field with this id holds.
+fn field_value(body: &str, id: &str) -> String {
+    let tag = between(body, &format!(r#"id="{id}""#), ">");
+    let value = &tag[tag.find(r#"value=""#).expect("field value not found") + r#"value=""#.len()..];
+    between(value, "", "\"").to_string()
+}
+
+/// The members list of a group page, without the "Add members" panel.
+fn member_rows(body: &str) -> &str {
+    between(body, r#"<ul class="group-members">"#, "</ul>")
+}
+
+/// The checkboxes of the "Add members" panel.
+fn picker(body: &str) -> &str {
+    between(body, r#"class="picker-list""#, "data-member-none")
+}
+
+/// The link to a group on the Team page.
+fn group_link(body: &str, id: i64) -> &str {
+    between(
+        body,
+        &format!(r#"<a class="group-link" href="/admin/groups/{id}""#),
+        "</a>",
+    )
+}
+
+fn assert_refused_name(body: &str, message_key: &str, typed: &str) {
+    assert!(
+        body.contains(r#"group-new" data-more-actions open>"#),
+        "panel open"
+    );
+    assert!(body.contains(r#"id="new-group-error""#));
+    assert!(body.contains(&text(message_key)), "{message_key}");
+    assert_eq!(
+        field_value(body, "new-group"),
+        typed,
+        "the typed name stays"
+    );
 }
 
 #[tokio::test]
-async fn an_admin_creates_a_group() {
+async fn an_admin_creates_a_group_and_lands_on_its_page() {
     let app = spawn_with_admin().await;
 
     let (status, _, location) =
@@ -113,39 +152,42 @@ async fn an_admin_creates_a_group() {
     let id = GroupRepository::list(&app.pool).await.unwrap()[0].id;
     assert_eq!(
         location.as_deref(),
-        Some(format!("/admin/users?group_created={id}#groups").as_str())
+        Some(format!("/admin/groups/{id}?created=1").as_str())
     );
     let body = page_after(&app, location).await;
-    assert!(body.contains(&format!(
-        "{} <q>Compta</q>",
-        text("admin.notice_group_created")
-    )));
-    assert!(body.contains(&format!(r#"admin-row-sub">{}</p>"#, member_count(0))));
+    assert!(body.contains(r#"<h1 class="page-title wrap-anywhere">Compta</h1>"#));
+    assert!(body.contains(&text("admin.notice_group_created")));
+
+    let team = page(&app, "/admin/users").await;
+    let link = group_link(&team, id);
+    assert!(link.contains("Compta"));
+    assert!(link.contains(&plural("admin.group_members", 0)));
 }
 
 #[tokio::test]
 async fn a_refused_group_name_creates_nothing() {
     let app = spawn_with_admin().await;
     create_group(&app, "Compta").await;
-
-    let (status, body, location) =
-        post_team(&app, "/admin/groups/new", &[("name", "compta")]).await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(location.is_none());
-    assert!(body.contains(&text("validation.group_name_taken")));
-    assert_eq!(new_group_field(&body), "compta", "the typed name stays");
-
-    let (status, body, _) = post_team(&app, "/admin/groups/new", &[("name", "   ")]).await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(body.contains(&text("validation.group_name_required")));
-
+    create_group(&app, "Équipe").await;
     let too_long = "a".repeat(101);
-    let (status, body, _) = post_team(&app, "/admin/groups/new", &[("name", &too_long)]).await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(body.contains(&text("validation.group_name_too_long")));
-    assert_eq!(new_group_field(&body), too_long);
+    let refused = [
+        ("compta", "validation.group_name_taken"),
+        ("équipe", "validation.group_name_taken"),
+        ("", "validation.group_name_required"),
+        (too_long.as_str(), "validation.group_name_too_long"),
+    ];
 
-    assert_eq!(group_names(&app).await, vec!["Compta".to_string()]);
+    for (typed, message_key) in refused {
+        let (status, body, location) =
+            post_team(&app, "/admin/groups/new", &[("name", typed)]).await;
+        assert_eq!(status, StatusCode::OK, "{typed}");
+        assert!(location.is_none());
+        assert_refused_name(&body, message_key, typed);
+    }
+
+    let mut names = group_names(&app).await;
+    names.sort();
+    assert_eq!(names, vec!["Compta".to_string(), "Équipe".to_string()]);
 }
 
 #[tokio::test]
@@ -159,13 +201,12 @@ async fn a_group_is_renamed_unless_the_name_is_another_groups() {
     assert_eq!(status, StatusCode::SEE_OTHER);
     assert_eq!(
         location.as_deref(),
-        Some(format!("/admin/users?group_renamed={compta}#groups").as_str())
+        Some(format!("/admin/groups/{compta}?renamed=1").as_str())
     );
     let body = page_after(&app, location).await;
-    assert!(body.contains(&format!(
-        "{} <q>Comptabilité</q>",
-        text("admin.notice_group_renamed")
-    )));
+    assert!(body.contains(r#"<h1 class="page-title wrap-anywhere">Comptabilité</h1>"#));
+    assert!(body.contains(&text("admin.notice_group_renamed")));
+    assert!(!body.contains(r#"group-rename" data-more-actions open>"#));
 
     let (status, _, _) = post_team(&app, &path, &[("name", "COMPTABILITÉ")]).await;
     assert_eq!(
@@ -173,154 +214,130 @@ async fn a_group_is_renamed_unless_the_name_is_another_groups() {
         StatusCode::SEE_OTHER,
         "its own name, in another case"
     );
-    let (status, _, _) = post_team(&app, &path, &[("name", "Comptabilité")]).await;
-    assert_eq!(status, StatusCode::SEE_OTHER, "its own name, unchanged");
+    assert_eq!(group_names(&app).await, vec!["COMPTABILITÉ", "Paie"]);
 
     let (status, body, location) = post_team(&app, &path, &[("name", "paie")]).await;
     assert_eq!(status, StatusCode::OK);
     assert!(location.is_none());
+    assert!(body.contains(r#"group-rename" data-more-actions open>"#));
+    assert!(body.contains(r#"id="group-name-error""#));
     assert!(body.contains(&text("validation.group_name_taken")));
+    assert_eq!(field_value(&body, "group-name"), "paie");
+    assert_eq!(group_names(&app).await, vec!["COMPTABILITÉ", "Paie"]);
 
     let (status, _, _) = post_team(&app, "/admin/groups/9999/rename", &[("name", "Ghost")]).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-
-    let mut names = group_names(&app).await;
-    names.sort();
-    assert_eq!(names, vec!["Comptabilité".to_string(), "Paie".to_string()]);
 }
 
 #[tokio::test]
-async fn an_admin_sets_the_groups_of_a_member() {
+async fn members_are_added_to_a_group_from_its_page() {
     let app = spawn_with_admin().await;
-    let member = reader(&app, "reader@test.com", "Reader").await;
-    let compta = create_group(&app, "Compta").await;
-    let paie = create_group(&app, "Paie").await;
-    create_group(&app, "Achats").await;
-    let path = format!("/admin/users/{member}/groups");
-    let (compta_field, paie_field) = (compta.to_string(), paie.to_string());
+    let ann = reader(&app, "ann@test.com", "Ann").await;
+    let bob = reader(&app, "bob@test.com", "Bob").await;
+    let cy = reader(&app, "cy@test.com", "Cy").await;
+    let dee = reader(&app, "dee@test.com", "Dee").await;
+    UserRepository::set_active(&app.pool, dee, false)
+        .await
+        .unwrap();
+    let group = create_group(&app, "Compta").await;
+    let group_path = format!("/admin/groups/{group}");
 
-    let (status, _, location) = post_team(
-        &app,
-        &path,
-        &[("group_ids", &compta_field), ("group_ids", &paie_field)],
-    )
-    .await;
+    let before = page(&app, &group_path).await;
+    for offered in ["ann@test.com", "bob@test.com", "cy@test.com"] {
+        assert!(picker(&before).contains(offered), "{offered}");
+    }
+    assert!(
+        !picker(&before).contains("dee@test.com"),
+        "a disabled member"
+    );
+
+    let (ann_id, bob_id) = (ann.to_string(), bob.to_string());
+    let fields = [("user_ids", ann_id.as_str()), ("user_ids", bob_id.as_str())];
+    let (status, _, location) = post_team(&app, &format!("{group_path}/members"), &fields).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
     assert_eq!(
         location.as_deref(),
-        Some(format!("/admin/users?groups_of={member}#member-{member}").as_str())
+        Some(format!("{group_path}?added=2").as_str())
     );
     let body = page_after(&app, location).await;
-    assert!(body.contains(&format!(
-        "{} <q>Reader</q>",
-        text("admin.notice_member_groups")
-    )));
-    assert!(groups_line(&body, member).contains("Compta, Paie"));
-    assert!(body.contains(&format!(r#"admin-row-sub">{}</p>"#, member_count(1))));
+    assert!(body.contains(&plural("admin.notice_members_added", 2)));
+    assert!(body.contains(r#"<span class="count">2</span>"#));
+    for listed in ["Ann", "Bob"] {
+        assert!(member_rows(&body).contains(listed), "{listed}");
+    }
+    assert_eq!(body.matches(">Retirer</button>").count(), 2);
+    assert!(!picker(&body).contains("ann@test.com"));
+    assert!(picker(&body).contains("cy@test.com"), "Cy can still join");
 
-    let (status, _, _) = post_team(&app, &path, &[("group_ids", &paie_field)]).await;
-    assert_eq!(status, StatusCode::SEE_OTHER);
-    assert_eq!(
-        GroupRepository::ids_of_member(&app.pool, member)
-            .await
-            .unwrap(),
-        vec![paie]
-    );
+    let team = page(&app, "/admin/users").await;
+    assert!(group_link(&team, group).contains(&plural("admin.group_members", 2)));
+    assert_eq!(member_ids(&app, group).await, vec![ann, bob]);
+    assert_ne!(cy, ann);
+}
 
-    let (status, _, _) = post_team(&app, &path, &[("group_ids", "9999")]).await;
-    assert_eq!(status, StatusCode::SEE_OTHER);
-    assert!(
-        GroupRepository::ids_of_member(&app.pool, member)
-            .await
-            .unwrap()
-            .is_empty(),
-        "an unknown group is dropped, and the others were replaced"
-    );
+#[tokio::test]
+async fn adding_a_member_twice_or_an_unknown_one_adds_nothing() {
+    let app = spawn_with_admin().await;
+    let ann = reader(&app, "ann@test.com", "Ann").await;
+    let group = create_group(&app, "Compta").await;
+    add_to_group(&app, group, &[ann]).await;
+    let path = format!("/admin/groups/{group}/members");
+    let ann_id = ann.to_string();
 
-    let (status, _, _) = post_team(&app, &path, &[("group_ids", &compta_field)]).await;
-    assert_eq!(status, StatusCode::SEE_OTHER);
-    let (status, _, location) = post_team(&app, &path, &[]).await;
-    assert_eq!(status, StatusCode::SEE_OTHER);
-    assert!(
-        GroupRepository::ids_of_member(&app.pool, member)
-            .await
-            .unwrap()
-            .is_empty()
-    );
-    let body = page_after(&app, location).await;
-    assert!(groups_line(&body, member).contains(&text("admin.no_group")));
+    let fields = [("user_ids", ann_id.as_str()), ("user_ids", "9999")];
+    for sent in [&fields[..], &[]] {
+        let (status, _, location) = post_team(&app, &path, sent).await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        assert_eq!(
+            location.as_deref(),
+            Some(format!("/admin/groups/{group}?added=0").as_str())
+        );
+        let body = page_after(&app, location).await;
+        assert!(!body.contains("form-notice"), "nothing to say");
+    }
+    assert_eq!(member_ids(&app, group).await, vec![ann]);
 
-    let (status, _, _) = post_team(
-        &app,
-        "/admin/users/9999/groups",
-        &[("group_ids", &compta_field)],
-    )
-    .await;
+    let (status, _, _) = post_team(&app, "/admin/groups/9999/members", &fields).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
-async fn a_member_is_added_to_the_ticked_groups() {
+async fn a_member_is_removed_from_a_group_once() {
     let app = spawn_with_admin().await;
-    let compta = create_group(&app, "Compta").await;
-    let paie = create_group(&app, "Paie").await;
-    let achats = create_group(&app, "Achats").await;
-    let (compta_field, achats_field) = (compta.to_string(), achats.to_string());
+    let ann = reader(&app, "ann@test.com", "Ann").await;
+    let bob = reader(&app, "bob@test.com", "Bob").await;
+    let group = create_group(&app, "Compta").await;
+    add_to_group(&app, group, &[ann, bob]).await;
+    let path = format!("/admin/groups/{group}/members/{ann}/remove");
 
-    let (status, _, _) = post_team(
-        &app,
-        "/admin/users/new",
-        &[
-            ("display_name", "Newcomer"),
-            ("email", "new@test.com"),
-            ("role", "reader"),
-            ("group_ids", &compta_field),
-            ("group_ids", &achats_field),
-        ],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    let member = UserRepository::find_by_email(&app.pool, "new@test.com")
-        .await
-        .unwrap()
-        .expect("member not created");
-    let mut ids = GroupRepository::ids_of_member(&app.pool, member.id)
-        .await
-        .unwrap();
-    ids.sort_unstable();
-    assert_eq!(ids, vec![compta, achats]);
-    assert_ne!(paie, compta);
-
-    let (status, body, _) = post_team(
-        &app,
-        "/admin/users/new",
-        &[
-            ("display_name", "Refused"),
-            ("email", "not-an-email"),
-            ("role", "reader"),
-            ("group_ids", &compta_field),
-        ],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("form-error"));
-    let form = r#"action="/admin/users/new""#;
-    assert!(
-        box_ticked(&body, form, compta),
-        "a refused form keeps its boxes"
+    let (status, _, location) = post_team(&app, &path, &[]).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        location.as_deref(),
+        Some(format!("/admin/groups/{group}?removed={ann}").as_str())
     );
-    assert!(!box_ticked(&body, form, paie));
+    let body = page_after(&app, location).await;
+    assert!(body.contains(&format!(
+        "<q>Ann</q> {}",
+        text("admin.notice_member_removed")
+    )));
+    assert!(!member_rows(&body).contains("Ann"));
+    assert!(member_rows(&body).contains("Bob"));
+    assert!(picker(&body).contains("ann@test.com"), "Ann can join again");
+    assert_eq!(member_ids(&app, group).await, vec![bob]);
+
+    let (status, _, _) = post_team(&app, &path, &[]).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "no longer a member");
 }
 
 #[tokio::test]
 async fn deleting_a_group_names_what_it_closes_and_clears_its_traces() {
     let app = spawn_with_admin().await;
-    let member = reader(&app, "reader@test.com", "Reader").await;
+    let ann = reader(&app, "ann@test.com", "Ann").await;
     let paie = create_group(&app, "Paie").await;
     let compta = create_group(&app, "Compta").await;
-    GroupRepository::set_member_groups(&app.pool, member, &[paie, compta])
-        .await
-        .unwrap();
+    add_to_group(&app, paie, &[ann]).await;
+    add_to_group(&app, compta, &[ann]).await;
     let only_paie =
         ServiceRepository::create(&app.pool, "Coffre Zephyr", "coffre", None, None, None)
             .await
@@ -335,32 +352,34 @@ async fn deleting_a_group_names_what_it_closes_and_clears_its_traces() {
         .await
         .unwrap();
 
-    let (_, page) = app.get("/admin/users").await;
-    assert!(page.contains(&format!(
+    let body = page(&app, &format!("/admin/groups/{paie}")).await;
+    assert!(body.contains(&text("admin.delete_group_members")));
+    assert!(body.contains(&format!(
         "{} Coffre Zephyr.",
         text("admin.delete_group_closes")
     )));
     assert!(
-        !page.contains("Annuaire K2"),
-        "a service another group still opens is not named"
+        !body.contains("Annuaire K2"),
+        "another group still opens it"
+    );
+    let body = page(&app, &format!("/admin/groups/{compta}")).await;
+    assert!(
+        !body.contains(&text("admin.delete_group_closes")),
+        "nothing closes"
     );
 
-    let (status, _, location) = post_team(&app, &format!("/admin/groups/{paie}/delete"), &[]).await;
+    let path = format!("/admin/groups/{paie}/delete");
+    let (status, _, location) = post_team(&app, &path, &[]).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
     assert_eq!(
         location.as_deref(),
         Some("/admin/users?group_deleted=1#groups")
     );
-    let body = page_after(&app, location).await;
-    assert!(body.contains(&text("admin.notice_group_deleted")));
+    let team = page_after(&app, location).await;
+    assert!(team.contains(&text("admin.notice_group_deleted")));
 
     assert_eq!(group_names(&app).await, vec!["Compta".to_string()]);
-    assert_eq!(
-        GroupRepository::ids_of_member(&app.pool, member)
-            .await
-            .unwrap(),
-        vec![compta]
-    );
+    assert_eq!(member_ids(&app, compta).await, vec![ann]);
     let access: Vec<(i64, i64)> = sqlx::query_as("SELECT service_id, group_id FROM service_access")
         .fetch_all(&app.pool)
         .await
@@ -374,14 +393,16 @@ async fn deleting_a_group_names_what_it_closes_and_clears_its_traces() {
             .unwrap();
     assert_eq!(memberships, 0);
 
-    let (status, _, _) = post_team(&app, &format!("/admin/groups/{paie}/delete"), &[]).await;
+    let (status, _, _) = post_team(&app, &path, &[]).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "already gone");
     let (status, _, _) = post_team(&app, "/admin/groups/9999/delete", &[]).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = app.get(&format!("/admin/groups/{paie}")).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
-async fn a_publisher_cannot_touch_groups() {
+async fn a_publisher_cannot_see_or_touch_groups() {
     let app = TestApp::spawn().await;
     app.create_user(
         "pub@test.com",
@@ -390,23 +411,24 @@ async fn a_publisher_cannot_touch_groups() {
         Role::Publisher,
     )
     .await;
-    let member = reader(&app, "reader@test.com", "Reader").await;
+    let ann = reader(&app, "ann@test.com", "Ann").await;
+    let bob = reader(&app, "bob@test.com", "Bob").await;
     let compta = create_group(&app, "Compta").await;
+    add_to_group(&app, compta, &[ann]).await;
     app.login("pub@test.com", "publisher_pass_12").await;
     let csrf = app.csrf_from("/").await;
-    let compta_field = compta.to_string();
+    let (ann_id, bob_id) = (ann.to_string(), bob.to_string());
+    let group = format!("/admin/groups/{compta}");
 
-    let attempts: [(String, Vec<(&str, &str)>); 4] = [
+    let (status, _) = app.get(&group).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "the group page");
+
+    let attempts: [(String, Vec<(&str, &str)>); 5] = [
         ("/admin/groups/new".to_string(), vec![("name", "Paie")]),
-        (
-            format!("/admin/groups/{compta}/rename"),
-            vec![("name", "Renamed")],
-        ),
-        (format!("/admin/groups/{compta}/delete"), vec![]),
-        (
-            format!("/admin/users/{member}/groups"),
-            vec![("group_ids", &compta_field)],
-        ),
+        (format!("{group}/rename"), vec![("name", "Renamed")]),
+        (format!("{group}/members"), vec![("user_ids", &bob_id)]),
+        (format!("{group}/members/{ann_id}/remove"), vec![]),
+        (format!("{group}/delete"), vec![]),
     ];
     for (path, fields) in &attempts {
         let (status, _, _) = app.post_form(path, &csrf, fields).await;
@@ -414,10 +436,5 @@ async fn a_publisher_cannot_touch_groups() {
     }
 
     assert_eq!(group_names(&app).await, vec!["Compta".to_string()]);
-    assert!(
-        GroupRepository::ids_of_member(&app.pool, member)
-            .await
-            .unwrap()
-            .is_empty()
-    );
+    assert_eq!(member_ids(&app, compta).await, vec![ann]);
 }

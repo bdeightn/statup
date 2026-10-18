@@ -11,6 +11,15 @@ pub struct MemberGroup {
     pub member_count: i64,
 }
 
+/// A member as a group's page lists them.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct GroupMember {
+    pub id: i64,
+    pub display_name: String,
+    pub email: String,
+    pub is_active: bool,
+}
+
 /// The name as kept, trimmed, or the key of what is wrong with it.
 pub fn check_group_name(raw: &str) -> Result<String, &'static str> {
     let name = raw.trim();

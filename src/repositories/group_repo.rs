@@ -2,9 +2,15 @@
 
 use super::service_repo::CHOSEN_ORDER;
 use crate::db::DbPool;
-use crate::models::MemberGroup;
+use crate::models::{GroupMember, MemberGroup};
 
 pub struct GroupRepository;
+
+/// A group with its count of active members.
+const GROUP_COLUMNS: &str = "SELECT g.id, g.name, \
+     (SELECT COUNT(*) FROM group_members gm JOIN users u ON u.id = gm.user_id \
+      WHERE gm.group_id = g.id AND u.is_active = 1) AS member_count \
+     FROM member_groups g";
 
 impl GroupRepository {
     pub async fn create(pool: &DbPool, name: &str) -> Result<i64, sqlx::Error> {
@@ -53,53 +59,77 @@ impl GroupRepository {
 
     /// Every group by name, with its count of active members.
     pub async fn list(pool: &DbPool) -> Result<Vec<MemberGroup>, sqlx::Error> {
-        sqlx::query_as::<_, MemberGroup>(
-            "SELECT g.id, g.name, \
-                    (SELECT COUNT(*) FROM group_members gm \
-                     JOIN users u ON u.id = gm.user_id \
-                     WHERE gm.group_id = g.id AND u.is_active = 1) AS member_count \
-             FROM member_groups g ORDER BY g.name COLLATE NOCASE",
+        sqlx::query_as::<_, MemberGroup>(&format!("{GROUP_COLUMNS} ORDER BY g.name COLLATE NOCASE"))
+            .fetch_all(pool)
+            .await
+    }
+
+    pub async fn find(pool: &DbPool, id: i64) -> Result<Option<MemberGroup>, sqlx::Error> {
+        sqlx::query_as::<_, MemberGroup>(&format!("{GROUP_COLUMNS} WHERE g.id = ?"))
+            .bind(id)
+            .fetch_optional(pool)
+            .await
+    }
+
+    /// The members of a group by name, disabled ones included.
+    pub async fn members(pool: &DbPool, group_id: i64) -> Result<Vec<GroupMember>, sqlx::Error> {
+        sqlx::query_as::<_, GroupMember>(
+            "SELECT u.id, u.display_name, u.email, u.is_active FROM users u \
+             JOIN group_members gm ON gm.user_id = u.id \
+             WHERE gm.group_id = ? ORDER BY u.display_name COLLATE NOCASE, u.id",
         )
+        .bind(group_id)
         .fetch_all(pool)
         .await
     }
 
-    /// Every membership as (member, group), for a page that lists them all.
-    pub async fn memberships(pool: &DbPool) -> Result<Vec<(i64, i64)>, sqlx::Error> {
-        sqlx::query_as("SELECT user_id, group_id FROM group_members")
-            .fetch_all(pool)
-            .await
-    }
-
-    pub async fn ids_of_member(pool: &DbPool, user_id: i64) -> Result<Vec<i64>, sqlx::Error> {
-        sqlx::query_scalar("SELECT group_id FROM group_members WHERE user_id = ? ORDER BY group_id")
-            .bind(user_id)
-            .fetch_all(pool)
-            .await
-    }
-
-    /// Replaces the groups of a member. Ids of groups that do not exist are
-    /// dropped.
-    pub async fn set_member_groups(
-        pool: &DbPool,
-        user_id: i64,
-        group_ids: &[i64],
-    ) -> Result<(), sqlx::Error> {
-        let ids = serde_json::to_string(group_ids).unwrap_or_default();
-        let mut tx = pool.begin().await?;
-        sqlx::query("DELETE FROM group_members WHERE user_id = ?")
-            .bind(user_id)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query(
-            "INSERT INTO group_members (group_id, user_id) \
-             SELECT id, ? FROM member_groups WHERE id IN (SELECT value FROM json_each(?))",
+    /// The active members who are not in the group, by name: those it can
+    /// take in.
+    pub async fn outsiders(pool: &DbPool, group_id: i64) -> Result<Vec<GroupMember>, sqlx::Error> {
+        sqlx::query_as::<_, GroupMember>(
+            "SELECT u.id, u.display_name, u.email, u.is_active FROM users u \
+             WHERE u.is_active = 1 AND NOT EXISTS (SELECT 1 FROM group_members gm \
+                   WHERE gm.group_id = ? AND gm.user_id = u.id) \
+             ORDER BY u.display_name COLLATE NOCASE, u.id",
         )
-        .bind(user_id)
+        .bind(group_id)
+        .fetch_all(pool)
+        .await
+    }
+
+    /// Puts members in the group and returns how many joined. Members
+    /// already in it, disabled ones and ids of no member are passed over,
+    /// as the panel that offers them does.
+    pub async fn add_members(
+        pool: &DbPool,
+        group_id: i64,
+        user_ids: &[i64],
+    ) -> Result<u64, sqlx::Error> {
+        let ids = serde_json::to_string(user_ids).unwrap_or_default();
+        let result = sqlx::query(
+            "INSERT OR IGNORE INTO group_members (group_id, user_id) \
+             SELECT ?, id FROM users \
+             WHERE is_active = 1 AND id IN (SELECT value FROM json_each(?))",
+        )
+        .bind(group_id)
         .bind(&ids)
-        .execute(&mut *tx)
+        .execute(pool)
         .await?;
-        tx.commit().await
+        Ok(result.rows_affected())
+    }
+
+    /// Returns false when the member was not in the group.
+    pub async fn remove_member(
+        pool: &DbPool,
+        group_id: i64,
+        user_id: i64,
+    ) -> Result<bool, sqlx::Error> {
+        let result = sqlx::query("DELETE FROM group_members WHERE group_id = ? AND user_id = ?")
+            .bind(group_id)
+            .bind(user_id)
+            .execute(pool)
+            .await?;
+        Ok(result.rows_affected() == 1)
     }
 
     /// Names of the restricted services whose only group is this one: once
@@ -220,7 +250,7 @@ mod tests {
         let group = GroupRepository::create(&pool, "Support").await.unwrap();
         let user = member(&pool, "a@b.com").await;
         let svc = service(&pool, "Wiki").await;
-        GroupRepository::set_member_groups(&pool, user, &[group])
+        GroupRepository::add_members(&pool, group, &[user])
             .await
             .unwrap();
         ServiceRepository::set_visibility(&pool, svc, Visibility::Groups, &[group])
@@ -239,11 +269,9 @@ mod tests {
         GroupRepository::create(&pool, "Admins").await.unwrap();
         let active = member(&pool, "a@b.com").await;
         let gone = member(&pool, "c@d.com").await;
-        for user in [active, gone] {
-            GroupRepository::set_member_groups(&pool, user, &[group])
-                .await
-                .unwrap();
-        }
+        GroupRepository::add_members(&pool, group, &[active, gone])
+            .await
+            .unwrap();
         UserRepository::set_active(&pool, gone, false)
             .await
             .unwrap();
@@ -257,29 +285,63 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn setting_the_groups_of_a_member_replaces_them_and_drops_unknown_ids() {
+    async fn members_join_once_and_leave_and_outsiders_are_the_active_rest() {
         let pool = test_pool().await;
-        let first = GroupRepository::create(&pool, "First").await.unwrap();
-        let second = GroupRepository::create(&pool, "Second").await.unwrap();
-        let user = member(&pool, "a@b.com").await;
-
-        GroupRepository::set_member_groups(&pool, user, &[first])
+        let group = GroupRepository::create(&pool, "Support").await.unwrap();
+        let ann = member(&pool, "ann@b.com").await;
+        let bob = member(&pool, "bob@b.com").await;
+        let gone = member(&pool, "gone@b.com").await;
+        UserRepository::set_active(&pool, gone, false)
             .await
             .unwrap();
-        GroupRepository::set_member_groups(&pool, user, &[second, 999])
+
+        let added = GroupRepository::add_members(&pool, group, &[ann, ann, 999])
             .await
             .unwrap();
         assert_eq!(
-            GroupRepository::ids_of_member(&pool, user).await.unwrap(),
-            vec![second]
+            added, 1,
+            "a member joins once, an unknown id is passed over"
+        );
+        assert_eq!(
+            GroupRepository::add_members(&pool, group, &[ann])
+                .await
+                .unwrap(),
+            0
+        );
+        let ids = |list: Vec<GroupMember>| list.into_iter().map(|m| m.id).collect::<Vec<_>>();
+        assert_eq!(
+            ids(GroupRepository::members(&pool, group).await.unwrap()),
+            vec![ann]
+        );
+        assert_eq!(
+            ids(GroupRepository::outsiders(&pool, group).await.unwrap()),
+            vec![bob],
+            "a disabled member is not offered"
+        );
+        assert_eq!(
+            GroupRepository::add_members(&pool, group, &[gone])
+                .await
+                .unwrap(),
+            0,
+            "nor taken in"
         );
 
-        GroupRepository::set_member_groups(&pool, user, &[])
-            .await
-            .unwrap();
+        assert!(
+            GroupRepository::remove_member(&pool, group, ann)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !GroupRepository::remove_member(&pool, group, ann)
+                .await
+                .unwrap()
+        );
         assert_eq!(
-            GroupRepository::ids_of_member(&pool, user).await.unwrap(),
-            Vec::<i64>::new()
+            GroupRepository::find(&pool, group)
+                .await
+                .unwrap()
+                .map(|g| g.member_count),
+            Some(0)
         );
     }
 

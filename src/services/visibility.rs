@@ -82,7 +82,7 @@ mod tests {
         service(&pool, "Grouped", Visibility::Groups, &[group]).await;
         let inside = user(&pool, "in@x.com", Role::Reader).await;
         let outside = user(&pool, "out@x.com", Role::Reader).await;
-        GroupRepository::set_member_groups(&pool, inside.id, &[group])
+        GroupRepository::add_members(&pool, group, &[inside.id])
             .await
             .unwrap();
 
@@ -105,7 +105,7 @@ mod tests {
         let grouped = service(&pool, "Grouped", Visibility::Groups, &[group]).await;
         let reader = user(&pool, "r@x.com", Role::Reader).await;
         let publisher = user(&pool, "p@x.com", Role::Publisher).await;
-        GroupRepository::set_member_groups(&pool, reader.id, &[group])
+        GroupRepository::add_members(&pool, group, &[reader.id])
             .await
             .unwrap();
         GroupRepository::delete(&pool, group).await.unwrap();

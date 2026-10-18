@@ -241,9 +241,14 @@ fn admin_routes() -> Router<AppState> {
             "/admin/users/{id}/reset-password",
             post(admin::reset_member_password),
         )
-        .route("/admin/users/{id}/groups", post(groups::set_member_groups))
         .route("/admin/groups/new", post(groups::create_group))
+        .route("/admin/groups/{id}", get(groups::group_page))
         .route("/admin/groups/{id}/rename", post(groups::rename_group))
+        .route("/admin/groups/{id}/members", post(groups::add_members))
+        .route(
+            "/admin/groups/{id}/members/{user_id}/remove",
+            post(groups::remove_member),
+        )
         .route("/admin/groups/{id}/delete", post(groups::delete_group))
         .route(
             "/admin/dashboard/layout/order",
