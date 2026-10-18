@@ -2,6 +2,10 @@
 
 All notable changes to Statup are listed here. The project is pre-v1: until 1.0, a minor version may change the interface or the database, and the README asks you to back up before upgrading.
 
+## Unreleased
+
+- Groups of colleagues decide who sees each service. Administrators create groups in Settings → Team and add or remove members from each group's own page. A service's form says who sees it, in one menu: everyone (the default), signed-in members (when the page is open to everyone) or some groups, with a search when there are many. Incidents, maintenance and announcements follow their services; editors and administrators see everything; someone who may not see a service finds no trace of it, and the feed always shows what a visitor without an account sees. The journal records group changes and who sees a service. The database is upgraded on start, and every service stays visible to everyone until you choose otherwise.
+
 ## 0.6.0, 2026-10-16
 
 - A Journal page for administrators, in Settings: what members changed, sign-ins, outages with the address checked and the reason, alert messages that did not leave, and the app's errors, day by day, in the reader's language, with lines that repeat folded into one, filters and an export. Essential, the default, keeps the large changes and the real problems; Detailed keeps everything from the moment it is chosen. Lines are kept 90 days by default. The server output shows the same lines, in clear words.
