@@ -124,7 +124,9 @@
     <section class="card danger-zone" aria-labelledby="delete-title">
         <div class="danger-zone-text">
             <h2 id="delete-title" class="card-title">{{ i18n.t("admin.delete_group_title") }}</h2>
-            <p class="field-hint">{{ i18n.t("admin.delete_group_members") }}{% if closes > 0 %} {{ self.closes_label() }}{% endif %}</p>
+            {% if closes > 0 %}
+            <p class="field-hint">{{ self.closes_label() }}</p>
+            {% endif %}
         </div>
         <form method="post" action="/admin/groups/{{ group.id }}/delete" data-confirm>
             <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">

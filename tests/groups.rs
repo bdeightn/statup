@@ -363,7 +363,6 @@ async fn deleting_a_group_names_what_it_closes_and_clears_its_traces() {
     .unwrap();
 
     let body = page(&app, &format!("/admin/groups/{paie}")).await;
-    assert!(body.contains(&text("admin.delete_group_members")));
     let one_closes = I18n::new(LANGUAGES[0].code).plural("admin.delete_group_closes", 1);
     assert!(
         body.contains(&one_closes),

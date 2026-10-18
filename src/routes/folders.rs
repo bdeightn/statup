@@ -52,12 +52,6 @@ impl FolderTemplate {
     fn remove_label(&self, name: &str) -> String {
         self.i18n.tf("folders.remove_aria", &[("name", name)])
     }
-
-    /// Deleting keeps the services, out of any folder, as they are seen.
-    fn delete_hint(&self) -> Option<String> {
-        let count = self.services.len();
-        (count > 0).then(|| self.i18n.plural("folders.delete_keeps", count))
-    }
 }
 
 /// A service outside the folder, with the folder it would leave.

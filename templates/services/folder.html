@@ -120,9 +120,6 @@
     <section class="card danger-zone" aria-labelledby="delete-title">
         <div class="danger-zone-text">
             <h2 id="delete-title" class="card-title">{{ i18n.t("folders.delete_title") }}</h2>
-            {% if let Some(hint) = self.delete_hint() %}
-            <p class="field-hint">{{ hint }}</p>
-            {% endif %}
         </div>
         <form method="post" action="/services/folders/{{ folder.id }}/delete" data-confirm>
             <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
