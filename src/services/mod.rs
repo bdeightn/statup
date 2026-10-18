@@ -16,6 +16,7 @@ mod probe;
 mod service_service;
 mod settings_service;
 mod update_check;
+mod visibility;
 
 pub use auth_service::*;
 pub use dashboard_layout_service::*;
@@ -33,3 +34,4 @@ pub use probe::{CHECK_TIMEOUT, Finding, Prober, Probes, Report};
 pub use service_service::*;
 pub use settings_service::SettingsService;
 pub use update_check::{CURRENT_VERSION, NewerRelease, UpdateStatus, spawn_update_check};
+pub use visibility::scope_of;

@@ -159,6 +159,7 @@ pub struct Service {
     pub outage_after_minutes: u8,
     /// What the checks found, while the service does not answer.
     pub detected_status: Option<ServiceStatus>,
+    pub visibility: super::Visibility,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     /// File name of the uploaded icon, when the query joins it.

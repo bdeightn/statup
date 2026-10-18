@@ -323,7 +323,7 @@ fn headline(affected: &[&Service], i18n: &I18n) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Lifecycle, NAME_SEPARATOR, Severity};
+    use crate::models::{Lifecycle, NAME_SEPARATOR, Severity, Visibility};
 
     fn event(
         kind: Kind,
@@ -374,6 +374,7 @@ mod tests {
             check_internal_cert: false,
             outage_after_minutes: crate::services::DEFAULT_OUTAGE_AFTER,
             detected_status: None,
+            visibility: Visibility::Everyone,
             created_at: Utc::now(),
             updated_at: Utc::now(),
             icon_filename: None,
