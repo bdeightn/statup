@@ -11,6 +11,7 @@ mod dashboard;
 mod dashboard_layout;
 mod events;
 mod feed;
+mod groups;
 mod health;
 mod icons;
 mod journal;
@@ -240,6 +241,10 @@ fn admin_routes() -> Router<AppState> {
             "/admin/users/{id}/reset-password",
             post(admin::reset_member_password),
         )
+        .route("/admin/users/{id}/groups", post(groups::set_member_groups))
+        .route("/admin/groups/new", post(groups::create_group))
+        .route("/admin/groups/{id}/rename", post(groups::rename_group))
+        .route("/admin/groups/{id}/delete", post(groups::delete_group))
         .route(
             "/admin/dashboard/layout/order",
             post(dashboard_layout::save_order),

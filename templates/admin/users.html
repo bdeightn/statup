@@ -25,6 +25,10 @@
             {% when NoticeKind::RoleUpdated with (role) %}<q>{{ n.name }}</q> {{ i18n.t("admin.notice_role") }} <strong>{{ i18n.t(role.i18n_key()) }}</strong>.
             {% when NoticeKind::Disabled %}<q>{{ n.name }}</q> {{ i18n.t("admin.notice_disabled") }}
             {% when NoticeKind::Enabled %}<q>{{ n.name }}</q> {{ i18n.t("admin.notice_enabled") }}
+            {% when NoticeKind::MemberGroups %}{{ i18n.t("admin.notice_member_groups") }} <q>{{ n.name }}</q>.
+            {% when NoticeKind::GroupCreated %}{{ i18n.t("admin.notice_group_created") }} <q>{{ n.name }}</q>.
+            {% when NoticeKind::GroupRenamed %}{{ i18n.t("admin.notice_group_renamed") }} <q>{{ n.name }}</q>.
+            {% when NoticeKind::GroupDeleted %}{{ i18n.t("admin.notice_group_deleted") }}
             {% endmatch %}
         </p>
     </div>
@@ -74,6 +78,16 @@
                     <li>{{ i18n.t("role.admin_desc") }}</li>
                 </ul>
             </fieldset>
+            {% if !groups.is_empty() %}
+            <fieldset class="member-groups-field">
+                <legend class="field-label">{{ i18n.t("admin.member_groups") }} <span class="field-note">{{ i18n.t("common.optional") }}</span></legend>
+                <div class="member-groups-boxes">
+                    {% for g in groups %}
+                    <label class="check-row"><input type="checkbox" name="group_ids" value="{{ g.id }}" class="checkbox"{% if add_form.has_group(g.id) %} checked{% endif %}><span>{{ g.name }}</span></label>
+                    {% endfor %}
+                </div>
+            </fieldset>
+            {% endif %}
             <p class="field-hint">{{ i18n.t("admin.add_member_hint") }}</p>
             <button type="submit" class="btn btn-ghost">{{ i18n.t("admin.add_member_submit") }}</button>
         </form>
@@ -81,11 +95,31 @@
 
     <ul class="admin-list">
         {% for u in users %}
-        <li class="admin-row member-row">
+        <li id="member-{{ u.id }}" class="admin-row member-row">
             <div class="min-w-0">
                 <p class="admin-row-name">{{ u.display_name }}{% if u.id == current_user_id %} <span class="count">{{ i18n.t("admin.you") }}</span>{% endif %}</p>
                 <p class="admin-row-sub">{{ u.email }}</p>
                 <p class="admin-row-sub">{{ i18n.t("admin.last_seen") }} {% if let Some(seen) = u.last_seen_at %}{{ seen }}{% else %}{{ i18n.t("admin.never") }}{% endif %}</p>
+                {% if !groups.is_empty() %}
+                {# The groups of the member in one grey line, changed in a
+                   panel over the page, as the journal's settings are. #}
+                <div class="admin-row-sub member-groups">
+                    <span>{% if u.group_ids.is_empty() %}{{ i18n.t("admin.no_group") }}{% else %}{{ self.names_of(u.group_ids) }}{% endif %}&nbsp;<span aria-hidden="true">·</span></span>
+                    <details class="more-actions member-groups-menu" data-more-actions>
+                        <summary class="member-groups-edit" aria-label="{{ i18n.t("admin.groups_of") }} {{ u.display_name }}">{{ i18n.t("journal.edit") }}{% call ui::caret_icon() %}{% endcall %}</summary>
+                        <form class="more-actions-menu member-groups-panel" method="post" action="/admin/users/{{ u.id }}/groups" data-warn-unsaved>
+                            <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                            <p class="member-groups-label">{{ i18n.t("admin.groups_of") }} {{ u.display_name }}</p>
+                            <div class="member-groups-list">
+                                {% for g in groups %}
+                                <label class="check-row"><input type="checkbox" name="group_ids" value="{{ g.id }}" class="checkbox"{% if u.in_group(g.id) %} checked{% endif %}><span>{{ g.name }}</span></label>
+                                {% endfor %}
+                            </div>
+                            <button type="submit" class="btn btn-primary member-groups-save">{{ i18n.t("common.save") }}</button>
+                        </form>
+                    </details>
+                </div>
+                {% endif %}
             </div>
 
             <p class="member-status{% if !u.is_active %} member-status-off{% endif %}">{% if !u.is_active %}{{ i18n.t("admin.disabled") }}{% endif %}</p>
@@ -151,5 +185,58 @@
         </li>
         {% endfor %}
     </ul>
+
+    <section id="groups" class="card groups-card" aria-labelledby="groups-title">
+        <header class="card-head">
+            <h2 id="groups-title" class="card-title">{{ i18n.t("admin.groups_heading") }}{% if !groups.is_empty() %} <span class="count">{{ groups.len() }}</span>{% endif %}</h2>
+        </header>
+        {% if groups.is_empty() %}
+        <p class="groups-empty">{{ i18n.t("admin.groups_empty") }}</p>
+        {% else %}
+        <ul class="groups-list">
+            {% for g in groups %}
+            <li class="admin-row group-row">
+                <div class="min-w-0">
+                    <p class="admin-row-name">{{ g.name }}</p>
+                    <p class="admin-row-sub">{{ g.members }}</p>
+                </div>
+                <div class="admin-row-actions">
+                    <details class="more-actions group-rename" data-more-actions>
+                        <summary class="btn btn-ghost" aria-label="{{ i18n.t("admin.rename") }} {{ g.name }}">{{ i18n.t("admin.rename") }}</summary>
+                        <form class="more-actions-menu group-rename-panel" method="post" action="/admin/groups/{{ g.id }}/rename" data-warn-unsaved>
+                            <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                            <label for="group-name-{{ g.id }}" class="field-label">{{ i18n.t("admin.group_name") }}</label>
+                            <input id="group-name-{{ g.id }}" name="name" type="text" class="input" required maxlength="100" autocomplete="off" value="{{ g.name }}">
+                            <button type="submit" class="btn btn-primary group-rename-save">{{ i18n.t("common.save") }}</button>
+                        </form>
+                    </details>
+                    <form method="post" action="/admin/groups/{{ g.id }}/delete" data-confirm>
+                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                        <button type="button" class="btn btn-danger" data-confirm-open aria-label="{{ i18n.t("admin.delete_group") }} {{ g.name }}">{{ i18n.t("admin.delete_group") }}</button>
+                        <div class="confirm" role="group" aria-label="{{ i18n.t("admin.confirm_delete_group_aria") }}" aria-describedby="group-q-{{ g.id }} group-d-{{ g.id }}" data-confirm-box hidden>
+                            <span id="group-q-{{ g.id }}" class="confirm-text">{{ i18n.t("common.question_open") }}{{ i18n.t("admin.delete_group_question") }} <q>{{ g.name }}</q>{{ i18n.t("common.question_mark") }}</span>
+                            <span id="group-d-{{ g.id }}" class="confirm-desc">{% if g.closes.is_empty() %}{{ i18n.t("admin.delete_group_consequence") }}{% else %}{{ i18n.t("admin.delete_group_closes") }} {{ g.closes_label() }}.{% endif %}</span>
+                            <button type="button" class="confirm-cancel" data-confirm-cancel>{{ i18n.t("common.cancel") }}</button>
+                            <button type="submit" class="confirm-go" data-danger>{{ i18n.t("admin.delete_group") }}</button>
+                        </div>
+                    </form>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        <form method="post" action="/admin/groups/new" class="groups-new">
+            <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+            <label for="new-group" class="field-label">{{ i18n.t("admin.new_group") }}</label>
+            <div class="groups-new-row">
+                <input id="new-group" name="name" type="text" class="input" required maxlength="100" autocomplete="off" value="{{ new_group_name }}" placeholder="{{ i18n.t("admin.new_group_placeholder") }}"
+                       {% if group_error.is_some() %}aria-invalid="true" aria-describedby="new-group-error" autofocus{% endif %}>
+                <button type="submit" class="btn btn-ghost">{{ i18n.t("admin.create_group") }}</button>
+            </div>
+            {% if let Some(message) = group_error %}
+            <p id="new-group-error" class="field-error" role="alert">{{ message }}</p>
+            {% endif %}
+        </form>
+    </section>
 </div>
 {% endblock %}

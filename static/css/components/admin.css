@@ -1050,6 +1050,145 @@
         margin-top: 6px;
     }
 
+    /* The groups of a new member: boxes on one or two lines. */
+    .member-groups-field {
+        min-width: 0;
+    }
+
+    .member-groups-boxes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 24px;
+        margin-top: 4px;
+    }
+
+    /* The groups of a member, one grey line under the name, changed in a
+       panel over the page that opens from its start. */
+    .member-groups {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 2px 6px;
+    }
+
+    .member-groups-edit {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        color: var(--ink);
+        cursor: pointer;
+    }
+
+    .member-groups-menu > .member-groups-panel {
+        right: auto;
+        left: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        width: 280px;
+        max-width: calc(100vw - 32px);
+        padding: 16px;
+        color: var(--ink);
+    }
+
+    /* On a phone the panel opens from the start of the line rather than
+       from "Change", so it stays on the screen. */
+    @media (max-width: 639px) {
+        .member-groups {
+            position: relative;
+        }
+
+        .member-groups > .member-groups-menu {
+            position: static;
+        }
+    }
+
+    .member-groups-label {
+        margin: 0 0 12px;
+        font-size: var(--text-xs);
+        font-weight: 500;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+    }
+
+    .member-groups-list {
+        display: grid;
+        gap: 12px;
+    }
+
+    .member-groups-save,
+    .group-rename-save {
+        width: 100%;
+        margin-top: 16px;
+    }
+
+    /* The groups themselves, on their own card under the team. */
+    .groups-card {
+        margin-top: 40px;
+    }
+
+    .groups-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    /* A group's buttons beside its name from 640px, under it on a phone;
+       a question opened in the row takes the full width under it. */
+    @media (min-width: 640px) {
+        .group-row .admin-row-actions {
+            grid-column: 2;
+        }
+
+        .group-row .admin-row-actions:has(.confirm:not([hidden])) {
+            grid-column: 1 / -1;
+        }
+    }
+
+    .group-row .admin-row-actions:has(.confirm:not([hidden])) > .group-rename {
+        display: none;
+    }
+
+    .groups-empty {
+        padding: 16px 20px 0;
+        font-size: var(--text-md);
+        color: var(--ink-soft);
+    }
+
+    .group-rename > .group-rename-panel {
+        display: flex;
+        flex-direction: column;
+        width: 280px;
+        max-width: calc(100vw - 32px);
+        padding: 16px;
+    }
+
+    .group-rename > summary.btn {
+        cursor: pointer;
+    }
+
+    .groups-new {
+        padding: 16px 20px 20px;
+        border-top: 1px solid var(--line);
+    }
+
+    .groups-list:empty + .groups-new,
+    .groups-empty + .groups-new {
+        border-top: 0;
+    }
+
+    .groups-new-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 6px;
+    }
+
+    .groups-new-row .input {
+        flex: 1 1 240px;
+        max-width: 360px;
+    }
+
     @media (prefers-reduced-motion: reduce) {
         .icon-choices-chevron {
             transition: none;

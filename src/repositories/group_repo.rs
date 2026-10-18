@@ -14,21 +14,21 @@ impl GroupRepository {
             .await
     }
 
-    /// Whether another group already has this name, ignoring case. `except`
-    /// is the group being renamed.
+    /// Whether another group already has this name, ignoring case, accents
+    /// included: SQLite folds the case of ASCII letters only, so "Équipe"
+    /// and "équipe" are compared here. `except` is the group being renamed.
     pub async fn name_taken(
         pool: &DbPool,
         name: &str,
         except: Option<i64>,
     ) -> Result<bool, sqlx::Error> {
-        sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM member_groups \
-             WHERE name = ?1 AND (?2 IS NULL OR id != ?2))",
-        )
-        .bind(name)
-        .bind(except)
-        .fetch_one(pool)
-        .await
+        let groups: Vec<(i64, String)> = sqlx::query_as("SELECT id, name FROM member_groups")
+            .fetch_all(pool)
+            .await?;
+        let wanted = name.to_lowercase();
+        Ok(groups
+            .iter()
+            .any(|(id, taken)| Some(*id) != except && taken.to_lowercase() == wanted))
     }
 
     /// Returns false when no such group exists.
@@ -62,6 +62,13 @@ impl GroupRepository {
         )
         .fetch_all(pool)
         .await
+    }
+
+    /// Every membership as (member, group), for a page that lists them all.
+    pub async fn memberships(pool: &DbPool) -> Result<Vec<(i64, i64)>, sqlx::Error> {
+        sqlx::query_as("SELECT user_id, group_id FROM group_members")
+            .fetch_all(pool)
+            .await
     }
 
     pub async fn ids_of_member(pool: &DbPool, user_id: i64) -> Result<Vec<i64>, sqlx::Error> {
@@ -197,6 +204,13 @@ mod tests {
             !GroupRepository::name_taken(&pool, "Sales", None)
                 .await
                 .unwrap()
+        );
+        GroupRepository::create(&pool, "Équipe").await.unwrap();
+        assert!(
+            GroupRepository::name_taken(&pool, "équipe", None)
+                .await
+                .unwrap(),
+            "an accented capital is the same letter"
         );
     }
 
