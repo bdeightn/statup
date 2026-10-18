@@ -490,16 +490,59 @@
             grid-column: auto;
         }
 
-        /* A question opened in a row takes the full width under it rather
-           than squeezing the name into one letter per line. */
-        .member-row .admin-row-actions:has(.confirm:not([hidden])) {
-            grid-column: 1 / -1;
-        }
     }
 
-    /* While a question is open, the other action of the row steps aside. */
-    .admin-row-actions:has(.confirm:not([hidden])) > form:not(:has(.confirm:not([hidden]))) {
+    /* A member's action asks first in a panel under the row's actions, as
+       wide as its question, so the row keeps its place. */
+    .member-row .admin-row-actions {
+        position: relative;
+    }
+
+    .member-row .member-confirm {
+        position: static;
+    }
+
+    .member-confirm > .confirm-panel {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+        width: max-content;
+        max-width: min(360px, calc(100vw - 32px));
+        padding: 16px;
+        color: var(--ink);
+    }
+
+    .confirm-panel-text {
+        margin: 0;
+        font-size: var(--text-sm);
+        font-weight: 500;
+    }
+
+    .confirm-panel-desc {
+        margin: 0;
+        font-size: var(--text-sm);
+        color: var(--muted);
+    }
+
+    .confirm-panel-go {
+        align-self: flex-end;
+        margin-top: 12px;
+    }
+
+    /* Adding a member: only the chosen role says what it allows. */
+    .role-descs {
+        margin-top: 8px;
+    }
+
+    .role-descs > [data-role-hint] {
         display: none;
+    }
+
+    .choice-group:has([value="reader"]:checked) [data-role-hint="reader"],
+    .choice-group:has([value="publisher"]:checked) [data-role-hint="publisher"],
+    .choice-group:has([value="admin"]:checked) [data-role-hint="admin"] {
+        display: block;
     }
 
     /* The row the last save named: a wash that fades once. */

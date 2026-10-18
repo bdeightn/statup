@@ -70,11 +70,12 @@
                     <label class="choice"><input type="radio" name="role" value="{{ r.as_str() }}" class="sr-only" required{% if add_form.role == r.as_str() || (add_form.role.is_empty() && r.as_str() == "reader") %} checked{% endif %}><span>{{ i18n.t(r.i18n_key()) }}</span></label>
                     {% endfor %}
                 </div>
-                <ul class="field-hint mt-2">
-                    <li>{{ i18n.t("role.reader_desc") }}</li>
-                    <li>{{ i18n.t("role.publisher_desc") }}</li>
-                    <li>{{ i18n.t("role.admin_desc") }}</li>
-                </ul>
+                {# Only the chosen role says what it allows. #}
+                <div class="role-descs">
+                    <p class="field-hint" data-role-hint="reader">{{ i18n.t("role.reader_desc") }}</p>
+                    <p class="field-hint" data-role-hint="publisher">{{ i18n.t("role.publisher_desc") }}</p>
+                    <p class="field-hint" data-role-hint="admin">{{ i18n.t("role.admin_desc") }}</p>
+                </div>
             </fieldset>
             <button type="submit" class="btn btn-ghost">{{ i18n.t("admin.add_member_submit") }}</button>
         </form>
@@ -119,34 +120,36 @@
                 {% endif %}
             </div>
 
+            {# Each action asks first, in a panel under its own button. #}
             <div class="admin-row-actions">
                 {% if u.id != current_user_id && u.is_active %}
-                <form method="post" action="/admin/users/{{ u.id }}/reset-password" data-confirm>
-                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                    <button type="button" class="btn btn-ghost" data-confirm-open aria-label="{{ i18n.t("admin.reset_password") }} {{ u.display_name }}">{{ i18n.t("admin.reset_password") }}</button>
-                    <div class="confirm" role="group" aria-label="{{ i18n.t("admin.confirm_reset_aria") }}" aria-describedby="reset-q-{{ u.id }} reset-d-{{ u.id }}" data-confirm-box hidden>
-                        <span id="reset-q-{{ u.id }}" class="confirm-text">{{ i18n.t("common.question_open") }}{{ i18n.t("admin.reset_question") }} <q>{{ u.display_name }}</q>{{ i18n.t("common.question_mark") }}</span>
-                        <span id="reset-d-{{ u.id }}" class="confirm-desc">{{ i18n.t("admin.reset_consequence") }}</span>
-                        <button type="button" class="confirm-cancel" data-confirm-cancel>{{ i18n.t("common.cancel") }}</button>
-                        <button type="submit" class="confirm-go">{{ i18n.t("admin.reset_go") }}</button>
-                    </div>
-                </form>
+                <details class="more-actions member-confirm" data-more-actions>
+                    <summary class="btn btn-ghost" aria-label="{{ i18n.t("admin.reset_password") }} {{ u.display_name }}">{{ i18n.t("admin.reset_password") }}</summary>
+                    <form class="more-actions-menu confirm-panel" method="post" action="/admin/users/{{ u.id }}/reset-password" aria-label="{{ i18n.t("admin.confirm_reset_aria") }}">
+                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                        <p class="confirm-panel-text">{{ i18n.t("common.question_open") }}{{ i18n.t("admin.reset_question") }} <q>{{ u.display_name }}</q>{{ i18n.t("common.question_mark") }}</p>
+                        <p class="confirm-panel-desc">{{ i18n.t("admin.reset_consequence") }}</p>
+                        <button type="submit" class="btn btn-primary confirm-panel-go">{{ i18n.t("admin.reset_go") }}</button>
+                    </form>
+                </details>
                 {% endif %}
                 {% if u.id != current_user_id %}
-                <form method="post" action="/admin/users/{{ u.id }}/disable"{% if u.is_active %} data-confirm{% endif %}>
+                {% if u.is_active %}
+                <details class="more-actions member-confirm" data-more-actions>
+                    <summary class="btn btn-danger" aria-label="{{ i18n.t("admin.disable") }} {{ u.display_name }}">{{ i18n.t("admin.disable") }}</summary>
+                    <form class="more-actions-menu confirm-panel" method="post" action="/admin/users/{{ u.id }}/disable" aria-label="{{ i18n.t("admin.confirm_disable_aria") }}">
+                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                        <p class="confirm-panel-text">{{ i18n.t("common.question_open") }}{{ i18n.t("admin.disable") }} <q>{{ u.display_name }}</q>{{ i18n.t("common.question_mark") }}</p>
+                        <p class="confirm-panel-desc">{{ i18n.t("admin.disable_consequence") }}</p>
+                        <button type="submit" class="btn btn-danger confirm-panel-go">{{ i18n.t("admin.disable") }}</button>
+                    </form>
+                </details>
+                {% else %}
+                <form method="post" action="/admin/users/{{ u.id }}/disable">
                     <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                    {% if u.is_active %}
-                    <button type="button" class="btn btn-danger" data-confirm-open aria-label="{{ i18n.t("admin.disable") }} {{ u.display_name }}">{{ i18n.t("admin.disable") }}</button>
-                    <div class="confirm" role="group" aria-label="{{ i18n.t("admin.confirm_disable_aria") }}" aria-describedby="disable-q-{{ u.id }} disable-d-{{ u.id }}" data-confirm-box hidden>
-                        <span id="disable-q-{{ u.id }}" class="confirm-text">{{ i18n.t("common.question_open") }}{{ i18n.t("admin.disable") }} <q>{{ u.display_name }}</q>{{ i18n.t("common.question_mark") }}</span>
-                        <span id="disable-d-{{ u.id }}" class="confirm-desc">{{ i18n.t("admin.disable_consequence") }}</span>
-                        <button type="button" class="confirm-cancel" data-confirm-cancel>{{ i18n.t("common.cancel") }}</button>
-                        <button type="submit" class="confirm-go" data-danger>{{ i18n.t("admin.disable") }}</button>
-                    </div>
-                    {% else %}
                     <button type="submit" class="btn btn-ghost" aria-label="{{ i18n.t("admin.enable") }} {{ u.display_name }}">{{ i18n.t("admin.enable") }}</button>
-                    {% endif %}
                 </form>
+                {% endif %}
                 {% endif %}
             </div>
         </li>
