@@ -9,7 +9,7 @@ use reqwest::StatusCode;
 use common::TestApp;
 use statup::i18n::{I18n, LANGUAGES};
 use statup::models::{Grants, Role, Visibility};
-use statup::repositories::{GroupRepository, ServiceRepository, UserRepository};
+use statup::repositories::{FolderRepository, GroupRepository, ServiceRepository, UserRepository};
 
 const ADMIN_EMAIL: &str = "admin@test.com";
 const ADMIN_PASSWORD: &str = "admin_password_12";
@@ -370,7 +370,7 @@ async fn deleting_a_group_names_what_it_closes_and_clears_its_traces() {
         "it counts the service only it opens, not the one another group also opens"
     );
     assert!(
-        !body.contains("Coffre Zephyr"),
+        !between(&body, "danger-zone", "</section>").contains("Coffre Zephyr"),
         "a count, not a list of names"
     );
     let body = page(&app, &format!("/admin/groups/{compta}")).await;
@@ -445,4 +445,110 @@ async fn a_publisher_cannot_see_or_touch_groups() {
 
     assert_eq!(group_names(&app).await, vec!["Compta".to_string()]);
     assert_eq!(member_ids(&app, compta).await, vec![ann]);
+}
+
+#[tokio::test]
+async fn only_readers_are_offered_and_added_to_a_group() {
+    let app = spawn_with_admin().await;
+    let ann = reader(&app, "ann@test.com", "Ann").await;
+    let editor = app
+        .create_user("ed@test.com", READER_PASSWORD, "Ed", Role::Publisher)
+        .await;
+    let group = create_group(&app, "Compta").await;
+    let group_path = format!("/admin/groups/{group}");
+
+    let body = page(&app, &group_path).await;
+    assert!(picker(&body).contains("ann@test.com"));
+    assert!(
+        !picker(&body).contains("ed@test.com"),
+        "an editor sees every service"
+    );
+    assert!(
+        !picker(&body).contains(ADMIN_EMAIL),
+        "so does an administrator"
+    );
+
+    let (ann_id, editor_id) = (ann.to_string(), editor.to_string());
+    let fields = [
+        ("user_ids", ann_id.as_str()),
+        ("user_ids", editor_id.as_str()),
+    ];
+    post_team(&app, &format!("{group_path}/members"), &fields).await;
+
+    assert_eq!(member_ids(&app, group).await, vec![ann]);
+}
+
+#[tokio::test]
+async fn a_group_page_lists_the_restricted_services_it_opens() {
+    let app = spawn_with_admin().await;
+    let compta = create_group(&app, "Compta").await;
+    let lyon = create_group(&app, "Lyon").await;
+    let mut ids = Vec::new();
+    for name in [
+        "Paie Alpha",
+        "Notes Beta",
+        "Wiki Gamma",
+        "Imprimantes Delta",
+    ] {
+        let service =
+            ServiceRepository::create(&app.pool, name, &name.to_lowercase(), None, None, None)
+                .await
+                .unwrap();
+        ids.push(service.id);
+    }
+    ServiceRepository::set_visibility(
+        &app.pool,
+        ids[0],
+        Visibility::Groups,
+        Grants::groups(&[compta]),
+    )
+    .await
+    .unwrap();
+    ServiceRepository::set_visibility(
+        &app.pool,
+        ids[3],
+        Visibility::Groups,
+        Grants::groups(&[lyon]),
+    )
+    .await
+    .unwrap();
+    let folder = FolderRepository::create(&app.pool, "Finances")
+        .await
+        .unwrap();
+    FolderRepository::set_visibility(
+        &app.pool,
+        folder,
+        Visibility::Groups,
+        Grants::groups(&[compta]),
+    )
+    .await
+    .unwrap();
+    FolderRepository::add_services(&app.pool, folder, &[ids[1]])
+        .await
+        .unwrap();
+
+    let body = page(&app, &format!("/admin/groups/{compta}")).await;
+    let card = between(&body, "group-services", "</section>");
+    assert!(card.contains("Paie Alpha"), "opened to the group itself");
+    assert!(card.contains("Notes Beta"), "opened through its folder");
+    let folder_label =
+        I18n::new(LANGUAGES[0].code).tf("admin.group_service_folder", &[("folder", "Finances")]);
+    assert!(card.contains(&folder_label));
+    assert!(
+        !card.contains("Wiki Gamma"),
+        "a public service is not the group's"
+    );
+    assert!(
+        !card.contains("Imprimantes Delta"),
+        "another group's service"
+    );
+
+    let body = page(&app, &format!("/admin/groups/{lyon}")).await;
+    assert!(between(&body, "group-services", "</section>").contains("Imprimantes Delta"));
+    let empty = create_group(&app, "Vide").await;
+    let body = page(&app, &format!("/admin/groups/{empty}")).await;
+    assert!(
+        between(&body, "group-services", "</section>")
+            .contains(&text("admin.group_services_empty"))
+    );
 }

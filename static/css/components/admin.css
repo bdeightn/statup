@@ -1351,16 +1351,17 @@
         border-top: 0;
     }
 
-    /* The name stays whole; the address or the count gives way. */
-    .grant-panel .svc-pick {
+    /* The name stays whole; the address, the count or the folder gives
+       way. */
+    :is(.grant-panel, .member-picker-panel) .svc-pick {
         display: flex;
     }
 
-    .grant-panel .svc-pick-name {
+    :is(.grant-panel, .member-picker-panel) .svc-pick-name {
         flex: 0 1 auto;
     }
 
-    .grant-panel .picker-email {
+    :is(.grant-panel, .member-picker-panel) .picker-email {
         flex: 1 1 0;
         min-width: 0;
         overflow: hidden;
@@ -1424,6 +1425,17 @@
 
     .picker-none {
         margin-top: 12px;
+    }
+
+    /* A group's page: the services it opens, with their folder. */
+    .group-services {
+        margin-top: 16px;
+    }
+
+    .group-service-folder {
+        font-size: var(--text-sm);
+        color: var(--muted);
+        white-space: nowrap;
     }
 
     /* Without a search box, the list starts at the top of its panel. */

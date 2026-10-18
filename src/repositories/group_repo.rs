@@ -93,12 +93,13 @@ impl GroupRepository {
         .await
     }
 
-    /// The active members who are not in the group, by name: those it can
-    /// take in.
+    /// The active readers who are not in the group, by name: those it can
+    /// take in. Editors and administrators see every service already.
     pub async fn outsiders(pool: &DbPool, group_id: i64) -> Result<Vec<GroupMember>, sqlx::Error> {
         sqlx::query_as::<_, GroupMember>(
             "SELECT u.id, u.display_name, u.email, u.is_active FROM users u \
-             WHERE u.is_active = 1 AND NOT EXISTS (SELECT 1 FROM group_members gm \
+             WHERE u.is_active = 1 AND u.role = 'reader' \
+             AND NOT EXISTS (SELECT 1 FROM group_members gm \
                    WHERE gm.group_id = ? AND gm.user_id = u.id) \
              ORDER BY u.display_name COLLATE NOCASE, u.id",
         )
@@ -107,9 +108,9 @@ impl GroupRepository {
         .await
     }
 
-    /// Puts members in the group and returns how many joined. Members
-    /// already in it, disabled ones and ids of no member are passed over,
-    /// as the panel that offers them does.
+    /// Puts readers in the group and returns how many joined. Members
+    /// already in it, editors, administrators, disabled ones and ids of no
+    /// member are passed over, as the panel that offers them does.
     pub async fn add_members(
         pool: &DbPool,
         group_id: i64,
@@ -119,7 +120,8 @@ impl GroupRepository {
         let result = sqlx::query(
             "INSERT OR IGNORE INTO group_members (group_id, user_id) \
              SELECT ?, id FROM users \
-             WHERE is_active = 1 AND id IN (SELECT value FROM json_each(?))",
+             WHERE is_active = 1 AND role = 'reader' \
+             AND id IN (SELECT value FROM json_each(?))",
         )
         .bind(group_id)
         .bind(&ids)
@@ -151,6 +153,19 @@ impl GroupRepository {
              WHERE u.role = 'reader' AND u.is_active = 1 \
              ORDER BY gm.group_id, gm.user_id",
         )
+        .fetch_all(pool)
+        .await
+    }
+
+    /// The restricted services this group opens, of its own or through a
+    /// folder.
+    pub async fn service_ids(pool: &DbPool, group_id: i64) -> Result<Vec<i64>, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT a.service_id FROM service_access a \
+             JOIN services s ON s.id = a.service_id \
+             WHERE a.group_id = ? AND s.visibility = 'groups'",
+        )
+        .bind(group_id)
         .fetch_all(pool)
         .await
     }

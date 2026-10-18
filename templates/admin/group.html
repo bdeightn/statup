@@ -96,6 +96,31 @@
         {% endif %}
     </section>
 
+    {# The restricted services the group opens, to check its access
+       without opening each service. #}
+    <section class="card group-services" aria-labelledby="services-title">
+        <header class="card-head">
+            <h2 id="services-title" class="card-title">{{ i18n.t("admin.group_services_title") }} <span class="count">{{ services.len() }}</span></h2>
+        </header>
+        {% if services.is_empty() %}
+        <p class="groups-empty">{{ i18n.t("admin.group_services_empty") }}</p>
+        {% else %}
+        <ul class="group-members">
+            {% for (service, folder) in services %}
+            <li class="admin-row group-member">
+                <div class="admin-row-ident">
+                    <span class="svc-icon">{% call ui::service_icon(service) %}{% endcall %}</span>
+                    <p class="admin-row-name"><a href="/services/{{ service.id }}/edit" class="row-link">{{ service.name }}</a></p>
+                </div>
+                {% if let Some(name) = folder %}
+                <p class="group-service-folder">{{ self.folder_label(name) }}</p>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </section>
+
     <section class="card danger-zone" aria-labelledby="delete-title">
         <div class="danger-zone-text">
             <h2 id="delete-title" class="card-title">{{ i18n.t("admin.delete_group_title") }}</h2>

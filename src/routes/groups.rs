@@ -1,6 +1,9 @@
 //! Groups of members. The Team page lists them; each group has its own
-//! page, where members are added and removed at once, the group renamed,
-//! and deleted at its foot. A service then says which groups see it.
+//! page, where readers are added and removed at once, the services it
+//! opens are listed, the group renamed, and deleted at its foot. A service
+//! then says which groups see it.
+
+use std::collections::HashMap;
 
 use askama::Template;
 use axum::extract::{Path, Query, State};
@@ -9,11 +12,14 @@ use serde::Deserialize;
 
 use super::admin::refused_page;
 use super::{Frame, render};
+use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
-use crate::models::{GroupMember, JournalKind, MemberGroup, User, check_group_name};
-use crate::repositories::{GroupRepository, NewJournalEntry, UserRepository};
+use crate::models::{GroupMember, JournalKind, MemberGroup, Service, User, check_group_name};
+use crate::repositories::{
+    FolderRepository, GroupRepository, NewJournalEntry, ServiceRepository, UserRepository,
+};
 use crate::state::AppState;
 
 #[derive(Template)]
@@ -22,8 +28,10 @@ struct GroupTemplate {
     frame: Frame,
     group: MemberGroup,
     members: Vec<GroupMember>,
-    /// Active members not in the group, offered by "Add members".
+    /// Active readers not in the group, offered by "Add members".
     outsiders: Vec<GroupMember>,
+    /// The restricted services it opens, with the folder each one is in.
+    services: Vec<(Service, Option<String>)>,
     /// How many services only this group opens, said before it is deleted.
     closes: usize,
     notice: Option<GroupNotice>,
@@ -34,6 +42,11 @@ struct GroupTemplate {
 impl GroupTemplate {
     fn closes_label(&self) -> String {
         self.i18n.plural("admin.delete_group_closes", self.closes)
+    }
+
+    fn folder_label(&self, folder: &str) -> String {
+        self.i18n
+            .tf("admin.group_service_folder", &[("folder", folder)])
     }
 }
 
@@ -118,6 +131,7 @@ async fn render_group(
         frame: Frame::load(&state.pool, Some(admin), csrf_token, &i18n).await?,
         members: GroupRepository::members(&state.pool, id).await?,
         outsiders: GroupRepository::outsiders(&state.pool, id).await?,
+        services: services_opened(&state.pool, id).await?,
         closes: GroupRepository::services_closed_by_deleting(&state.pool, id).await?,
         group,
         notice,
@@ -244,6 +258,29 @@ pub async fn remove_member(
         .record(&state.pool)
         .await;
     Ok(Redirect::to(&format!("/admin/groups/{id}?removed={user_id}")).into_response())
+}
+
+/// The restricted services the group opens, in the chosen order, with
+/// their folder.
+async fn services_opened(
+    pool: &DbPool,
+    id: i64,
+) -> Result<Vec<(Service, Option<String>)>, AppError> {
+    let opened = GroupRepository::service_ids(pool, id).await?;
+    let folders: HashMap<i64, String> = FolderRepository::list(pool)
+        .await?
+        .into_iter()
+        .map(|folder| (folder.id, folder.name))
+        .collect();
+    Ok(ServiceRepository::list_all(pool)
+        .await?
+        .into_iter()
+        .filter(|service| opened.contains(&service.id))
+        .map(|service| {
+            let folder = service.folder_id.and_then(|f| folders.get(&f).cloned());
+            (service, folder)
+        })
+        .collect())
 }
 
 /// The line for one member who joined or left a group.
