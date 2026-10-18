@@ -145,6 +145,8 @@
   "dashboard.layout_saved": "Organización guardada.",
   "banner.nothing_watched": "Aún no hay servicios en seguimiento",
   "banner.nothing_watched_hint": "Esta página mostrará el estado de cada servicio en cuanto se añada.",
+  "banner.nothing_visible": "Ningún servicio que mostrarle",
+  "banner.nothing_visible_hint": "Inicie sesión para ver los servicios de su equipo.",
   "banner.add_first_service": "Añadir un primer servicio",
   "banner.steps_title": "Primeros pasos",
   "banner.steps_progress": "Paso 1 de 3 completado",

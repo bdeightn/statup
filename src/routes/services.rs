@@ -629,11 +629,25 @@ pub async fn create(
     }
 }
 
+/// "Some groups" needs one that still exists: a group deleted while the
+/// form was open would otherwise leave the service to the team alone,
+/// without a word.
+async fn checked_choice<'a>(
+    pool: &DbPool,
+    audience: &'a VisibilityFields,
+) -> Result<(Visibility, &'a [i64]), AppError> {
+    let (visibility, group_ids) = audience.choice()?;
+    if visibility == Visibility::Groups && GroupRepository::count_of(pool, group_ids).await? == 0 {
+        return Err(AppError::validation(VISIBILITY_REQUIRED));
+    }
+    Ok((visibility, group_ids))
+}
+
 /// The check and who sees it are read first, so a refusal saves nothing.
 async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<Service, AppError> {
     let monitoring = input.check.monitoring()?;
     let audience = input.visibility();
-    let (visibility, group_ids) = audience.choice()?;
+    let (visibility, group_ids) = checked_choice(pool, &audience).await?;
     let icon_name = input.icon_name();
     let service = ServiceService::create(
         pool,
@@ -651,7 +665,7 @@ async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<Service, AppErr
 async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), AppError> {
     let monitoring = input.check.monitoring()?;
     let audience = input.visibility();
-    let (visibility, group_ids) = audience.choice()?;
+    let (visibility, group_ids) = checked_choice(pool, &audience).await?;
     let icon_name = input.icon_name();
     ServiceService::update(
         pool,

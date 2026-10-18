@@ -156,7 +156,7 @@
 
     {# The groups: a link to each group's page, where its members are
        added and removed. A new group starts from its name. #}
-    <section id="groups" class="card groups-card" aria-labelledby="groups-title" data-filter-scope>
+    <section id="groups" class="card groups-card" data-filter-scope aria-labelledby="groups-title">
         <header class="card-head">
             <h2 id="groups-title" class="card-title">{{ i18n.t("admin.groups_heading") }}{% if !groups.is_empty() %} <span class="count">{{ groups.len() }}</span>{% endif %}</h2>
             <details class="more-actions group-new" data-more-actions{% if new_group.error.is_some() %} open{% endif %}>
@@ -164,7 +164,7 @@
                 <form class="more-actions-menu group-panel" method="post" action="/admin/groups/new">
                     <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
                     <label for="new-group" class="field-label">{{ i18n.t("admin.group_name") }}</label>
-                    <input id="new-group" name="name" type="text" class="input" required maxlength="100" autocomplete="off" value="{{ new_group.value }}" placeholder="{{ i18n.t("admin.new_group_placeholder") }}"
+                    <input id="new-group" name="name" type="text" class="input" required maxlength="{{ crate::models::GROUP_NAME_MAX_CHARS }}" autocomplete="off" value="{{ new_group.value }}" placeholder="{{ i18n.t("admin.new_group_placeholder") }}"
                            {% if new_group.error.is_some() %}aria-invalid="true" aria-describedby="new-group-error" autofocus{% endif %}>
                     {% if let Some(message) = new_group.error %}
                     <p id="new-group-error" class="field-error" role="alert">{{ message }}</p>
@@ -178,7 +178,7 @@
         {% else %}
         {% if groups.len() > crate::models::SEARCH_FROM %}
         <div class="groups-search">
-            <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("admin.search_group") }}" aria-label="{{ i18n.t("admin.search_group") }}" data-filter-input>
+            <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("admin.search_group") }}" data-filter-input aria-label="{{ i18n.t("admin.search_group") }}">
         </div>
         {% endif %}
         <ul class="group-links">

@@ -697,3 +697,53 @@ async fn a_members_only_page_offers_no_signed_in_members_choice() {
     assert!(form.contains(r#"name="visibility" value="everyone""#));
     assert!(!form.contains(r#"name="visibility" value="members""#));
 }
+
+/// A group deleted while the form was open does not leave the service to
+/// the team alone without a word: the form asks again.
+#[tokio::test]
+async fn a_service_kept_for_a_group_that_is_gone_is_refused() {
+    let app = TestApp::spawn_public().await;
+    app.create_user("editor@x.com", PASSWORD, "Editor", Role::Publisher)
+        .await;
+    let group = GroupRepository::create(&app.pool, "Paie").await.unwrap();
+    app.login("editor@x.com", PASSWORD).await;
+    let csrf = app.csrf_from("/services/new").await;
+    GroupRepository::delete(&app.pool, group).await.unwrap();
+    let group_id = group.to_string();
+
+    let fields = [
+        ("name", "Coffre"),
+        ("check_kind", "none"),
+        ("visibility", "groups"),
+        ("group_ids", group_id.as_str()),
+    ];
+    let (status, body, _) = app.post_form("/services/new", &csrf, &fields).await;
+    assert_eq!(status.as_u16(), 200);
+    let i18n = I18n::new(LANGUAGES[0].code);
+    assert!(body.contains(i18n.t("validation.visibility_required")));
+    assert!(
+        ServiceRepository::list_all(&app.pool)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// A visitor who may see none of the services is told so, and how to see
+/// more, rather than that nothing is tracked.
+#[tokio::test]
+async fn a_visitor_who_sees_no_service_is_asked_to_sign_in() {
+    let app = TestApp::spawn_public().await;
+    let only = ServiceRepository::create(&app.pool, "Coffre", "coffre", None, None, None)
+        .await
+        .unwrap()
+        .id;
+    ServiceRepository::set_visibility(&app.pool, only, Visibility::Members, &[])
+        .await
+        .unwrap();
+    let (_, body) = app.get("/").await;
+    let i18n = I18n::new(LANGUAGES[0].code);
+    assert!(body.contains(i18n.t("banner.nothing_visible")));
+    assert!(body.contains(i18n.t("banner.nothing_visible_hint")));
+    assert!(!body.contains(i18n.t("banner.nothing_watched")));
+}

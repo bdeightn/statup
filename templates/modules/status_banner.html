@@ -32,6 +32,18 @@
         </li>
     </ol>
 </section>
+{% else if let Some(signed_in) = nothing_visible %}
+<section class="hero" aria-labelledby="status-headline">
+    <h2 id="status-headline" class="hero-title">
+        <span class="ring-dot" data-tone="neutral" aria-hidden="true"></span>
+        <span>{{ i18n.t("banner.nothing_visible") }}</span>
+    </h2>
+    {% if !signed_in %}
+    <div class="hero-body">
+        <p class="hero-meta">{{ i18n.t("banner.nothing_visible_hint") }}</p>
+    </div>
+    {% endif %}
+</section>
 {% else if !has_services %}
 <section class="hero" aria-labelledby="status-headline">
     <h2 id="status-headline" class="hero-title">

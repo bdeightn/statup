@@ -70,6 +70,17 @@ impl GroupRepository {
             .await
     }
 
+    /// How many of these ids name a group that exists.
+    pub async fn count_of(pool: &DbPool, ids: &[i64]) -> Result<i64, sqlx::Error> {
+        let ids = serde_json::to_string(ids).unwrap_or_default();
+        sqlx::query_scalar(
+            "SELECT COUNT(*) FROM member_groups WHERE id IN (SELECT value FROM json_each(?))",
+        )
+        .bind(&ids)
+        .fetch_one(pool)
+        .await
+    }
+
     /// The members of a group by name, disabled ones included.
     pub async fn members(pool: &DbPool, group_id: i64) -> Result<Vec<GroupMember>, sqlx::Error> {
         sqlx::query_as::<_, GroupMember>(

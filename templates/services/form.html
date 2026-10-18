@@ -81,7 +81,7 @@
                                     <p class="picker-note">{{ i18n.t("services.visibility_no_group") }}</p>
                                     {% else %}
                                     {% if groups.len() > crate::models::SEARCH_FROM %}
-                                    <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("services.visibility_search") }}" aria-label="{{ i18n.t("services.visibility_search") }}" data-filter-input>
+                                    <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("services.visibility_search") }}" data-filter-input aria-label="{{ i18n.t("services.visibility_search") }}">
                                     {% endif %}
                                     <div class="picker-list" role="group" aria-label="{{ i18n.t("services.visibility_groups") }}">
                                         {% for g in groups %}

@@ -93,6 +93,9 @@ pub struct NextMaintenance {
 #[template(path = "modules/status_banner.html")]
 struct StatusBannerTemplate {
     has_services: bool,
+    /// The instance has services but none this viewer may see: whether
+    /// they are signed in, to say so differently.
+    nothing_visible: Option<bool>,
     tone: &'static str,
     headline: String,
     rows: Vec<BannerRow>,
@@ -130,6 +133,7 @@ impl Module for StatusBannerModule {
 
     async fn render(&self, ctx: &ModuleRenderContext<'_>) -> Result<String, AppError> {
         let mut services = ServiceRepository::list_all(ctx.pool).await?;
+        let any_service = !services.is_empty();
         services.retain(|service| ctx.scope.sees_service(service.id));
         let events = EventRepository::list_open_for_banner(ctx.pool, ctx.scope).await?;
         let maintenance = EventRepository::list_open_maintenance(ctx.pool, ctx.scope).await?;
@@ -153,6 +157,7 @@ impl Module for StatusBannerModule {
         keep_each_update_once(&mut rows);
         let template = StatusBannerTemplate {
             has_services: !services.is_empty(),
+            nothing_visible: (any_service && services.is_empty()).then_some(ctx.user.is_some()),
             tone: banner_tone(&affected).as_str(),
             headline: headline(&affected, i18n),
             rows,

@@ -20,7 +20,7 @@
                     <form class="more-actions-menu group-panel" method="post" action="/admin/groups/{{ group.id }}/rename">
                         <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
                         <label for="group-name" class="field-label">{{ i18n.t("admin.group_name") }}</label>
-                        <input id="group-name" name="name" type="text" class="input" required maxlength="100" autocomplete="off"
+                        <input id="group-name" name="name" type="text" class="input" required maxlength="{{ crate::models::GROUP_NAME_MAX_CHARS }}" autocomplete="off"
                                value="{% match rename.value %}{% when Some with (typed) %}{{ typed }}{% when None %}{{ group.name }}{% endmatch %}"
                                {% if rename.error.is_some() %}aria-invalid="true" aria-describedby="group-name-error" autofocus{% endif %}>
                         {% if let Some(message) = rename.error %}
@@ -59,7 +59,7 @@
                     <p class="picker-note">{{ i18n.t("admin.everyone_in_group") }}</p>
                     {% else %}
                     {% if outsiders.len() > crate::models::SEARCH_FROM %}
-                    <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("admin.search_member") }}" aria-label="{{ i18n.t("admin.search_member") }}" data-filter-input>
+                    <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("admin.search_member") }}" data-filter-input aria-label="{{ i18n.t("admin.search_member") }}">
                     {% endif %}
                     <div class="picker-list" role="group" aria-label="{{ i18n.t("admin.add_members") }}">
                         {% for m in outsiders %}

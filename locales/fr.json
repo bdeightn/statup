@@ -145,6 +145,8 @@
   "dashboard.layout_saved": "Organisation enregistrée.",
   "banner.nothing_watched": "Aucun service suivi pour l'instant",
   "banner.nothing_watched_hint": "Cette page donnera l'état de chaque service dès qu'il sera ajouté.",
+  "banner.nothing_visible": "Aucun service à afficher pour vous",
+  "banner.nothing_visible_hint": "Connectez-vous pour voir les services de votre équipe.",
   "banner.add_first_service": "Ajouter un premier service",
   "banner.steps_title": "Premiers pas",
   "banner.steps_progress": "1 étape sur 3",

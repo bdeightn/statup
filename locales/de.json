@@ -145,6 +145,8 @@
   "dashboard.layout_saved": "Anordnung gespeichert.",
   "banner.nothing_watched": "Noch keine Dienste erfasst",
   "banner.nothing_watched_hint": "Diese Seite zeigt den Status jedes Dienstes, sobald er hinzugefügt wird.",
+  "banner.nothing_visible": "Kein Dienst für Sie sichtbar",
+  "banner.nothing_visible_hint": "Melden Sie sich an, um die Dienste Ihres Teams zu sehen.",
   "banner.add_first_service": "Ersten Dienst hinzufügen",
   "banner.steps_title": "Erste Schritte",
   "banner.steps_progress": "Schritt 1 von 3 erledigt",

@@ -145,6 +145,8 @@
   "dashboard.layout_saved": "Layout saved.",
   "banner.nothing_watched": "No service tracked yet",
   "banner.nothing_watched_hint": "This page will give the state of each service as soon as it is added.",
+  "banner.nothing_visible": "No service to show you",
+  "banner.nothing_visible_hint": "Sign in to see your team's services.",
   "banner.add_first_service": "Add a first service",
   "banner.steps_title": "First steps",
   "banner.steps_progress": "Step 1 of 3 done",
