@@ -9,7 +9,7 @@ use super::{
 };
 use crate::clock;
 use crate::i18n::I18n;
-use crate::models::Service;
+use crate::models::{Scope, Service};
 
 /// Hue of an event's current state: the severity while an incident is being
 /// worked on, calm once the service is back, blue for maintenance work.
@@ -334,6 +334,9 @@ pub struct EventSummary {
     /// split by [`ICON_SEPARATOR`].
     #[sqlx(default)]
     pub service_icons: String,
+    /// Their ids, joined with commas, in the same order as the names.
+    #[sqlx(default)]
+    pub service_ids: String,
     /// Latest of the event's own update time and its last posted update.
     /// Only filled by the feed query.
     #[sqlx(default)]
@@ -349,6 +352,31 @@ pub struct EventSummary {
 }
 
 impl EventSummary {
+    /// Drops the services the viewer may not see from the names, icons and
+    /// ids, keeping the three lists aligned. Matches by id: names are not
+    /// unique.
+    pub fn restrict_to(&mut self, scope: &Scope) {
+        if matches!(scope, Scope::All) || self.service_ids.is_empty() {
+            return;
+        }
+        let ids: Vec<&str> = self.service_ids.split(',').collect();
+        let names: Vec<&str> = self.service_names.split(NAME_SEPARATOR).collect();
+        let icons: Vec<&str> = self.service_icons.split(NAME_SEPARATOR).collect();
+        let kept: Vec<usize> = (0..ids.len())
+            .filter(|&i| ids[i].parse().is_ok_and(|id| scope.sees_service(id)))
+            .collect();
+        let pick = |parts: &[&str], separator: &str| {
+            kept.iter()
+                .filter_map(|&i| parts.get(i).copied())
+                .collect::<Vec<_>>()
+                .join(separator)
+        };
+        let name_separator = NAME_SEPARATOR.to_string();
+        self.service_names = pick(&names, &name_separator);
+        self.service_icons = pick(&icons, &name_separator);
+        self.service_ids = pick(&ids, ",");
+    }
+
     pub fn services(&self) -> Vec<&str> {
         self.service_names
             .split(NAME_SEPARATOR)

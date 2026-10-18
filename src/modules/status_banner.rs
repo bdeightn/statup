@@ -17,7 +17,9 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::error::AppError;
 use crate::i18n::I18n;
-use crate::models::{EventSummary, Kind, Lifecycle, Service, ServiceStatus, Tone, split_duration};
+use crate::models::{
+    EventSummary, Kind, Lifecycle, Scope, Service, ServiceStatus, Tone, split_duration,
+};
 use crate::repositories::{EventRepository, OutageRepository, ServiceRepository};
 
 use super::{ColumnWidth, Module, ModuleRenderContext, render_template};
@@ -130,8 +132,8 @@ impl Module for StatusBannerModule {
 
     async fn render(&self, ctx: &ModuleRenderContext<'_>) -> Result<String, AppError> {
         let services = ServiceRepository::list_all(ctx.pool).await?;
-        let events = EventRepository::list_open_for_banner(ctx.pool).await?;
-        let maintenance = EventRepository::list_open_maintenance(ctx.pool).await?;
+        let events = EventRepository::list_open_for_banner(ctx.pool, &Scope::All).await?;
+        let maintenance = EventRepository::list_open_maintenance(ctx.pool, &Scope::All).await?;
         // Only a service the checks found down has an outage to date.
         let outage_starts = if services.iter().any(|s| s.detected_status.is_some()) {
             OutageRepository::open_starts(ctx.pool).await?
@@ -351,6 +353,7 @@ mod tests {
             has_review: false,
             service_names: services.to_string(),
             service_icons: String::new(),
+            service_ids: String::new(),
             last_activity_at: None,
             review_body: None,
             latest_update: None,

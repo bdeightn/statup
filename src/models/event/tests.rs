@@ -2,7 +2,7 @@ use chrono::Utc;
 
 use super::*;
 use crate::i18n::I18n;
-use crate::models::ServiceStatus;
+use crate::models::{Scope, ServiceStatus};
 
 #[test]
 fn incidents_follow_their_severity() {
@@ -73,6 +73,7 @@ fn summary(kind: Kind, severity: Option<Severity>, lifecycle: Option<Lifecycle>)
         has_review: false,
         service_names: String::new(),
         service_icons: String::new(),
+        service_ids: String::new(),
         last_activity_at: None,
         review_body: None,
         latest_update: None,
@@ -403,4 +404,64 @@ fn only_announced_maintenance_waits_to_start() {
             .initial_started_at()
             .is_some()
     );
+}
+
+fn with_three_services() -> EventSummary {
+    let mut event = summary(Kind::Incident, None, None);
+    event.service_ids = "1,2,3".to_string();
+    event.service_names = format!("Mail{NAME_SEPARATOR}Wiki{NAME_SEPARATOR}Mail");
+    event.service_icons = format!(
+        "mail{ICON_SEPARATOR}{NAME_SEPARATOR}{ICON_SEPARATOR}wiki.png{NAME_SEPARATOR}{ICON_SEPARATOR}"
+    );
+    event
+}
+
+#[test]
+fn restricting_keeps_ids_names_and_icons_aligned() {
+    let mut event = with_three_services();
+    event.restrict_to(&Scope::visible(vec![2, 3]));
+    assert_eq!(event.service_ids, "2,3");
+    assert_eq!(event.services(), vec!["Wiki", "Mail"]);
+    let tags = event.service_tags(&I18n::new("en"));
+    assert_eq!(
+        tags[0].icon_url().as_deref(),
+        Some("/uploads/icons/wiki.png")
+    );
+    assert!(tags[1].icon_url().is_none() && tags[1].builtin_icon_paths().is_none());
+}
+
+#[test]
+fn restricting_matches_by_id_when_names_repeat() {
+    let mut event = with_three_services();
+    event.restrict_to(&Scope::visible(vec![3]));
+    assert_eq!(event.service_ids, "3");
+    assert_eq!(event.services(), vec!["Mail"]);
+    assert_eq!(event.service_icons, ICON_SEPARATOR.to_string());
+}
+
+#[test]
+fn restricting_to_everything_or_an_event_without_services_changes_nothing() {
+    let mut event = with_three_services();
+    let before = (
+        event.service_ids.clone(),
+        event.service_names.clone(),
+        event.service_icons.clone(),
+    );
+    event.restrict_to(&Scope::All);
+    assert_eq!(
+        before,
+        (event.service_ids, event.service_names, event.service_icons)
+    );
+
+    let mut bare = summary(Kind::Incident, None, None);
+    bare.restrict_to(&Scope::visible(vec![]));
+    assert!(!bare.has_services());
+}
+
+#[test]
+fn restricting_to_nothing_removes_every_service() {
+    let mut event = with_three_services();
+    event.restrict_to(&Scope::visible(vec![]));
+    assert!(!event.has_services());
+    assert!(event.service_ids.is_empty() && event.service_icons.is_empty());
 }

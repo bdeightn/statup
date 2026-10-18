@@ -11,7 +11,9 @@ use super::form::MaintenanceChoice;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, OptionalUser};
-use crate::models::{Event, EventReview, Kind, Lifecycle, Service, ServiceTag, User, delay_text};
+use crate::models::{
+    Event, EventReview, Kind, Lifecycle, Scope, Service, ServiceTag, User, delay_text,
+};
 use crate::repositories::{EventRepository, EventReviewRepository, ServiceRepository};
 use crate::routes::timeline::{self, TimelineEntry};
 use crate::routes::{Frame, members_only, render};
@@ -207,7 +209,7 @@ async fn load_view(
     user: Option<&User>,
     i18n: &I18n,
 ) -> Result<EventView, AppError> {
-    let ews = EventService::find_with_services(&state.pool, id).await?;
+    let ews = EventService::find_with_services(&state.pool, id, &Scope::All).await?;
     let updates = EventRepository::list_updates(&state.pool, id).await?;
     let last_posted = updates.iter().map(|update| update.created_at).max();
     let author = match user {

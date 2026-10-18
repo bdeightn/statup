@@ -16,7 +16,7 @@ use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::is_htmx;
 use crate::middleware::{CsrfToken, HtmlForm, OptionalUser, RequirePublisher};
 use crate::models::{
-    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, JournalKind, Service,
+    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, JournalKind, Scope, Service,
     ServiceStatus, User, find_builtin_icon,
 };
 use crate::modules::services::{LONG_DAYS, ServiceRow, Strip, service_history, strips};
@@ -729,7 +729,7 @@ pub async fn drawer_content(
         limit: PANEL_EVENTS,
         ..EventFilters::default()
     };
-    let events = EventRepository::list_page(&state.pool, &filters).await?;
+    let events = EventRepository::list_page(&state.pool, &filters, &Scope::All).await?;
     let detected = service.detected_status.is_some()
         && !EventRepository::state_drivers(&state.pool, Some(id))
             .await?

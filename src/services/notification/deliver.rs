@@ -14,7 +14,7 @@ use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::I18n;
 use crate::journal;
-use crate::models::{Channel, ChannelKind, Delivery, Happening, JournalKind};
+use crate::models::{Channel, ChannelKind, Delivery, Happening, JournalKind, Scope};
 use crate::repositories::{
     EventRepository, EventReviewRepository, MemberNoticeRepository, NewJournalEntry,
     NotificationRepository, OutageRepository, ServiceRepository, SettingsRepository,
@@ -224,7 +224,8 @@ async fn load_event(
     event_id: i64,
     delivery: &Delivery,
 ) -> Result<Option<Subject>, AppError> {
-    let Some(found) = EventRepository::find_with_services(pool, event_id).await? else {
+    let Some(found) = EventRepository::find_with_services(pool, event_id, &Scope::All).await?
+    else {
         return Ok(None);
     };
     let message = match (delivery.happening, delivery.update_id) {

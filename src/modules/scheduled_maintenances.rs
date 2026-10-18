@@ -6,7 +6,7 @@ use async_trait::async_trait;
 
 use crate::error::AppError;
 use crate::i18n::I18n;
-use crate::models::{EventSummary, Lifecycle, ServiceTag};
+use crate::models::{EventSummary, Lifecycle, Scope, ServiceTag};
 use crate::repositories::EventRepository;
 
 use super::{ColumnWidth, Module, ModuleRenderContext, render_template};
@@ -56,11 +56,13 @@ impl Module for ScheduledMaintenancesModule {
 
     async fn render(&self, ctx: &ModuleRenderContext<'_>) -> Result<String, AppError> {
         let i18n = ctx.i18n;
-        let open = EventRepository::list_open_maintenance(ctx.pool).await?;
+        let open = EventRepository::list_open_maintenance(ctx.pool, &Scope::All).await?;
         let (ongoing, upcoming): (Vec<_>, Vec<_>) = open
             .iter()
             .partition(|m| m.lifecycle == Some(Lifecycle::InProgress));
-        let finished = EventRepository::list_finished_maintenance(ctx.pool, FINISHED_LIMIT).await?;
+        let finished =
+            EventRepository::list_finished_maintenance(ctx.pool, FINISHED_LIMIT, &Scope::All)
+                .await?;
         let rows = ongoing
             .into_iter()
             .map(|m| ongoing_row(m, i18n))

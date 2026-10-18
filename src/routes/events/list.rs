@@ -12,7 +12,7 @@ use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::is_htmx;
 use crate::middleware::{CsrfToken, OptionalUser};
 use crate::models::{
-    DayGroup, EventFilters, EventSummary, Kind, LifecycleGroup, Service, group_by_day,
+    DayGroup, EventFilters, EventSummary, Kind, LifecycleGroup, Scope, Service, group_by_day,
 };
 use crate::repositories::{EventRepository, ServiceRepository, UserRepository};
 use crate::routes::page::{TitlePart, query_pairs, title_parts};
@@ -169,8 +169,8 @@ async fn load_results(
     i18n: &I18n,
 ) -> Result<EventResults, AppError> {
     let filters = query.filters();
-    let mut events = EventRepository::list_page(&state.pool, &filters).await?;
-    let total = EventRepository::count_filtered(&state.pool, &filters).await?;
+    let mut events = EventRepository::list_page(&state.pool, &filters, &Scope::All).await?;
+    let total = EventRepository::count_filtered(&state.pool, &filters, &Scope::All).await?;
     let has_next = events.len() > usize::try_from(PAGE_SIZE).unwrap_or(usize::MAX);
     events.truncate(usize::try_from(PAGE_SIZE).unwrap_or(usize::MAX));
     Ok(EventResults {

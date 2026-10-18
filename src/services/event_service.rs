@@ -11,7 +11,7 @@ use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{
     CreateEventInput, Event, EventWithServices, Happening, Kind, Lifecycle, NextUpdate,
-    Notification, ReviewSaved, Role, Severity, UpdateEventInput, User,
+    Notification, ReviewSaved, Role, Scope, Severity, UpdateEventInput, User,
 };
 use crate::repositories::{EventRepository, EventReviewRepository};
 use crate::services::{ServiceService, notify};
@@ -220,14 +220,15 @@ impl EventService {
         last_seen_at: Option<DateTime<Utc>>,
     ) -> Result<i64, AppError> {
         let since = last_seen_at.unwrap_or(DateTime::UNIX_EPOCH);
-        Ok(EventRepository::count_since(pool, since).await?)
+        Ok(EventRepository::count_since(pool, since, &Scope::All).await?)
     }
 
     pub async fn find_with_services(
         pool: &DbPool,
         event_id: i64,
+        scope: &Scope,
     ) -> Result<EventWithServices, AppError> {
-        EventRepository::find_with_services(pool, event_id)
+        EventRepository::find_with_services(pool, event_id, scope)
             .await?
             .ok_or(AppError::NotFound)
     }

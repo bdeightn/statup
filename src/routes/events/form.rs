@@ -11,7 +11,7 @@ use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
 use crate::models::{
     Category, CreateEventInput, Event, EventWithServices, JournalKind, Kind, Lifecycle, NextUpdate,
-    SEPARATOR, Service, Severity, UpdateEventInput, User,
+    SEPARATOR, Scope, Service, Severity, UpdateEventInput, User,
 };
 use crate::repositories::{
     CreateTemplateInput, EventRepository, EventTemplateRepository, NewJournalEntry,
@@ -375,7 +375,7 @@ async fn maintenance_choices(
     i18n: &I18n,
 ) -> Result<Vec<MaintenanceChoice>, AppError> {
     let mut choices: Vec<MaintenanceChoice> =
-        EventRepository::list_finished_maintenance(&state.pool, MAINTENANCE_CHOICES)
+        EventRepository::list_finished_maintenance(&state.pool, MAINTENANCE_CHOICES, &Scope::All)
             .await?
             .into_iter()
             .map(|m| {
@@ -411,7 +411,7 @@ pub async fn new_form(
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
     let followed = match query.after {
-        Some(id) => EventRepository::find_with_services(&state.pool, id)
+        Some(id) => EventRepository::find_with_services(&state.pool, id, &Scope::All)
             .await?
             .filter(|ews| ews.event.kind == Kind::Maintenance),
         None => None,
@@ -538,7 +538,7 @@ pub async fn edit_form(
     csrf_token: CsrfToken,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    let ews = EventService::find_with_services(&state.pool, id).await?;
+    let ews = EventService::find_with_services(&state.pool, id, &Scope::All).await?;
     if !can_modify(&ews.event, user.role) {
         return Err(AppError::refused("validation.event_closed_admin_only"));
     }
@@ -555,7 +555,7 @@ pub async fn update(
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<EventInput>,
 ) -> Result<Response, AppError> {
-    let event = EventService::find_with_services(&state.pool, id)
+    let event = EventService::find_with_services(&state.pool, id, &Scope::All)
         .await?
         .event;
     let (kind, planned) = (event.kind, event.planned);

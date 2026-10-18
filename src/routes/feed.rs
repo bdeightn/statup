@@ -13,7 +13,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::OptionalUser;
-use crate::models::{EventSummary, EventUpdateWithAuthor};
+use crate::models::{EventSummary, EventUpdateWithAuthor, Scope};
 use crate::repositories::EventRepository;
 use crate::services::sanitize_markdown;
 use crate::state::AppState;
@@ -67,7 +67,7 @@ pub async fn atom(
         return Ok(Redirect::to("/login").into_response());
     }
 
-    let events = EventRepository::list_for_feed(&state.pool, FEED_SIZE).await?;
+    let events = EventRepository::list_for_feed(&state.pool, FEED_SIZE, &Scope::All).await?;
     let last_activity = events.iter().map(last_activity_of).max();
     if let Some(modified) = last_activity
         && not_modified_since(&headers, modified)
