@@ -9,8 +9,8 @@ use super::detail::{Composer, ReviewForm, detail_page, drawer_page};
 use super::{record_event, title_of};
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
-use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
-use crate::models::{JournalKind, Lifecycle, User};
+use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher, Viewer};
+use crate::models::{JournalKind, Lifecycle, Scope, User};
 use crate::repositories::NewJournalEntry;
 use crate::routes::render;
 use crate::services::{EventService, read_next_update};
@@ -79,10 +79,14 @@ pub async fn add_update(
         Err(AppError::Validation(key)) => {
             let composer = input.refused(&key, &i18n);
             let review_form = ReviewForm::default();
+            let viewer = Viewer {
+                user: Some(user),
+                scope: Scope::All,
+            };
             let page = detail_page(
                 &state,
                 id,
-                Some(&user),
+                &viewer,
                 csrf_token.0,
                 i18n,
                 composer,
@@ -111,7 +115,11 @@ pub async fn add_update_in_panel(
         Err(e) => return Err(e),
     };
     let posted = composer.error.is_none();
-    let page = drawer_page(&state, id, Some(&user), csrf_token.0, i18n, composer).await?;
+    let viewer = Viewer {
+        user: Some(user),
+        scope: Scope::All,
+    };
+    let page = drawer_page(&state, id, &viewer, csrf_token.0, i18n, composer).await?;
     let mut response = render(&page)?;
     if posted {
         response

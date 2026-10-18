@@ -13,9 +13,9 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::OptionalUser;
-use crate::models::{EventSummary, EventUpdateWithAuthor, Scope};
+use crate::models::{EventSummary, EventUpdateWithAuthor};
 use crate::repositories::EventRepository;
-use crate::services::sanitize_markdown;
+use crate::services::{sanitize_markdown, scope_of};
 use crate::state::AppState;
 
 const FEED_SIZE: i64 = 50;
@@ -67,7 +67,10 @@ pub async fn atom(
         return Ok(Redirect::to("/login").into_response());
     }
 
-    let events = EventRepository::list_for_feed(&state.pool, FEED_SIZE, &Scope::All).await?;
+    // Always what a visitor sees: in public mode the response is cached
+    // `public`, so a member's version must never reach anyone else.
+    let scope = scope_of(&state.pool, None).await?;
+    let events = EventRepository::list_for_feed(&state.pool, FEED_SIZE, &scope).await?;
     let last_activity = events.iter().map(last_activity_of).max();
     if let Some(modified) = last_activity
         && not_modified_since(&headers, modified)

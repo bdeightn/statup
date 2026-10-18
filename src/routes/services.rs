@@ -14,9 +14,9 @@ use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::is_htmx;
-use crate::middleware::{CsrfToken, HtmlForm, OptionalUser, RequirePublisher};
+use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher, Viewer};
 use crate::models::{
-    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, JournalKind, Scope, Service,
+    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, JournalKind, Service,
     ServiceStatus, User, find_builtin_icon,
 };
 use crate::modules::services::{LONG_DAYS, ServiceRow, Strip, service_history, strips};
@@ -712,14 +712,17 @@ impl ServiceDrawerTemplate {
 /// A service as the side panel shows it to anyone who may read the page:
 /// what it is, how it fared this month, its last events.
 pub async fn drawer_content(
-    OptionalUser(user): OptionalUser,
+    viewer: Viewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     headers: HeaderMap,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    if let Some(redirect) = members_only(&state, user.as_ref(), &headers) {
+    if let Some(redirect) = members_only(&state, viewer.user.as_ref(), &headers) {
         return Ok(redirect);
+    }
+    if !viewer.scope.sees_service(id) {
+        return Err(AppError::NotFound);
     }
     let service = ServiceRepository::find_by_id(&state.pool, id)
         .await?
@@ -729,7 +732,7 @@ pub async fn drawer_content(
         limit: PANEL_EVENTS,
         ..EventFilters::default()
     };
-    let events = EventRepository::list_page(&state.pool, &filters, &Scope::All).await?;
+    let events = EventRepository::list_page(&state.pool, &filters, &viewer.scope).await?;
     let detected = service.detected_status.is_some()
         && !EventRepository::state_drivers(&state.pool, Some(id))
             .await?
@@ -739,7 +742,7 @@ pub async fn drawer_content(
         row,
         events,
         detected,
-        can_edit: user.is_some_and(|u| u.role.can_publish()),
+        can_edit: viewer.user.is_some_and(|u| u.role.can_publish()),
         i18n,
     })
 }
