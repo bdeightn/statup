@@ -100,9 +100,12 @@ impl Module for ServicesModule {
     }
 
     async fn render(&self, ctx: &ModuleRenderContext<'_>) -> Result<String, AppError> {
+        // The reader's scope comes first: a hidden service with a problem
+        // must not come back through the rule below.
         let services: Vec<Service> = ServiceService::list_for_display(ctx.pool)
             .await?
             .into_iter()
+            .filter(|service| ctx.scope.sees_service(service.id))
             .filter(|service| {
                 service.status != ServiceStatus::Operational || !is_left_out(service, ctx.hidden)
             })

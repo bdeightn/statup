@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::I18n;
-use crate::models::User;
+use crate::models::{Scope, User};
 
 pub mod recent_activity;
 pub mod scheduled_maintenances;
@@ -25,6 +25,8 @@ static REGISTRY: LazyLock<ModuleRegistry> = LazyLock::new(ModuleRegistry::builti
 pub struct ModuleRenderContext<'a> {
     pub pool: &'a DbPool,
     pub user: Option<&'a User>,
+    /// The services this reader may see; events follow them.
+    pub scope: &'a Scope,
     pub i18n: &'a I18n,
     /// Where readers find the page.
     pub page_address: &'a str,

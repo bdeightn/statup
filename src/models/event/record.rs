@@ -377,6 +377,14 @@ impl EventSummary {
         self.service_ids = pick(&ids, ",");
     }
 
+    /// Whether the event names this service. By id: two services may share
+    /// a name.
+    pub fn names_service(&self, id: i64) -> bool {
+        self.service_ids
+            .split(',')
+            .any(|part| part.parse::<i64>().is_ok_and(|named| named == id))
+    }
+
     pub fn services(&self) -> Vec<&str> {
         self.service_names
             .split(NAME_SEPARATOR)

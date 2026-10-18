@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::I18n;
-use crate::models::{ActivityKind, DayGroup, EventSummary, Scope, group_by_day};
+use crate::models::{ActivityKind, DayGroup, EventSummary, group_by_day};
 use crate::repositories::EventRepository;
 
 use super::{ColumnWidth, Module, ModuleOption, ModuleRenderContext, render_template};
@@ -44,7 +44,7 @@ impl Module for RecentActivityModule {
     async fn render(&self, ctx: &ModuleRenderContext<'_>) -> Result<String, AppError> {
         let kinds = shown_kinds(ctx.hidden);
         let events =
-            EventRepository::list_recent_activity(ctx.pool, LIMIT, &kinds, &Scope::All).await?;
+            EventRepository::list_recent_activity(ctx.pool, LIMIT, &kinds, ctx.scope).await?;
         let template = RecentActivityTemplate {
             groups: group_by_day(events, ctx.i18n, |event| &event.created_at),
             i18n: ctx.i18n.clone(),

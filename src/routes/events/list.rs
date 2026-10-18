@@ -10,7 +10,7 @@ use crate::clock;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::is_htmx;
-use crate::middleware::{CsrfToken, OptionalUser};
+use crate::middleware::{CsrfToken, Viewer};
 use crate::models::{
     DayGroup, EventFilters, EventSummary, Kind, LifecycleGroup, Scope, Service, group_by_day,
 };
@@ -166,11 +166,12 @@ struct EventResultsTemplate {
 async fn load_results(
     state: &AppState,
     query: &ListQuery,
+    scope: &Scope,
     i18n: &I18n,
 ) -> Result<EventResults, AppError> {
     let filters = query.filters();
-    let mut events = EventRepository::list_page(&state.pool, &filters, &Scope::All).await?;
-    let total = EventRepository::count_filtered(&state.pool, &filters, &Scope::All).await?;
+    let mut events = EventRepository::list_page(&state.pool, &filters, scope).await?;
+    let total = EventRepository::count_filtered(&state.pool, &filters, scope).await?;
     let has_next = events.len() > usize::try_from(PAGE_SIZE).unwrap_or(usize::MAX);
     events.truncate(usize::try_from(PAGE_SIZE).unwrap_or(usize::MAX));
     Ok(EventResults {
@@ -187,29 +188,32 @@ async fn load_results(
 }
 
 pub async fn list(
-    OptionalUser(user): OptionalUser,
+    viewer: Viewer,
     State(state): State<AppState>,
     Query(query): Query<ListQuery>,
     headers: HeaderMap,
     csrf_token: CsrfToken,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    if let Some(redirect) = members_only(&state, user.as_ref(), &headers) {
+    let user = viewer.user.as_ref();
+    if let Some(redirect) = members_only(&state, user, &headers) {
         return Ok(redirect);
     }
-    let results = load_results(&state, &query, &i18n).await?;
+    let results = load_results(&state, &query, &viewer.scope, &i18n).await?;
     if is_htmx(&headers) {
         return render(&EventResultsTemplate { results, i18n });
     }
-    let frame = Frame::load(&state.pool, user.as_ref(), csrf_token.0, &i18n).await?;
-    if let Some(u) = &user {
+    let frame = Frame::load(&state.pool, user, csrf_token.0, &i18n).await?;
+    if let Some(u) = user {
         UserRepository::mark_seen(&state.pool, u.id).await;
     }
+    let mut services = ServiceRepository::list_all(&state.pool).await?;
+    services.retain(|service| viewer.scope.sees_service(service.id));
     render(&EventListTemplate {
         frame,
         results,
         query,
-        services: ServiceRepository::list_all(&state.pool).await?,
+        services,
         i18n,
     })
 }

@@ -11,8 +11,9 @@ use tower_sessions::Session;
 
 use crate::db::DbPool;
 use crate::error::AppError;
-use crate::models::User;
+use crate::models::{Scope, User};
 use crate::repositories::UserRepository;
+use crate::services::scope_of;
 use crate::session::{
     USER_ID_KEY, apply_signed_in_expiry, credential_matches, read_value, refresh_signed_in,
 };
@@ -58,6 +59,28 @@ where
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         Ok(OptionalUser(signed_in_user(parts, state).await))
+    }
+}
+
+/// Whoever reads a page, signed in or not, with the services they may see.
+/// Pages that show services or events take it instead of [`OptionalUser`],
+/// so their queries cannot run without a scope.
+pub struct Viewer {
+    pub user: Option<User>,
+    pub scope: Scope,
+}
+
+impl<S> FromRequestParts<S> for Viewer
+where
+    S: Send + Sync,
+    DbPool: FromRef<S>,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let user = signed_in_user(parts, state).await;
+        let scope = scope_of(&DbPool::from_ref(state), user.as_ref()).await?;
+        Ok(Viewer { user, scope })
     }
 }
 
