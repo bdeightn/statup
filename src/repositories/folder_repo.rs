@@ -265,7 +265,7 @@ impl FolderRepository {
 }
 
 /// Copies the folder's setting to the services that follow it.
-async fn propagate(
+pub(super) async fn propagate(
     tx: &mut sqlx::Transaction<'_, Sqlite>,
     folder_id: i64,
 ) -> Result<(), sqlx::Error> {

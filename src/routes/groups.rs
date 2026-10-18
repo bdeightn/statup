@@ -3,23 +3,19 @@
 //! opens are listed, the group renamed, and deleted at its foot. A service
 //! then says which groups see it.
 
-use std::collections::HashMap;
-
 use askama::Template;
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
 use super::admin::refused_page;
-use super::{Frame, render};
-use crate::db::DbPool;
+use super::group_access::{AccessFolder, AccessQuery, GroupAccess};
+use super::{Frame, group_access, render};
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
-use crate::models::{GroupMember, JournalKind, MemberGroup, Service, User, check_group_name};
-use crate::repositories::{
-    FolderRepository, GroupRepository, NewJournalEntry, ServiceRepository, UserRepository,
-};
+use crate::models::{GroupMember, JournalKind, MemberGroup, User, check_group_name};
+use crate::repositories::{GroupRepository, NewJournalEntry, UserRepository};
 use crate::state::AppState;
 
 #[derive(Template)]
@@ -30,8 +26,8 @@ struct GroupTemplate {
     members: Vec<GroupMember>,
     /// Active readers not in the group, offered by "Add members".
     outsiders: Vec<GroupMember>,
-    /// The restricted services it opens, with the folder each one is in.
-    services: Vec<(Service, Option<String>)>,
+    /// The restricted folders and services it opens, and those it may.
+    access: GroupAccess,
     /// How many services only this group opens, said before it is deleted.
     closes: usize,
     notice: Option<GroupNotice>,
@@ -48,6 +44,19 @@ impl GroupTemplate {
         self.i18n
             .tf("admin.group_service_folder", &[("folder", folder)])
     }
+
+    /// "Folder, 2 services", or "Folder" when none of its services follows it.
+    fn folder_meta(&self, folder: &AccessFolder) -> String {
+        if folder.followers == 0 {
+            return self.i18n.t("admin.access_folder").to_string();
+        }
+        self.i18n
+            .plural("admin.access_folder_services", folder.followers)
+    }
+
+    fn remove_label(&self, name: &str) -> String {
+        self.i18n.tf("admin.remove_access_aria", &[("name", name)])
+    }
 }
 
 /// What the previous action did, said once on top of the page.
@@ -56,6 +65,8 @@ enum GroupNotice {
     Renamed,
     Added(String),
     Removed(String),
+    /// What opening or taking away a folder or a service did.
+    Access(String),
 }
 
 /// The rename panel, open again with the refused name and why.
@@ -131,7 +142,7 @@ async fn render_group(
         frame: Frame::load(&state.pool, Some(admin), csrf_token, &i18n).await?,
         members: GroupRepository::members(&state.pool, id).await?,
         outsiders: GroupRepository::outsiders(&state.pool, id).await?,
-        services: services_opened(&state.pool, id).await?,
+        access: GroupAccess::load(&state.pool, id).await?,
         closes: GroupRepository::services_closed_by_deleting(&state.pool, id).await?,
         group,
         notice,
@@ -145,10 +156,14 @@ pub async fn group_page(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Query(query): Query<GroupQuery>,
+    Query(access): Query<AccessQuery>,
     CsrfToken(csrf_token): CsrfToken,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    let notice = notice_of(&state, &query, &i18n).await?;
+    let notice = match group_access::notice(&state.pool, &i18n, &access).await? {
+        Some(text) => Some(GroupNotice::Access(text)),
+        None => notice_of(&state, &query, &i18n).await?,
+    };
     let page = (notice, RenameForm::default());
     render_group(&state, &admin, csrf_token, i18n, id, page).await
 }
@@ -258,29 +273,6 @@ pub async fn remove_member(
         .record(&state.pool)
         .await;
     Ok(Redirect::to(&format!("/admin/groups/{id}?removed={user_id}")).into_response())
-}
-
-/// The restricted services the group opens, in the chosen order, with
-/// their folder.
-async fn services_opened(
-    pool: &DbPool,
-    id: i64,
-) -> Result<Vec<(Service, Option<String>)>, AppError> {
-    let opened = GroupRepository::service_ids(pool, id).await?;
-    let folders: HashMap<i64, String> = FolderRepository::list(pool)
-        .await?
-        .into_iter()
-        .map(|folder| (folder.id, folder.name))
-        .collect();
-    Ok(ServiceRepository::list_all(pool)
-        .await?
-        .into_iter()
-        .filter(|service| opened.contains(&service.id))
-        .map(|service| {
-            let folder = service.folder_id.and_then(|f| folders.get(&f).cloned());
-            (service, folder)
-        })
-        .collect())
 }
 
 /// The line for one member who joined or left a group.

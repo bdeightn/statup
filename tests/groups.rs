@@ -117,6 +117,12 @@ fn picker(body: &str) -> &str {
     between(body, r#"class="picker-list""#, "data-filter-none")
 }
 
+/// What the group opens, without the panel that adds to it.
+fn services_list(body: &str) -> &str {
+    let card = between(body, "group-services", "</section>");
+    &card[card.find("</header>").expect("card header not found")..]
+}
+
 /// The link to a group on the Team page.
 fn group_link(body: &str, id: i64) -> &str {
     between(
@@ -527,27 +533,381 @@ async fn a_group_page_lists_the_restricted_services_it_opens() {
         .unwrap();
 
     let body = page(&app, &format!("/admin/groups/{compta}")).await;
-    let card = between(&body, "group-services", "</section>");
-    assert!(card.contains("Paie Alpha"), "opened to the group itself");
-    assert!(card.contains("Notes Beta"), "opened through its folder");
-    let folder_label =
-        I18n::new(LANGUAGES[0].code).tf("admin.group_service_folder", &[("folder", "Finances")]);
-    assert!(card.contains(&folder_label));
+    let list = services_list(&body);
+    assert!(list.contains("Paie Alpha"), "opened to the group itself");
     assert!(
-        !card.contains("Wiki Gamma"),
+        list.contains(&format!(r#"href="/services/folders/{folder}""#))
+            && list.contains("Finances"),
+        "the folder it opens is a row of its own"
+    );
+    assert!(
+        list.contains(&plural("admin.access_folder_services", 1)),
+        "with the number of services that follow it"
+    );
+    assert!(
+        !list.contains("Notes Beta"),
+        "a service that follows its folder is not listed alone"
+    );
+    assert!(
+        !list.contains("Wiki Gamma"),
         "a public service is not the group's"
     );
     assert!(
-        !card.contains("Imprimantes Delta"),
+        !list.contains("Imprimantes Delta"),
         "another group's service"
     );
 
     let body = page(&app, &format!("/admin/groups/{lyon}")).await;
-    assert!(between(&body, "group-services", "</section>").contains("Imprimantes Delta"));
+    assert!(services_list(&body).contains("Imprimantes Delta"));
     let empty = create_group(&app, "Vide").await;
     let body = page(&app, &format!("/admin/groups/{empty}")).await;
-    assert!(
-        between(&body, "group-services", "</section>")
-            .contains(&text("admin.group_services_empty"))
+    assert!(services_list(&body).contains(&text("admin.group_services_empty")));
+}
+
+/// A journal line: kind, subject, detail.
+type JournalLine = (String, Option<String>, Option<String>);
+
+fn journal_line(kind: &str, subject: &str, detail: &str) -> JournalLine {
+    (
+        kind.to_string(),
+        Some(subject.to_string()),
+        Some(detail.to_string()),
+    )
+}
+
+/// The visibility lines of the journal, oldest first.
+async fn visibility_lines(app: &TestApp) -> Vec<JournalLine> {
+    sqlx::query_as(
+        "SELECT kind, subject, detail FROM journal_entries \
+         WHERE kind IN ('folder_visibility_changed', 'service_visibility_changed') ORDER BY id",
+    )
+    .fetch_all(&app.pool)
+    .await
+    .expect("failed to read the journal")
+}
+
+async fn restricted_folder(app: &TestApp, name: &str, groups: &[i64]) -> i64 {
+    let id = FolderRepository::create(&app.pool, name)
+        .await
+        .expect("failed to create folder");
+    FolderRepository::set_visibility(&app.pool, id, Visibility::Groups, Grants::groups(groups))
+        .await
+        .expect("failed to restrict the folder");
+    id
+}
+
+async fn plain_service(app: &TestApp, name: &str) -> i64 {
+    ServiceRepository::create(&app.pool, name, &name.to_lowercase(), None, None, None)
+        .await
+        .expect("failed to create service")
+        .id
+}
+
+async fn restricted_service(app: &TestApp, name: &str, groups: &[i64]) -> i64 {
+    let id = plain_service(app, name).await;
+    ServiceRepository::set_visibility(&app.pool, id, Visibility::Groups, Grants::groups(groups))
+        .await
+        .expect("failed to restrict the service");
+    id
+}
+
+/// A public service put in a restricted folder: it follows the folder.
+async fn follower_of(app: &TestApp, folder: i64, name: &str) -> i64 {
+    let id = plain_service(app, name).await;
+    FolderRepository::add_services(&app.pool, folder, &[id])
+        .await
+        .expect("failed to fill the folder");
+    id
+}
+
+async fn service_groups(app: &TestApp, id: i64) -> Vec<i64> {
+    ServiceRepository::group_ids_of(&app.pool, id)
+        .await
+        .expect("failed to read service access")
+}
+
+async fn folder_groups(app: &TestApp, id: i64) -> Vec<i64> {
+    FolderRepository::group_ids_of(&app.pool, id)
+        .await
+        .expect("failed to read folder access")
+}
+
+async fn service_visibility(app: &TestApp, id: i64) -> Visibility {
+    ServiceRepository::find_by_id(&app.pool, id)
+        .await
+        .expect("failed to read the service")
+        .expect("service not found")
+        .visibility
+}
+
+/// Open folders and services to a group as its panel sends them.
+async fn open_access(
+    app: &TestApp,
+    group: i64,
+    folders: &[i64],
+    services: &[i64],
+) -> (StatusCode, Option<String>) {
+    let ids: Vec<(&str, String)> = folders
+        .iter()
+        .map(|id| ("folder_ids", id.to_string()))
+        .chain(services.iter().map(|id| ("service_ids", id.to_string())))
+        .collect();
+    let fields: Vec<(&str, &str)> = ids.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let (status, _, location) =
+        post_team(app, &format!("/admin/groups/{group}/access"), &fields).await;
+    (status, location)
+}
+
+#[tokio::test]
+async fn opening_a_folder_and_a_service_from_the_group_page() {
+    let app = spawn_with_admin().await;
+    let other = create_group(&app, "Lyon").await;
+    let compta = create_group(&app, "Compta").await;
+    let folder = restricted_folder(&app, "Finances", &[other]).await;
+    let follower = follower_of(&app, folder, "Notes Beta").await;
+    let own = restricted_service(&app, "Paie Alpha", &[other]).await;
+    assert_eq!(service_groups(&app, follower).await, vec![other]);
+
+    let (status, location) = open_access(&app, compta, &[folder], &[own]).await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        location.as_deref(),
+        Some(format!("/admin/groups/{compta}?opened=2").as_str()),
+        "the follower of the folder and the service"
     );
+    assert_eq!(folder_groups(&app, folder).await, vec![other, compta]);
+    assert_eq!(service_groups(&app, own).await, vec![other, compta]);
+    assert_eq!(
+        service_groups(&app, follower).await,
+        vec![other, compta],
+        "the follower takes the folder's copy"
+    );
+    assert_eq!(
+        visibility_lines(&app).await,
+        [
+            journal_line(
+                "folder_visibility_changed",
+                "Finances",
+                "groups:2;members:0"
+            ),
+            journal_line(
+                "service_visibility_changed",
+                "Paie Alpha",
+                "groups:2;members:0"
+            ),
+        ]
+    );
+    let body = page_after(&app, location).await;
+    assert!(body.contains(&plural("admin.notice_opened", 2)));
+}
+
+#[tokio::test]
+async fn opening_only_ever_opens_what_is_restricted_with_its_own_setting() {
+    let app = spawn_with_admin().await;
+    let other = create_group(&app, "Lyon").await;
+    let compta = create_group(&app, "Compta").await;
+    let folder = restricted_folder(&app, "Finances", &[other]).await;
+    let follower = follower_of(&app, folder, "Notes Beta").await;
+    let public = plain_service(&app, "Wiki Gamma").await;
+    let members = plain_service(&app, "Annuaire Delta").await;
+    ServiceRepository::set_visibility(&app.pool, members, Visibility::Members, Grants::groups(&[]))
+        .await
+        .unwrap();
+
+    let (status, location) = open_access(&app, compta, &[], &[public, members, follower]).await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        location.as_deref(),
+        Some(format!("/admin/groups/{compta}?opened=0").as_str())
+    );
+    assert_eq!(service_visibility(&app, public).await, Visibility::Everyone);
+    assert_eq!(service_visibility(&app, members).await, Visibility::Members);
+    assert_eq!(service_visibility(&app, follower).await, Visibility::Groups);
+    assert_eq!(service_groups(&app, public).await, Vec::<i64>::new());
+    assert_eq!(service_groups(&app, members).await, Vec::<i64>::new());
+    assert_eq!(service_groups(&app, follower).await, vec![other]);
+    assert!(visibility_lines(&app).await.is_empty());
+    let body = page_after(&app, location).await;
+    assert!(
+        !body.contains("form-notice"),
+        "nothing was opened, nothing is said"
+    );
+}
+
+#[tokio::test]
+async fn the_panel_offers_only_what_adding_can_open() {
+    let app = spawn_with_admin().await;
+    let other = create_group(&app, "Lyon").await;
+    let compta = create_group(&app, "Compta").await;
+    let offered_folder = restricted_folder(&app, "Archives Orion", &[other]).await;
+    follower_of(&app, offered_folder, "Suiveur Nova").await;
+    restricted_folder(&app, "Finances Atlas", &[compta]).await;
+    restricted_service(&app, "Coffre Zephyr", &[other]).await;
+    restricted_service(&app, "Paie Alpha", &[compta]).await;
+    plain_service(&app, "Wiki Gamma").await;
+
+    let body = page(&app, &format!("/admin/groups/{compta}")).await;
+    let panel = between(
+        &body,
+        &format!(r#"action="/admin/groups/{compta}/access""#),
+        "</form>",
+    );
+
+    assert!(panel.contains("Archives Orion"), "a restricted folder");
+    assert!(panel.contains("Coffre Zephyr"), "a restricted service");
+    assert!(
+        !panel.contains("Suiveur Nova"),
+        "a follower is reached through its folder"
+    );
+    assert!(!panel.contains("Wiki Gamma"), "a public service");
+    assert!(!panel.contains("Finances Atlas"), "a folder already open");
+    assert!(!panel.contains("Paie Alpha"), "a service already open");
+}
+
+#[tokio::test]
+async fn taking_a_folder_away_leaves_the_services_that_have_their_own_setting() {
+    let app = spawn_with_admin().await;
+    let other = create_group(&app, "Lyon").await;
+    let compta = create_group(&app, "Compta").await;
+    let folder = restricted_folder(&app, "Finances", &[compta]).await;
+    let follower = follower_of(&app, folder, "Notes Beta").await;
+    let own = restricted_service(&app, "Paie Alpha", &[compta, other]).await;
+    FolderRepository::add_services(&app.pool, folder, &[own])
+        .await
+        .unwrap();
+    assert_eq!(service_groups(&app, follower).await, vec![compta]);
+
+    let (status, _, location) = post_team(
+        &app,
+        &format!("/admin/groups/{compta}/folders/{folder}/remove"),
+        &[],
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        location.as_deref(),
+        Some(format!("/admin/groups/{compta}?closed_folder={folder}&staff_only=1").as_str()),
+        "only the follower was left with nobody"
+    );
+    assert_eq!(folder_groups(&app, folder).await, Vec::<i64>::new());
+    assert_eq!(service_groups(&app, follower).await, Vec::<i64>::new());
+    assert_eq!(
+        service_groups(&app, own).await,
+        vec![other, compta],
+        "a service with its own setting keeps the group"
+    );
+    assert_eq!(
+        visibility_lines(&app).await,
+        [journal_line(
+            "folder_visibility_changed",
+            "Finances",
+            "groups:0;members:0"
+        )]
+    );
+    let body = page_after(&app, location).await;
+    assert!(body.contains(
+        &I18n::new(LANGUAGES[0].code).tf("admin.notice_access_removed", &[("name", "Finances")])
+    ));
+    assert!(
+        body.contains(&plural("admin.notice_staff_only", 1).replace('\'', "&#39;")),
+        "the page escapes the apostrophe of the sentence"
+    );
+}
+
+#[tokio::test]
+async fn taking_a_service_away_is_done_once_and_only_for_its_own_setting() {
+    let app = spawn_with_admin().await;
+    let other = create_group(&app, "Lyon").await;
+    let compta = create_group(&app, "Compta").await;
+    let own = restricted_service(&app, "Paie Alpha", &[compta, other]).await;
+    let folder = restricted_folder(&app, "Finances", &[compta]).await;
+    let follower = follower_of(&app, folder, "Notes Beta").await;
+    let path = format!("/admin/groups/{compta}/services/{own}/remove");
+
+    let (status, _, location) = post_team(&app, &path, &[]).await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        location.as_deref(),
+        Some(format!("/admin/groups/{compta}?closed_service={own}&staff_only=0").as_str())
+    );
+    assert_eq!(service_groups(&app, own).await, vec![other]);
+    let lines = [journal_line(
+        "service_visibility_changed",
+        "Paie Alpha",
+        "groups:1;members:0",
+    )];
+    assert_eq!(visibility_lines(&app).await, lines);
+    let body = page_after(&app, location).await;
+    assert!(body.contains(
+        &I18n::new(LANGUAGES[0].code).tf("admin.notice_access_removed", &[("name", "Paie Alpha")])
+    ));
+    assert!(!body.contains(&plural("admin.notice_staff_only", 0)));
+
+    let (status, _, _) = post_team(&app, &path, &[]).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "already taken away");
+    assert_eq!(visibility_lines(&app).await, lines, "no second line");
+
+    let by_service = format!("/admin/groups/{compta}/services/{follower}/remove");
+    let (status, _, _) = post_team(&app, &by_service, &[]).await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "a follower goes with its folder"
+    );
+    assert_eq!(service_groups(&app, follower).await, vec![compta]);
+    assert_eq!(visibility_lines(&app).await, lines);
+}
+
+#[tokio::test]
+async fn only_an_administrator_opens_or_takes_away_access() {
+    for role in [Role::Publisher, Role::Reader] {
+        let app = TestApp::spawn().await;
+        app.create_user("who@test.com", "some_password_12", "Who", role)
+            .await;
+        let compta = create_group(&app, "Compta").await;
+        let other = create_group(&app, "Lyon").await;
+        let folder = restricted_folder(&app, "Finances", &[compta]).await;
+        let closed = restricted_service(&app, "Coffre Zephyr", &[other]).await;
+        let open = restricted_service(&app, "Paie Alpha", &[compta]).await;
+        app.login("who@test.com", "some_password_12").await;
+        let csrf = app.csrf_from("/").await;
+        let (folder_id, closed_id) = (folder.to_string(), closed.to_string());
+        let group = format!("/admin/groups/{compta}");
+
+        let attempts: [(String, Vec<(&str, &str)>); 3] = [
+            (
+                format!("{group}/access"),
+                vec![("folder_ids", &folder_id), ("service_ids", &closed_id)],
+            ),
+            (format!("{group}/folders/{folder}/remove"), vec![]),
+            (format!("{group}/services/{open}/remove"), vec![]),
+        ];
+        for (path, fields) in &attempts {
+            let (status, _, _) = app.post_form(path, &csrf, fields).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{role:?} on {path}");
+        }
+
+        assert_eq!(folder_groups(&app, folder).await, vec![compta]);
+        assert_eq!(service_groups(&app, closed).await, vec![other]);
+        assert_eq!(service_groups(&app, open).await, vec![compta]);
+        assert!(visibility_lines(&app).await.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn an_unknown_group_opens_and_closes_nothing() {
+    let app = spawn_with_admin().await;
+
+    for path in [
+        "/admin/groups/9999/access",
+        "/admin/groups/9999/folders/1/remove",
+        "/admin/groups/9999/services/1/remove",
+    ] {
+        let (status, _, _) = post_team(&app, path, &[]).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+    }
 }

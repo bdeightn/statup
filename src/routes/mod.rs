@@ -13,6 +13,7 @@ mod dashboard_layout;
 mod events;
 mod feed;
 mod folders;
+mod group_access;
 mod groups;
 mod health;
 mod icons;
@@ -275,6 +276,15 @@ fn admin_routes() -> Router<AppState> {
             post(groups::remove_member),
         )
         .route("/admin/groups/{id}/delete", post(groups::delete_group))
+        .route("/admin/groups/{id}/access", post(group_access::open))
+        .route(
+            "/admin/groups/{id}/folders/{folder_id}/remove",
+            post(group_access::close_folder),
+        )
+        .route(
+            "/admin/groups/{id}/services/{service_id}/remove",
+            post(group_access::close_service),
+        )
         .route(
             "/admin/dashboard/layout/order",
             post(dashboard_layout::save_order),

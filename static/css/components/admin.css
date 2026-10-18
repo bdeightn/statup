@@ -1438,6 +1438,23 @@
         white-space: nowrap;
     }
 
+    .group-access-end {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+
+    /* A panel in sections, folders then services: the first heading at the
+       top, each list right under its heading. */
+    .member-picker-panel > input[type="hidden"] + .grant-section {
+        margin-top: 0;
+    }
+
+    .member-picker-panel .grant-section + .picker-list {
+        margin-top: 4px;
+        border-top: 0;
+    }
+
     /* Without a search box, the list starts at the top of its panel. */
     .member-picker-panel > input[type="hidden"] + .picker-list {
         margin-top: -8px;

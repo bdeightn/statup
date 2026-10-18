@@ -157,17 +157,128 @@ impl GroupRepository {
         .await
     }
 
-    /// The restricted services this group opens, of its own or through a
-    /// folder.
-    pub async fn service_ids(pool: &DbPool, group_id: i64) -> Result<Vec<i64>, sqlx::Error> {
+    /// The restricted services opened to this group on their own, not
+    /// through the folder they follow.
+    pub async fn own_service_ids(pool: &DbPool, group_id: i64) -> Result<Vec<i64>, sqlx::Error> {
         sqlx::query_scalar(
             "SELECT a.service_id FROM service_access a \
              JOIN services s ON s.id = a.service_id \
-             WHERE a.group_id = ? AND s.visibility = 'groups'",
+             WHERE a.group_id = ? AND s.visibility = 'groups' AND s.follows_folder = 0",
         )
         .bind(group_id)
         .fetch_all(pool)
         .await
+    }
+
+    /// The restricted folders opened to this group.
+    pub async fn folder_ids(pool: &DbPool, group_id: i64) -> Result<Vec<i64>, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT a.folder_id FROM folder_access a \
+             JOIN service_folders f ON f.id = a.folder_id \
+             WHERE a.group_id = ? AND f.visibility = 'groups'",
+        )
+        .bind(group_id)
+        .fetch_all(pool)
+        .await
+    }
+
+    /// Opens restricted folders and services to the group and returns those
+    /// it opened. Only what is restricted is opened, so nothing is ever hidden
+    /// from anyone; a service that follows its folder is reached through the
+    /// folder, which its followers then copy.
+    pub async fn open_to(
+        pool: &DbPool,
+        group_id: i64,
+        folder_ids: &[i64],
+        service_ids: &[i64],
+    ) -> Result<(Vec<i64>, Vec<i64>), sqlx::Error> {
+        let folders = serde_json::to_string(folder_ids).unwrap_or_default();
+        let services = serde_json::to_string(service_ids).unwrap_or_default();
+        // The writes come first: a deferred transaction that read first
+        // could copy a value another writer has changed since.
+        let mut tx = pool.begin().await?;
+        let opened_folders: Vec<i64> = sqlx::query_scalar(
+            "INSERT INTO folder_access (folder_id, group_id) \
+             SELECT f.id, g.id FROM service_folders f JOIN member_groups g ON g.id = ?1 \
+             WHERE f.visibility = 'groups' AND f.id IN (SELECT value FROM json_each(?2)) \
+             AND NOT EXISTS (SELECT 1 FROM folder_access a \
+                             WHERE a.folder_id = f.id AND a.group_id = g.id) \
+             RETURNING folder_id",
+        )
+        .bind(group_id)
+        .bind(&folders)
+        .fetch_all(&mut *tx)
+        .await?;
+        let opened_services: Vec<i64> = sqlx::query_scalar(
+            "INSERT INTO service_access (service_id, group_id) \
+             SELECT s.id, g.id FROM services s JOIN member_groups g ON g.id = ?1 \
+             WHERE s.visibility = 'groups' AND s.follows_folder = 0 \
+             AND s.id IN (SELECT value FROM json_each(?2)) \
+             AND NOT EXISTS (SELECT 1 FROM service_access a \
+                             WHERE a.service_id = s.id AND a.group_id = g.id) \
+             RETURNING service_id",
+        )
+        .bind(group_id)
+        .bind(&services)
+        .fetch_all(&mut *tx)
+        .await?;
+        for folder_id in &opened_folders {
+            super::folder_repo::propagate(&mut tx, *folder_id).await?;
+        }
+        tx.commit().await?;
+        Ok((opened_folders, opened_services))
+    }
+
+    /// Takes the folder's access away from the group, and from the services
+    /// that follow it. Returns false when it was not opened to the group.
+    pub async fn close_folder(
+        pool: &DbPool,
+        group_id: i64,
+        folder_id: i64,
+    ) -> Result<bool, sqlx::Error> {
+        let mut tx = pool.begin().await?;
+        let result = sqlx::query("DELETE FROM folder_access WHERE folder_id = ? AND group_id = ?")
+            .bind(folder_id)
+            .bind(group_id)
+            .execute(&mut *tx)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Ok(false);
+        }
+        super::folder_repo::propagate(&mut tx, folder_id).await?;
+        tx.commit().await?;
+        Ok(true)
+    }
+
+    /// Takes a service's own access away from the group; a follower keeps
+    /// its folder's. Returns false when it was not opened to the group.
+    pub async fn close_service(
+        pool: &DbPool,
+        group_id: i64,
+        service_id: i64,
+    ) -> Result<bool, sqlx::Error> {
+        let result = sqlx::query(
+            "DELETE FROM service_access WHERE service_id = ? AND group_id = ? \
+             AND service_id IN (SELECT id FROM services WHERE follows_folder = 0)",
+        )
+        .bind(service_id)
+        .bind(group_id)
+        .execute(pool)
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    /// How many restricted services are opened to no group and no member:
+    /// only publishers and admins see them.
+    pub async fn staff_only_count(pool: &DbPool) -> Result<usize, sqlx::Error> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM services s WHERE s.visibility = 'groups' \
+             AND NOT EXISTS (SELECT 1 FROM service_access a WHERE a.service_id = s.id) \
+             AND NOT EXISTS (SELECT 1 FROM service_member_access m WHERE m.service_id = s.id)",
+        )
+        .fetch_one(pool)
+        .await?;
+        Ok(usize::try_from(count).unwrap_or(0))
     }
 
     /// How many restricted services have this group as their only one and
@@ -450,5 +561,93 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(closed, 1, "the one with a member stays open to them");
+    }
+
+    /// A folder and a service, both restricted to nobody yet.
+    async fn restricted_pair(pool: &DbPool) -> (i64, i64) {
+        let folder = crate::repositories::FolderRepository::create(pool, "Finances")
+            .await
+            .unwrap();
+        crate::repositories::FolderRepository::set_visibility(
+            pool,
+            folder,
+            Visibility::Groups,
+            Grants::groups(&[]),
+        )
+        .await
+        .unwrap();
+        let svc = service(pool, "Wiki").await;
+        ServiceRepository::set_visibility(pool, svc, Visibility::Groups, Grants::groups(&[]))
+            .await
+            .unwrap();
+        (folder, svc)
+    }
+
+    #[tokio::test]
+    async fn opening_to_an_unknown_group_opens_nothing() {
+        let pool = test_pool().await;
+        let (folder, svc) = restricted_pair(&pool).await;
+
+        let opened = GroupRepository::open_to(&pool, 999, &[folder], &[svc])
+            .await
+            .unwrap();
+
+        assert_eq!(opened, (Vec::new(), Vec::new()));
+        assert_eq!(count(&pool, "folder_access").await, 0);
+        assert_eq!(count(&pool, "service_access").await, 0);
+    }
+
+    #[tokio::test]
+    async fn opening_twice_to_the_same_group_opens_once() {
+        let pool = test_pool().await;
+        let group = GroupRepository::create(&pool, "Support").await.unwrap();
+        let (folder, svc) = restricted_pair(&pool).await;
+
+        let first = GroupRepository::open_to(&pool, group, &[folder], &[svc])
+            .await
+            .unwrap();
+        let second = GroupRepository::open_to(&pool, group, &[folder], &[svc])
+            .await
+            .unwrap();
+
+        assert_eq!(first, (vec![folder], vec![svc]));
+        assert_eq!(second, (Vec::new(), Vec::new()));
+        assert_eq!(count(&pool, "folder_access").await, 1);
+        assert_eq!(count(&pool, "service_access").await, 1);
+    }
+
+    #[tokio::test]
+    async fn staff_only_services_are_the_restricted_ones_opened_to_no_group_and_no_member() {
+        let pool = test_pool().await;
+        let group = GroupRepository::create(&pool, "Support").await.unwrap();
+        let reader = member(&pool, "r@x.com").await;
+        let nobody = service(&pool, "Nobody").await;
+        let to_group = service(&pool, "ToGroup").await;
+        let to_member = service(&pool, "ToMember").await;
+        service(&pool, "Public").await;
+        let groups = Visibility::Groups;
+        ServiceRepository::set_visibility(&pool, nobody, groups, Grants::groups(&[]))
+            .await
+            .unwrap();
+        ServiceRepository::set_visibility(&pool, to_group, groups, Grants::groups(&[group]))
+            .await
+            .unwrap();
+        ServiceRepository::set_visibility(
+            &pool,
+            to_member,
+            groups,
+            Grants {
+                groups: &[],
+                members: &[reader],
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            GroupRepository::staff_only_count(&pool).await.unwrap(),
+            1,
+            "neither the public service nor the ones opened to someone"
+        );
     }
 }

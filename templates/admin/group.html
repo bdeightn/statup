@@ -41,6 +41,7 @@
             {% when GroupNotice::Renamed %}{{ i18n.t("admin.notice_group_renamed") }}
             {% when GroupNotice::Added with (text) %}{{ text }}
             {% when GroupNotice::Removed with (name) %}<q>{{ name }}</q> {{ i18n.t("admin.notice_member_removed") }}
+            {% when GroupNotice::Access with (text) %}{{ text }}
             {% endmatch %}
         </p>
     </div>
@@ -96,25 +97,86 @@
         {% endif %}
     </section>
 
-    {# The restricted services the group opens, to check its access
-       without opening each service. #}
+    {# What the group opens: restricted folders, whose services follow,
+       then restricted services of their own. Adding only opens: what is
+       public or open to members is seen already. #}
     <section class="card group-services" aria-labelledby="services-title">
         <header class="card-head">
-            <h2 id="services-title" class="card-title">{{ i18n.t("admin.group_services_title") }} <span class="count">{{ services.len() }}</span></h2>
+            <h2 id="services-title" class="card-title">{{ i18n.t("admin.group_services_title") }} <span class="count">{{ access.reached() }}</span></h2>
+            <details class="more-actions member-picker" data-more-actions data-filter-focus>
+                <summary class="card-action card-follow">{% call ui::plus() %}{% endcall %}{{ i18n.t("folders.add_services") }}</summary>
+                <form class="more-actions-menu group-panel member-picker-panel" method="post" action="/admin/groups/{{ group.id }}/access" data-filter-scope>
+                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                    {% if access.nothing_to_open() %}
+                    <p class="picker-note">{{ i18n.t("admin.nothing_to_open") }}</p>
+                    {% else %}
+                    {% if access.searchable() %}
+                    <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("admin.search_access") }}" data-filter-input aria-label="{{ i18n.t("admin.search_access") }}">
+                    {% endif %}
+                    {% if !access.openable_folders.is_empty() %}
+                    <p class="grant-section">{{ i18n.t("admin.access_folders") }}</p>
+                    <div class="picker-list" role="group" aria-label="{{ i18n.t("admin.access_folders") }}">
+                        {% for f in access.openable_folders %}
+                        <label class="svc-pick" data-filter-text="{{ f.name }}">
+                            <input type="checkbox" name="folder_ids" value="{{ f.id }}" class="checkbox">
+                            <span class="svc-pick-name">{{ f.name }}</span>
+                            <span class="picker-email">{{ self.folder_meta(f) }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    {% if !access.openable_services.is_empty() %}
+                    <p class="grant-section">{{ i18n.t("admin.access_services") }}</p>
+                    <div class="picker-list" role="group" aria-label="{{ i18n.t("admin.access_services") }}">
+                        {% for item in access.openable_services %}
+                        <label class="svc-pick" data-filter-text="{{ item.service.name }}{% if let Some(name) = item.folder %} {{ name }}{% endif %}">
+                            <input type="checkbox" name="service_ids" value="{{ item.service.id }}" class="checkbox">
+                            <span class="svc-pick-name">{{ item.service.name }}</span>
+                            {% if let Some(name) = item.folder %}<span class="picker-email">{{ self.folder_label(name) }}</span>{% endif %}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <p class="picker-note picker-none" data-filter-none hidden>{{ i18n.t("services.access_no_match") }}</p>
+                    <button type="submit" class="btn btn-primary group-panel-submit">{{ i18n.t("folders.add_services_submit") }}</button>
+                    {% endif %}
+                </form>
+            </details>
         </header>
-        {% if services.is_empty() %}
+        {% if access.is_empty() %}
         <p class="groups-empty">{{ i18n.t("admin.group_services_empty") }}</p>
         {% else %}
         <ul class="group-members">
-            {% for (service, folder) in services %}
+            {% for f in access.folders %}
             <li class="admin-row group-member">
                 <div class="admin-row-ident">
-                    <span class="svc-icon">{% call ui::service_icon(service) %}{% endcall %}</span>
-                    <p class="admin-row-name"><a href="/services/{{ service.id }}/edit" class="row-link">{{ service.name }}</a></p>
+                    <span class="svc-icon">{% call ui::folder_icon() %}{% endcall %}</span>
+                    <p class="admin-row-name"><a href="/services/folders/{{ f.id }}" class="row-link">{{ f.name }}</a></p>
                 </div>
-                {% if let Some(name) = folder %}
-                <p class="group-service-folder">{{ self.folder_label(name) }}</p>
-                {% endif %}
+                <div class="group-access-end">
+                    <span class="group-service-folder">{{ self.folder_meta(f) }}</span>
+                    <form method="post" action="/admin/groups/{{ group.id }}/folders/{{ f.id }}/remove">
+                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                        <button type="submit" class="text-action" aria-label="{{ self.remove_label(f.name) }}">{{ i18n.t("admin.remove_from_group") }}</button>
+                    </form>
+                </div>
+            </li>
+            {% endfor %}
+            {% for item in access.services %}
+            <li class="admin-row group-member">
+                <div class="admin-row-ident">
+                    <span class="svc-icon">{% call ui::service_icon(item.service) %}{% endcall %}</span>
+                    <p class="admin-row-name"><a href="/services/{{ item.service.id }}/edit" class="row-link">{{ item.service.name }}</a></p>
+                </div>
+                <div class="group-access-end">
+                    {% if let Some(name) = item.folder %}
+                    <span class="group-service-folder">{{ self.folder_label(name) }}</span>
+                    {% endif %}
+                    <form method="post" action="/admin/groups/{{ group.id }}/services/{{ item.service.id }}/remove">
+                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                        <button type="submit" class="text-action" aria-label="{{ self.remove_label(item.service.name) }}">{{ i18n.t("admin.remove_from_group") }}</button>
+                    </form>
+                </div>
             </li>
             {% endfor %}
         </ul>
