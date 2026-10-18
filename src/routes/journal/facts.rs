@@ -110,6 +110,8 @@ fn detail_facts(kind: JournalKind, detail: &str, i18n: &I18n) -> Vec<String> {
             .ok()
             .map_or_else(|| vec![detail.to_string()], |role| said(role.i18n_key())),
         K::ServiceStatusSet => status_facts(detail, i18n),
+        K::ServiceVisibilityChanged => visibility_facts(detail, i18n),
+        K::GroupRenamed => vec![i18n.tf("journal.fact_formerly", &[("name", detail)])],
         K::ProblemsFirstChanged => match detail {
             "on" => said("journal.fact_on"),
             _ => said("journal.fact_off"),
@@ -143,6 +145,19 @@ fn status_facts(detail: &str, i18n: &I18n) -> Vec<String> {
         facts.push(i18n.t("journal.fact_undo").to_string());
     }
     facts
+}
+
+/// `everyone`, `members` or `groups:3`: who sees the service.
+fn visibility_facts(detail: &str, i18n: &I18n) -> Vec<String> {
+    let said = match detail {
+        "everyone" => i18n.t("services.visibility_everyone").to_string(),
+        "members" => i18n.t("services.visibility_members").to_string(),
+        other => match other.strip_prefix("groups:").and_then(leading_number) {
+            Some(count) => i18n.plural("journal.fact_groups", count),
+            None => other.to_string(),
+        },
+    };
+    vec![said]
 }
 
 /// `name, logo, time_zone, access`, as the settings page names them.
@@ -361,6 +376,31 @@ mod tests {
         assert_eq!(
             said(JournalKind::ServiceStatusSet, "major_outage, undo"),
             ["En panne", "annulation"]
+        );
+    }
+
+    #[test]
+    fn who_sees_a_service_is_said_in_the_reader_s_words() {
+        let said = |detail| said(JournalKind::ServiceVisibilityChanged, detail);
+        assert_eq!(said("everyone"), ["Tout le monde"]);
+        assert_eq!(said("members"), ["Les membres connectés"]);
+        assert_eq!(said("groups:1"), ["1 groupe"]);
+        assert_eq!(said("groups:12"), ["12 groupes"]);
+        assert_eq!(said("somebody"), ["somebody"]);
+        assert_eq!(
+            super::facts(
+                &entry(JournalKind::ServiceVisibilityChanged, "groups:2"),
+                &I18n::new("en")
+            ),
+            ["2 groups"]
+        );
+    }
+
+    #[test]
+    fn a_renamed_group_says_its_former_name() {
+        assert_eq!(
+            said(JournalKind::GroupRenamed, "Support"),
+            ["anciennement «\u{a0}Support\u{a0}»"]
         );
     }
 

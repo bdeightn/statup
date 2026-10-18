@@ -27,6 +27,21 @@ Accounts are created by an administrator on the **Team** page, with a temporary 
 
 A chosen password needs 12 characters with upper and lower case letters, a digit and a symbol, or 20 characters of any kind.
 
+## Groups and who sees a service
+
+By default every service is seen by everyone who can see the page. To keep a service for some colleagues, an administrator creates groups in **Settings → Team** and adds members from each group's own page. Each service then says who sees it, in its form:
+
+- **Everyone**, the default.
+- **Signed-in members**, offered only when the page is open to everyone: when it is for members only, it would mean the same.
+- **Some groups**, ticked in the form. Only the members of those groups see the service.
+
+Editors and administrators always see every service.
+
+- Incidents, maintenance and announcements follow their services: anyone who sees one of the services an event names sees the event. An announcement that names no service is for everyone.
+- Someone who may not see a service finds no trace of it on the page, in the events, in the search or in the feed, and a direct link answers "not found". The Atom feed always shows what a visitor without an account sees.
+- The text of an event (title, description, updates) is not filtered: everyone who sees the event reads it as written. Name a restricted service in that text only when everyone who sees the event may know about it.
+- Deleting a group takes its members out of it. A service that only this group could see is then seen by editors and administrators only, until its form says otherwise; the group's page says how many before you delete it.
+
 ## Configuration
 
 Every setting is optional. Write the ones you change in a `.env` file next to `docker-compose.yml`; [`.env.example`](../.env.example) lists them with an explanation each. With Docker Compose, `DATABASE_URL`, `UPLOAD_DIR`, `HOST` and `PORT` belong to the image, so the data stays in its volume.
@@ -56,7 +71,7 @@ Every setting is optional. Write the ones you change in a `.env` file next to `d
 
 **Settings → Journal**, for administrators, lists what happened, day by day, and the server output (`docker compose logs`) shows the same lines in English.
 
-- **Essential**, the default, keeps the large changes and the real problems: services added, changed or deleted, settings, alert channels, members added, their role or their account changed, an event deleted, an outage detected and its end, a message to an alert channel given up, sign-ins blocked after too many attempts, and the app's errors.
+- **Essential**, the default, keeps the large changes and the real problems: services added, changed or deleted, settings, alert channels, members added, their role or their account changed, groups created, renamed or deleted and who joins or leaves them, who sees a service, an event deleted, an outage detected and its end, a message to an alert channel given up, sign-ins blocked after too many attempts, and the app's errors.
 - **Detailed** keeps everything from the moment it is chosen: sign-ins and refused attempts, password resets, events published and updated, each failed check, each message sent.
 - Lines are kept 90 days by default, from 1 to 365, under **Change**. Nobody can edit or delete a line; only the retention removes them. **Export** downloads the lines shown, filters included, as a spreadsheet.
 - Sign-in lines keep the client address, read like the rest of the app (see `TRUST_PROXY_HEADERS`). No password, reset link, webhook address or anything after the host of a checked address is ever written.

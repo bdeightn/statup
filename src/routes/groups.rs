@@ -12,8 +12,8 @@ use super::{Frame, render};
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
-use crate::models::{GroupMember, MemberGroup, User, check_group_name};
-use crate::repositories::{GroupRepository, UserRepository};
+use crate::models::{GroupMember, JournalKind, MemberGroup, User, check_group_name};
+use crate::repositories::{GroupRepository, NewJournalEntry, UserRepository};
 use crate::state::AppState;
 
 #[derive(Template)]
@@ -150,6 +150,11 @@ pub async fn create_group(
     match free_name(&state, &input.name, None).await {
         Ok(name) => {
             let id = GroupRepository::create(&state.pool, &name).await?;
+            NewJournalEntry::new(JournalKind::GroupCreated)
+                .by(&admin)
+                .about(&name)
+                .record(&state.pool)
+                .await;
             Ok(Redirect::to(&format!("/admin/groups/{id}?created=1")).into_response())
         }
         Err(AppError::Validation(key)) => {
@@ -167,6 +172,9 @@ pub async fn rename_group(
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<GroupNameInput>,
 ) -> Result<Response, AppError> {
+    let group = GroupRepository::find(&state.pool, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
     let name = match free_name(&state, &input.name, Some(id)).await {
         Ok(name) => name,
         Err(AppError::Validation(key)) => {
@@ -181,43 +189,95 @@ pub async fn rename_group(
     if !GroupRepository::rename(&state.pool, id, &name).await? {
         return Err(AppError::NotFound);
     }
+    if group.name != name {
+        NewJournalEntry::new(JournalKind::GroupRenamed)
+            .by(&admin)
+            .about(&name)
+            .with_detail(&group.name)
+            .record(&state.pool)
+            .await;
+    }
     Ok(Redirect::to(&format!("/admin/groups/{id}?renamed=1")).into_response())
 }
 
 pub async fn add_members(
-    RequireAdmin(_admin): RequireAdmin,
+    RequireAdmin(admin): RequireAdmin,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     HtmlForm(input): HtmlForm<AddMembersInput>,
 ) -> Result<Response, AppError> {
-    if GroupRepository::find(&state.pool, id).await?.is_none() {
-        return Err(AppError::NotFound);
-    }
+    let group = GroupRepository::find(&state.pool, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    // Only an active member outside the group joins: the others are passed over.
+    let joining: Vec<String> = GroupRepository::outsiders(&state.pool, id)
+        .await?
+        .into_iter()
+        .filter(|member| input.user_ids.contains(&member.id))
+        .map(|member| member.display_name)
+        .collect();
     let added = GroupRepository::add_members(&state.pool, id, &input.user_ids).await?;
+    for name in &joining {
+        let kind = JournalKind::GroupMemberAdded;
+        membership_line(kind, &admin, name, &group)
+            .record(&state.pool)
+            .await;
+    }
     Ok(Redirect::to(&format!("/admin/groups/{id}?added={added}")).into_response())
 }
 
 pub async fn remove_member(
-    RequireAdmin(_admin): RequireAdmin,
+    RequireAdmin(admin): RequireAdmin,
     State(state): State<AppState>,
     Path((id, user_id)): Path<(i64, i64)>,
 ) -> Result<Response, AppError> {
+    let group = GroupRepository::find(&state.pool, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let member = UserRepository::find_by_id(&state.pool, user_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
     if !GroupRepository::remove_member(&state.pool, id, user_id).await? {
         return Err(AppError::NotFound);
     }
+    let kind = JournalKind::GroupMemberRemoved;
+    membership_line(kind, &admin, &member.display_name, &group)
+        .record(&state.pool)
+        .await;
     Ok(Redirect::to(&format!("/admin/groups/{id}?removed={user_id}")).into_response())
+}
+
+/// The line for one member who joined or left a group.
+fn membership_line(
+    kind: JournalKind,
+    admin: &User,
+    member: &str,
+    group: &MemberGroup,
+) -> NewJournalEntry {
+    NewJournalEntry::new(kind)
+        .by(admin)
+        .about(member)
+        .with_detail(&group.name)
 }
 
 /// Its members leave it and the services lose it; a service it alone
 /// opened is then seen by editors and administrators only, as its page
 /// says before.
 pub async fn delete_group(
-    RequireAdmin(_admin): RequireAdmin,
+    RequireAdmin(admin): RequireAdmin,
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
+    let group = GroupRepository::find(&state.pool, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
     if !GroupRepository::delete(&state.pool, id).await? {
         return Err(AppError::NotFound);
     }
+    NewJournalEntry::new(JournalKind::GroupDeleted)
+        .by(&admin)
+        .about(&group.name)
+        .record(&state.pool)
+        .await;
     Ok(Redirect::to("/admin/users?group_deleted=1#groups").into_response())
 }

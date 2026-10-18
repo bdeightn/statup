@@ -320,6 +320,65 @@ impl VisibilityFields {
 
 const VISIBILITY_REQUIRED: &str = "validation.visibility_required";
 
+/// Who sees a service, as saved: the groups are those that exist.
+#[derive(PartialEq, Eq)]
+struct Audience {
+    mode: Visibility,
+    group_ids: Vec<i64>,
+}
+
+impl Audience {
+    const EVERYONE: Self = Self {
+        mode: Visibility::Everyone,
+        group_ids: Vec::new(),
+    };
+
+    async fn saved(pool: &DbPool, id: i64) -> Result<Self, AppError> {
+        let service = ServiceRepository::find_by_id(pool, id)
+            .await?
+            .ok_or(AppError::NotFound)?;
+        Ok(Self {
+            mode: service.visibility,
+            group_ids: ServiceRepository::group_ids_of(pool, id).await?,
+        })
+    }
+
+    /// The journal gives the number of groups, never their names: a service
+    /// can be open to dozens.
+    fn detail(&self) -> String {
+        match self.mode {
+            Visibility::Groups => format!("groups:{}", self.group_ids.len()),
+            other => other.as_str().to_string(),
+        }
+    }
+}
+
+/// Records a change of audience; a save that changes nothing leaves no
+/// line. A line that cannot be written never fails the save it follows.
+async fn record_audience_change(
+    pool: &DbPool,
+    user: &User,
+    (id, name): (i64, &str),
+    before: &Audience,
+) {
+    let after = match Audience::saved(pool, id).await {
+        Ok(after) => after,
+        Err(error) => {
+            tracing::warn!(%error, "Audience of a saved service not read");
+            return;
+        }
+    };
+    if *before == after {
+        return;
+    }
+    NewJournalEntry::new(JournalKind::ServiceVisibilityChanged)
+        .by(user)
+        .about(name)
+        .with_detail(after.detail())
+        .record(pool)
+        .await;
+}
+
 impl ServiceFormData {
     fn empty() -> Self {
         Self {
@@ -558,6 +617,8 @@ pub async fn create(
                 .about(&service.name)
                 .record(&state.pool)
                 .await;
+            let saved = (service.id, service.name.as_str());
+            record_audience_change(&state.pool, &user, saved, &Audience::EVERYONE).await;
             Ok(Redirect::to(&format!("/services?saved={}", service.id)).into_response())
         }
         Err(AppError::Validation(key)) => {
@@ -635,13 +696,16 @@ pub async fn update(
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<ServiceInput>,
 ) -> Result<Response, AppError> {
+    let before = Audience::saved(&state.pool, id).await?;
     match save_edit(&state.pool, id, &input).await {
         Ok(()) => {
+            let name = input.name.trim();
             NewJournalEntry::new(JournalKind::ServiceUpdated)
                 .by(&user)
-                .about(input.name.trim())
+                .about(name)
                 .record(&state.pool)
                 .await;
+            record_audience_change(&state.pool, &user, (id, name), &before).await;
             Ok(Redirect::to(&format!("/services?saved={id}")).into_response())
         }
         Err(AppError::Validation(key)) => {

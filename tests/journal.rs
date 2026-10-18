@@ -7,7 +7,7 @@ use reqwest::StatusCode;
 
 use common::TestApp;
 use statup::models::{JournalKind, Role};
-use statup::repositories::{JournalRepository, NewJournalEntry};
+use statup::repositories::{GroupRepository, JournalRepository, NewJournalEntry, UserRepository};
 
 const ADMIN_EMAIL: &str = "admin@test.com";
 const ADMIN_PASSWORD: &str = "admin_password_12";
@@ -174,6 +174,200 @@ async fn adding_a_member_names_them_and_never_keeps_their_password() {
     .await
     .unwrap();
     assert!(!kept.contains("paul@test.com"));
+}
+
+/// POST to an administrator's page, with a token taken from the Team page.
+async fn post_team(app: &TestApp, path: &str, fields: &[(&str, &str)]) -> StatusCode {
+    let csrf = app.csrf_from("/admin/users").await;
+    app.post_form(path, &csrf, fields).await.0
+}
+
+async fn group(app: &TestApp, name: &str) -> i64 {
+    GroupRepository::create(&app.pool, name).await.unwrap()
+}
+
+async fn reader(app: &TestApp, name: &str) -> i64 {
+    let email = format!("{}@test.com", name.to_lowercase());
+    app.create_user(&email, "reader_password_12", name, Role::Reader)
+        .await
+}
+
+#[tokio::test]
+async fn creating_a_group_names_it() {
+    let app = spawn_with_admin().await;
+
+    let status = post_team(&app, "/admin/groups/new", &[("name", " Support ")]).await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        lines(&app).await,
+        [line("group_created", true, Some("Support"), None)]
+    );
+    let (_, page) = app.get("/admin/journal").await;
+    assert!(page.contains("Admin a créé le groupe «\u{a0}Support\u{a0}»"));
+}
+
+#[tokio::test]
+async fn renaming_a_group_names_the_new_name_and_keeps_the_old_one() {
+    let app = spawn_with_admin().await;
+    let id = group(&app, "Support").await;
+    let path = format!("/admin/groups/{id}/rename");
+
+    post_team(&app, &path, &[("name", "Helpdesk")]).await;
+    post_team(&app, &path, &[("name", "Helpdesk")]).await;
+
+    assert_eq!(
+        lines(&app).await,
+        [line(
+            "group_renamed",
+            true,
+            Some("Helpdesk"),
+            Some("Support")
+        )],
+        "saving the same name again leaves nothing"
+    );
+    let (_, page) = app.get("/admin/journal").await;
+    assert!(page.contains("anciennement «\u{a0}Support\u{a0}»"));
+}
+
+#[tokio::test]
+async fn deleting_a_group_names_it() {
+    let app = spawn_with_admin().await;
+    let id = group(&app, "Support").await;
+
+    let status = post_team(&app, &format!("/admin/groups/{id}/delete"), &[]).await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        lines(&app).await,
+        [line("group_deleted", true, Some("Support"), None)]
+    );
+}
+
+#[tokio::test]
+async fn each_member_who_joins_a_group_leaves_a_line_of_their_own() {
+    let app = spawn_with_admin().await;
+    let id = group(&app, "Support").await;
+    let ann = reader(&app, "Ann").await;
+    let bob = reader(&app, "Bob").await;
+    let cy = reader(&app, "Cy").await;
+    let dee = reader(&app, "Dee").await;
+    GroupRepository::add_members(&app.pool, id, &[ann])
+        .await
+        .unwrap();
+    UserRepository::set_active(&app.pool, dee, false)
+        .await
+        .unwrap();
+    let path = format!("/admin/groups/{id}/members");
+    let ids: Vec<String> = [ann, bob, cy, dee, 9999].map(|id| id.to_string()).into();
+    let fields: Vec<(&str, &str)> = ids.iter().map(|id| ("user_ids", id.as_str())).collect();
+
+    let status = post_team(&app, &path, &fields).await;
+    post_team(&app, &path, &fields).await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        lines(&app).await,
+        [
+            line("group_member_added", true, Some("Bob"), Some("Support")),
+            line("group_member_added", true, Some("Cy"), Some("Support")),
+        ],
+        "not Ann who was in, nor Dee who is disabled, nor an unknown id, nor twice"
+    );
+}
+
+#[tokio::test]
+async fn removing_a_member_from_a_group_names_both() {
+    let app = spawn_with_admin().await;
+    let id = group(&app, "Support").await;
+    let ann = reader(&app, "Ann").await;
+    GroupRepository::add_members(&app.pool, id, &[ann])
+        .await
+        .unwrap();
+    let path = format!("/admin/groups/{id}/members/{ann}/remove");
+
+    let status = post_team(&app, &path, &[]).await;
+    post_team(&app, &path, &[]).await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        lines(&app).await,
+        [line(
+            "group_member_removed",
+            true,
+            Some("Ann"),
+            Some("Support")
+        )],
+        "a member already out leaves nothing"
+    );
+}
+
+#[tokio::test]
+async fn a_service_leaves_a_line_only_when_the_people_who_see_it_change() {
+    let app = spawn_with_admin().await;
+    let support = group(&app, "Support").await.to_string();
+    let sales = group(&app, "Sales").await.to_string();
+    let csrf = app.csrf_from("/services/new").await;
+    let restricted = [
+        ("name", "Wiki"),
+        ("check_kind", "none"),
+        ("visibility", "groups"),
+        ("group_ids", support.as_str()),
+        ("group_ids", sales.as_str()),
+    ];
+    app.post_form("/services/new", &csrf, &restricted).await;
+    let id = sqlx::query_scalar::<_, i64>("SELECT id FROM services")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    let edit = format!("/services/{id}/edit");
+
+    app.post_form(&edit, &csrf, &restricted).await;
+    let members = [
+        ("name", "Wiki"),
+        ("check_kind", "none"),
+        ("visibility", "members"),
+    ];
+    app.post_form(&edit, &csrf, &members).await;
+    let everyone = [
+        ("name", "Wiki"),
+        ("check_kind", "none"),
+        ("visibility", "everyone"),
+    ];
+    app.post_form(&edit, &csrf, &everyone).await;
+    app.post_form(&edit, &csrf, &everyone).await;
+
+    assert_eq!(
+        lines(&app).await,
+        [
+            line("service_created", true, Some("Wiki"), None),
+            line(
+                "service_visibility_changed",
+                true,
+                Some("Wiki"),
+                Some("groups:2")
+            ),
+            line("service_updated", true, Some("Wiki"), None),
+            line("service_updated", true, Some("Wiki"), None),
+            line(
+                "service_visibility_changed",
+                true,
+                Some("Wiki"),
+                Some("members")
+            ),
+            line("service_updated", true, Some("Wiki"), None),
+            line(
+                "service_visibility_changed",
+                true,
+                Some("Wiki"),
+                Some("everyone")
+            ),
+            line("service_updated", true, Some("Wiki"), None),
+        ]
+    );
+    let (_, page) = app.get("/admin/journal").await;
+    assert!(page.contains("Admin a changé qui voit «\u{a0}Wiki\u{a0}»"));
+    assert!(page.contains("2 groupes"));
 }
 
 #[tokio::test]
