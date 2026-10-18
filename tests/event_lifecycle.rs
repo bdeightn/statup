@@ -9,9 +9,15 @@ use chrono::Utc;
 use reqwest::StatusCode;
 
 use common::{TestApp, extract_csrf_token};
+use statup::i18n::{I18n, LANGUAGES};
 use statup::models::{CheckKind, CheckedService, Lifecycle, Role, ServiceCheck, ServiceStatus};
 use statup::repositories::{EventRepository, ServiceRepository};
 use statup::services::{Finding, MonitorState, Prober, Report, ServiceService, run_round};
+
+/// A page text with its `{minutes}` filled, in the language a client that asks for none gets.
+fn text_with_minutes(key: &str, minutes: &str) -> String {
+    I18n::new(LANGUAGES[0].code).tf(key, &[("minutes", minutes)])
+}
 
 impl TestApp {
     /// POST via the `X-CSRF-Token` header, the way htmx sends it.
@@ -717,7 +723,10 @@ async fn a_service_saved_with_a_check_is_watched() {
 
     let (_, list) = app.get(&format!("/services?saved={}", checked[0].id)).await;
     assert!(
-        list.contains("surveillé chaque minute"),
+        list.contains(&text_with_minutes(
+            "services.saved_monitored_notice",
+            &checked[0].outage_after_minutes.to_string()
+        )),
         "the notice says what monitoring means"
     );
 
@@ -872,7 +881,7 @@ async fn testing_an_open_port_says_it_answers() {
     assert!(body.contains(r#"data-tone="ok""#));
     assert!(body.contains("Le port accepte la connexion"));
     assert!(
-        body.contains("Sans réponse pendant 15 min, il passera en panne"),
+        body.contains(&text_with_minutes("services.check_result_rule", "15")),
         "an answer says what the monitoring will do, with the delay typed"
     );
 }
@@ -930,7 +939,7 @@ async fn each_service_keeps_the_delay_typed_for_it() {
 
     let (_, list) = app.get(&format!("/services?saved={id}")).await;
     assert!(
-        list.contains("sans réponse pendant 15 min"),
+        list.contains(&text_with_minutes("services.saved_monitored_notice", "15")),
         "the notice gives the service's own delay"
     );
     let (_, form) = app.get(&format!("/services/{id}/edit")).await;

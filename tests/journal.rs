@@ -6,6 +6,7 @@ mod common;
 use reqwest::StatusCode;
 
 use common::TestApp;
+use statup::i18n::{I18n, LANGUAGES};
 use statup::models::{JournalKind, Role};
 use statup::repositories::{GroupRepository, JournalRepository, NewJournalEntry, UserRepository};
 
@@ -366,7 +367,11 @@ async fn a_service_leaves_a_line_only_when_the_people_who_see_it_change() {
         ]
     );
     let (_, page) = app.get("/admin/journal").await;
-    assert!(page.contains("Admin a changé qui voit «\u{a0}Wiki\u{a0}»"));
+    let visibility_line = I18n::new(LANGUAGES[0].code).tf(
+        "journal.service_visibility_changed",
+        &[("actor", "Admin"), ("subject", "Wiki")],
+    );
+    assert!(page.contains(&visibility_line));
     assert!(page.contains("2 groupes"));
 }
 
