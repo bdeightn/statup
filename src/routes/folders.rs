@@ -35,8 +35,6 @@ struct FolderTemplate {
     access: AccessBlock,
     /// "Restricted, Accounting": the saved setting in one grey line.
     summary: String,
-    /// How many of its services inherit its setting, said in the panel.
-    heirs: Option<String>,
     notice: Option<FolderNotice>,
     rename: NameForm,
     /// A refused setting opens its panel again, with why.
@@ -50,22 +48,14 @@ impl FolderTemplate {
             .tf("folders.visibility_line", &[("value", &self.summary)])
     }
 
-    /// Whether adding moves a service out of another folder.
-    fn moves_any(&self) -> bool {
-        self.others.iter().any(|other| other.folder.is_some())
-    }
-
     fn remove_label(&self, name: &str) -> String {
         self.i18n.tf("folders.remove_aria", &[("name", name)])
     }
 
     /// Deleting keeps the services, out of any folder, as they are seen.
-    fn delete_hint(&self) -> String {
-        if self.services.is_empty() {
-            return self.i18n.t("folders.delete_empty").to_string();
-        }
-        self.i18n
-            .plural("folders.delete_keeps", self.services.len())
+    fn delete_hint(&self) -> Option<String> {
+        let count = self.services.len();
+        (count > 0).then(|| self.i18n.plural("folders.delete_keeps", count))
     }
 }
 
@@ -239,26 +229,6 @@ fn summary(saved: &Audience, access: &AccessBlock, i18n: &I18n) -> String {
     format!("{mode}, {shown} {and_more}")
 }
 
-/// "Inherited by 2 of its 3 services", or nothing for an empty folder.
-fn heirs(services: &[Service], i18n: &I18n) -> Option<String> {
-    let total = services.len();
-    if total == 0 {
-        return None;
-    }
-    let heirs = services
-        .iter()
-        .filter(|service| service.follows_folder)
-        .count();
-    Some(match heirs {
-        0 => i18n.plural("folders.heirs_none", total),
-        n if n == total => i18n.plural("folders.heirs_all", total),
-        n => i18n.tf(
-            "folders.heirs_some",
-            &[("n", &n.to_string()), ("total", &total.to_string())],
-        ),
-    })
-}
-
 /// Its services, and the others with the folder each one is in.
 async fn services_around(
     pool: &DbPool,
@@ -306,7 +276,6 @@ async fn render_folder(
     render(&FolderTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
         summary: summary(&saved, &access, &i18n),
-        heirs: heirs(&services, &i18n),
         folder,
         services,
         others,

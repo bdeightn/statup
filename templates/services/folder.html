@@ -42,9 +42,6 @@
                 <form class="more-actions-menu folder-panel" method="post" action="/services/folders/{{ folder.id }}/visibility">
                     <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
                     {% include "components/access_field.html" %}
-                    {% if let Some(text) = heirs %}
-                    <p class="folder-heirs">{{ text }}</p>
-                    {% endif %}
                     <button type="submit" class="btn btn-primary journal-save">{{ i18n.t("common.save") }}</button>
                 </form>
             </details>
@@ -90,9 +87,6 @@
                         {% endfor %}
                     </div>
                     <p class="picker-note picker-none" data-filter-none hidden>{{ i18n.t("folders.no_service_found") }}</p>
-                    {% if self.moves_any() %}
-                    <p class="picker-note folder-move-note">{{ i18n.t("folders.move_note") }}</p>
-                    {% endif %}
                     <button type="submit" class="btn btn-primary group-panel-submit">{{ i18n.t("folders.add_services_submit") }}</button>
                     {% endif %}
                 </form>
@@ -126,7 +120,9 @@
     <section class="card danger-zone" aria-labelledby="delete-title">
         <div class="danger-zone-text">
             <h2 id="delete-title" class="card-title">{{ i18n.t("folders.delete_title") }}</h2>
-            <p class="field-hint">{{ self.delete_hint() }}</p>
+            {% if let Some(hint) = self.delete_hint() %}
+            <p class="field-hint">{{ hint }}</p>
+            {% endif %}
         </div>
         <form method="post" action="/services/folders/{{ folder.id }}/delete" data-confirm>
             <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">

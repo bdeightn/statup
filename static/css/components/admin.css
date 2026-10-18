@@ -1410,10 +1410,6 @@
         border-top: 0;
     }
 
-    .folder-move-note {
-        margin-top: 12px;
-    }
-
     /* A folder's page: who sees it, in a panel under "Change" as for the
        journal's settings, wide enough for a few tags. The panel to add
        groups and members opens under the tags, across the panel. */
@@ -1444,12 +1440,6 @@
         right: 0;
         left: 0;
         width: auto;
-    }
-
-    .folder-heirs {
-        margin: 8px 0 0;
-        font-size: var(--text-sm);
-        color: var(--ink-soft);
     }
 
     /* On a phone the line sits under the title: the panel opens from its
