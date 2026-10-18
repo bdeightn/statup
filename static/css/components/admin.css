@@ -1446,6 +1446,14 @@
 
     /* A panel in sections, folders then services: the first heading at the
        top, each list right under its heading. */
+    /* A panel of choices is as wide as its longest line, within bounds:
+       never a wide box around one short name. */
+    .more-actions > .member-picker-panel {
+        width: max-content;
+        min-width: 240px;
+        max-width: min(360px, calc(100vw - 32px));
+    }
+
     .member-picker-panel > input[type="hidden"] + .grant-section {
         margin-top: 0;
     }
