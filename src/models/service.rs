@@ -160,6 +160,9 @@ pub struct Service {
     /// What the checks found, while the service does not answer.
     pub detected_status: Option<ServiceStatus>,
     pub visibility: super::Visibility,
+    pub folder_id: Option<i64>,
+    /// Whether its "who sees" is a copy kept in step with its folder.
+    pub follows_folder: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     /// File name of the uploaded icon, when the query joins it.

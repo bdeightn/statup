@@ -12,9 +12,13 @@ const WITH_ICON: &str = "SELECT s.*, i.filename AS icon_filename, \
      EXISTS(SELECT 1 FROM event_services es WHERE es.service_id = s.id) AS has_history \
      FROM services s LEFT JOIN icons i ON i.id = s.icon_id";
 
-/// The order chosen on the Services page; services at the same position,
-/// as written by a seed that leaves it out, fall back to their name.
-pub(crate) const CHOSEN_ORDER: &str = "s.position, s.name COLLATE NOCASE, s.id";
+/// The order chosen on the Services page: services without a folder first,
+/// then each folder in its own order with its services by their position.
+/// Services at the same position, as written by a seed that leaves it out,
+/// fall back to their name.
+pub(crate) const CHOSEN_ORDER: &str = "s.folder_id IS NOT NULL, \
+     COALESCE((SELECT f.position FROM service_folders f WHERE f.id = s.folder_id), 0), \
+     s.folder_id, s.position, s.name COLLATE NOCASE, s.id";
 
 impl ServiceRepository {
     pub async fn create(
@@ -285,6 +289,7 @@ impl ServiceRepository {
 
     /// Saves who sees the service. The groups only count for
     /// [`Visibility::Groups`]; ids of groups that do not exist are dropped.
+    /// A setting made here is the service's own: it stops following its folder.
     pub async fn set_visibility(
         pool: &DbPool,
         service_id: i64,
@@ -292,7 +297,7 @@ impl ServiceRepository {
         group_ids: &[i64],
     ) -> Result<(), sqlx::Error> {
         let mut tx = pool.begin().await?;
-        sqlx::query("UPDATE services SET visibility = ? WHERE id = ?")
+        sqlx::query("UPDATE services SET visibility = ?, follows_folder = 0 WHERE id = ?")
             .bind(visibility)
             .bind(service_id)
             .execute(&mut *tx)

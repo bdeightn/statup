@@ -9,6 +9,7 @@ mod member_group;
 mod member_notice;
 mod notification;
 mod service;
+mod service_folder;
 mod user;
 mod visibility;
 
@@ -21,5 +22,6 @@ pub use member_group::*;
 pub use member_notice::*;
 pub use notification::*;
 pub use service::*;
+pub use service_folder::*;
 pub use user::*;
 pub use visibility::*;

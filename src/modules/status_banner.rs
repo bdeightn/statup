@@ -397,6 +397,8 @@ mod tests {
             outage_after_minutes: crate::services::DEFAULT_OUTAGE_AFTER,
             detected_status: None,
             visibility: Visibility::Everyone,
+            folder_id: None,
+            follows_folder: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),
             icon_filename: None,
