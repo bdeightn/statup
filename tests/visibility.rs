@@ -27,6 +27,10 @@ const UPDATE_TEXT: &str = "Xylo-55";
 const MEMBERS_SERVICE: &str = "Annuaire K2";
 const MEMBERS_SLUG: &str = "annuaire";
 const ANNOUNCEMENT: &str = "Nouveautes Cobalt";
+/// A folder holding the restricted service only, and one holding the
+/// service for members: their names may only reach who sees what they hold.
+const RESTRICTED_FOLDER: &str = "Dossier Onyx-77";
+const MEMBERS_FOLDER: &str = "Dossier Jade-9";
 
 /// A public instance with an open service, one for signed-in members and
 /// one restricted to the group "Paie", down under a critical incident that
@@ -169,7 +173,44 @@ async fn seed_services(pool: &SqlitePool, group: i64, granted: i64) -> (i64, i64
     ServiceRepository::set_visibility(pool, members, Visibility::Members, Grants::default())
         .await
         .unwrap();
+    file(
+        pool,
+        RESTRICTED_FOLDER,
+        restricted,
+        Visibility::Groups,
+        Grants {
+            groups: &[group],
+            members: &[granted],
+        },
+    )
+    .await;
+    file(
+        pool,
+        MEMBERS_FOLDER,
+        members,
+        Visibility::Members,
+        Grants::default(),
+    )
+    .await;
     (open, restricted, members)
+}
+
+/// Puts the service in a folder with the same setting, which it follows.
+async fn file(
+    pool: &SqlitePool,
+    name: &str,
+    service: i64,
+    visibility: Visibility,
+    grants: Grants<'_>,
+) {
+    let folder = FolderRepository::create(pool, name).await.unwrap();
+    FolderRepository::set_visibility(pool, folder, visibility, grants)
+        .await
+        .unwrap();
+    let joined = FolderRepository::add_services(pool, folder, &[service])
+        .await
+        .unwrap();
+    assert!(joined[0].follows, "{name} keeps the setting of its service");
 }
 
 async fn seed_events(pool: &SqlitePool, admin: i64, open: i64, restricted: i64) -> Events {
@@ -502,6 +543,7 @@ impl Fixture {
             COMPLETED_MAINTENANCE,
             UPDATE_TEXT,
             RESTRICTED,
+            RESTRICTED_FOLDER,
             // A search wraps the words it found in markup, so a hidden title
             // can reach a page in pieces.
             "Quartz",
@@ -584,6 +626,7 @@ fn on_route<'a>(pages: &'a [Page], route: &'a str) -> impl Iterator<Item = &'a P
 async fn assert_sees_the_restricted_service(fixture: &Fixture) {
     let pages = fixture.sweep(true).await;
     assert_shows(&pages, "/", RESTRICTED);
+    assert_shows(&pages, "/", RESTRICTED_FOLDER);
     assert_shows(&pages, "/", &disrupted(2));
     for title in [RESTRICTED_INCIDENT, MAINTENANCE, COMPLETED_MAINTENANCE] {
         assert_shows(&pages, "/events", title);
@@ -601,6 +644,7 @@ async fn the_sweep_finds_no_trace_of_hidden_services_for_a_visitor() {
     assert_shows(&pages, "/", &disrupted(1));
     let mut forbidden = fixture.hidden_strings();
     forbidden.push(MEMBERS_SERVICE.to_string());
+    forbidden.push(MEMBERS_FOLDER.to_string());
     forbidden.push(format!("service-{MEMBERS_SLUG}"));
     forbid(&pages, &forbidden);
     fixture.assert_hidden_routes_answer(404).await;
@@ -615,6 +659,7 @@ async fn the_sweep_finds_no_trace_of_the_group_service_for_a_reader_outside_it()
     let pages = fixture.sweep(true).await;
     assert_shows(&pages, "/", OPEN);
     assert_shows(&pages, "/", MEMBERS_SERVICE);
+    assert_shows(&pages, "/", MEMBERS_FOLDER);
     assert_shows(&pages, "/", &disrupted(1));
     forbid(&pages, &fixture.hidden_strings());
     fixture.assert_hidden_routes_answer(404).await;

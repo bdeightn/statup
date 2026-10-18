@@ -8,7 +8,7 @@ use reqwest::StatusCode;
 
 use common::{Options, TestApp, extract_csrf_token};
 use statup::models::Role;
-use statup::repositories::{ServiceRepository, UserRepository};
+use statup::repositories::{FolderRepository, ServiceRepository, UserRepository};
 
 /// The instance name lives in process memory: the tests that set it or read
 /// the default brand run one at a time.
@@ -1005,6 +1005,64 @@ async fn a_service_left_out_of_the_card_comes_back_when_it_is_down() {
     assert!(
         services_card(&page).contains("Printers"),
         "a service left out comes back when it is down"
+    );
+}
+
+#[tokio::test]
+async fn a_folder_shows_its_title_only_with_a_service_of_it_on_the_card() {
+    let (app, _admin_id) = spawn_with_admin().await;
+    let payroll = ServiceRepository::create(&app.pool, "Payroll", "payroll", None, None, None)
+        .await
+        .expect("service");
+    let printers = ServiceRepository::create(&app.pool, "Printers", "printers", None, None, None)
+        .await
+        .expect("service");
+    let folder = FolderRepository::create(&app.pool, "Hardware Onyx")
+        .await
+        .expect("folder");
+    FolderRepository::add_services(&app.pool, folder, &[printers.id])
+        .await
+        .expect("filed");
+
+    let (_, page) = app.get("/").await;
+    let card = services_card(&page);
+    let title = card
+        .find("Hardware Onyx")
+        .expect("the folder titles its services");
+    assert!(
+        card.find("Payroll").expect("shown") < title,
+        "services without a folder first"
+    );
+    assert!(
+        title < card.find("Printers").expect("shown"),
+        "then each folder"
+    );
+
+    let csrf = app.csrf().await;
+    let shown = payroll.id.to_string();
+    app.post_form(
+        "/admin/dashboard/layout/services/show",
+        &csrf,
+        &[("show", shown.as_str())],
+    )
+    .await;
+    let (_, page) = app.get("/").await;
+    assert!(
+        !services_card(&page).contains("Hardware Onyx"),
+        "a folder whose services are all left out has no title"
+    );
+
+    let csrf = app.csrf_from("/services").await;
+    app.post_form(
+        &format!("/services/{}/status", printers.id),
+        &csrf,
+        &[("status", "major_outage")],
+    )
+    .await;
+    let (_, page) = app.get("/").await;
+    assert!(
+        services_card(&page).contains("Hardware Onyx"),
+        "the title comes back with its service"
     );
 }
 

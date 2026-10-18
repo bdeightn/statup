@@ -150,10 +150,13 @@ impl ServiceService {
     }
 }
 
-/// Moves every service that is not operational ahead of the others; each
-/// group keeps the chosen order.
+/// Moves every service that is not operational ahead of the others of its
+/// folder; each group keeps the chosen order, and the folders stay where
+/// they are.
 pub fn put_problems_first(services: &mut [Service]) {
-    services.sort_by_key(|service| service.status == ServiceStatus::Operational);
+    for folder in services.chunk_by_mut(|a, b| a.folder_id == b.folder_id) {
+        folder.sort_by_key(|service| service.status == ServiceStatus::Operational);
+    }
 }
 
 /// Name and description rules as a message key, so a route can re-render
@@ -264,6 +267,27 @@ mod tests {
         put_problems_first(&mut created);
         let names: Vec<&str> = created.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names, ["VPN", "Paie", "Mail", "Wiki"]);
+    }
+
+    #[tokio::test]
+    async fn problems_come_first_within_each_folder() {
+        let pool = test_pool().await;
+        let mut created = Vec::new();
+        for name in ["Mail", "VPN", "Wiki", "Paie"] {
+            created.push(
+                ServiceRepository::create(&pool, name, &name.to_lowercase(), None, None, None)
+                    .await
+                    .unwrap(),
+            );
+        }
+        for service in &mut created[2..] {
+            service.folder_id = Some(1);
+        }
+        created[1].status = ServiceStatus::Degraded;
+        created[3].status = ServiceStatus::MajorOutage;
+        put_problems_first(&mut created);
+        let names: Vec<&str> = created.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["VPN", "Mail", "Paie", "Wiki"]);
     }
 
     #[test]
