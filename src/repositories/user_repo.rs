@@ -4,7 +4,7 @@
 //! ignore case: the column is declared `COLLATE NOCASE`.
 
 use crate::db::DbPool;
-use crate::models::{Role, User};
+use crate::models::{Grants, GroupMember, Role, User};
 
 /// How long a temporary password opens the account, as an `SQLite` date
 /// modifier.
@@ -133,6 +133,42 @@ impl UserRepository {
         sqlx::query_as::<_, User>("SELECT * FROM users ORDER BY created_at DESC")
             .fetch_all(pool)
             .await
+    }
+
+    /// The active readers, the only accounts a service can be opened to by
+    /// name: publishers and admins see everything.
+    pub async fn active_readers(pool: &DbPool) -> Result<Vec<GroupMember>, sqlx::Error> {
+        sqlx::query_as::<_, GroupMember>(
+            "SELECT id, display_name, email, is_active FROM users \
+             WHERE role = 'reader' AND is_active = 1 \
+             ORDER BY display_name COLLATE NOCASE, id",
+        )
+        .fetch_all(pool)
+        .await
+    }
+
+    pub async fn active_reader_count(pool: &DbPool) -> Result<i64, sqlx::Error> {
+        sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE role = 'reader' AND is_active = 1")
+            .fetch_one(pool)
+            .await
+    }
+
+    /// How many active readers the grants open a service to, counting a
+    /// reader once however many ways lead to them.
+    pub async fn readers_reached(pool: &DbPool, grants: Grants<'_>) -> Result<i64, sqlx::Error> {
+        let members = serde_json::to_string(grants.members).unwrap_or_default();
+        let groups = serde_json::to_string(grants.groups).unwrap_or_default();
+        sqlx::query_scalar(
+            "SELECT COUNT(DISTINCT u.id) FROM users u \
+             WHERE u.role = 'reader' AND u.is_active = 1 \
+             AND (u.id IN (SELECT value FROM json_each(?1)) \
+                  OR EXISTS (SELECT 1 FROM group_members gm WHERE gm.user_id = u.id \
+                             AND gm.group_id IN (SELECT value FROM json_each(?2))))",
+        )
+        .bind(&members)
+        .bind(&groups)
+        .fetch_one(pool)
+        .await
     }
 
     /// Change a role, unless that would demote the last active admin.
@@ -291,6 +327,7 @@ impl UserRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repositories::GroupRepository;
     use crate::test_helpers::test_pool;
 
     fn new_user(email: &str, role: Role) -> NewUser<'_> {
@@ -566,6 +603,75 @@ mod tests {
         assert!(
             kept.is_some_and(|seen| seen <= expected),
             "a visit a minute ago is kept"
+        );
+    }
+
+    async fn account(pool: &DbPool, email: &str, name: &str, role: Role) -> i64 {
+        UserRepository::create(pool, email, "h", name, role)
+            .await
+            .unwrap()
+            .id
+    }
+
+    #[tokio::test]
+    async fn active_readers_lists_active_readers_only_in_name_order() {
+        let pool = test_pool().await;
+        account(&pool, "zoe@x.com", "zoe", Role::Reader).await;
+        account(&pool, "ann@x.com", "Ann", Role::Reader).await;
+        account(&pool, "pub@x.com", "Pub", Role::Publisher).await;
+        account(&pool, "adm@x.com", "Adm", Role::Admin).await;
+        let gone = account(&pool, "gone@x.com", "Gone", Role::Reader).await;
+        UserRepository::set_active(&pool, gone, false)
+            .await
+            .unwrap();
+
+        let readers = UserRepository::active_readers(&pool).await.unwrap();
+
+        let names: Vec<&str> = readers.iter().map(|r| r.display_name.as_str()).collect();
+        assert_eq!(names, vec!["Ann", "zoe"]);
+        assert_eq!(UserRepository::active_reader_count(&pool).await.unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn readers_reached_counts_each_active_reader_once() {
+        let pool = test_pool().await;
+        let g1 = GroupRepository::create(&pool, "G1").await.unwrap();
+        let g2 = GroupRepository::create(&pool, "G2").await.unwrap();
+        let both = account(&pool, "both@x.com", "Both", Role::Reader).await;
+        let one = account(&pool, "one@x.com", "One", Role::Reader).await;
+        let named = account(&pool, "named@x.com", "Named", Role::Reader).await;
+        let publisher = account(&pool, "pub@x.com", "Pub", Role::Publisher).await;
+        let admin = account(&pool, "adm@x.com", "Adm", Role::Admin).await;
+        let disabled = account(&pool, "off@x.com", "Off", Role::Reader).await;
+        GroupRepository::add_members(&pool, g1, &[both, one, publisher, admin, disabled])
+            .await
+            .unwrap();
+        GroupRepository::add_members(&pool, g2, &[both])
+            .await
+            .unwrap();
+        UserRepository::set_active(&pool, disabled, false)
+            .await
+            .unwrap();
+
+        let none = UserRepository::readers_reached(&pool, Grants::default());
+        assert_eq!(none.await.unwrap(), 0);
+        let both_groups = [g1, g2];
+        let groups = Grants::groups(&both_groups);
+        assert_eq!(
+            UserRepository::readers_reached(&pool, groups)
+                .await
+                .unwrap(),
+            2
+        );
+        let with_member = Grants {
+            groups: &both_groups,
+            members: &[named, both, publisher, disabled],
+        };
+        assert_eq!(
+            UserRepository::readers_reached(&pool, with_member)
+                .await
+                .unwrap(),
+            3
         );
     }
 }

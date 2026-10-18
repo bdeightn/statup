@@ -142,8 +142,9 @@ impl GroupRepository {
         Ok(result.rows_affected() == 1)
     }
 
-    /// How many restricted services have this group as their only one:
-    /// once it is deleted, only publishers and admins see them.
+    /// How many restricted services have this group as their only one and
+    /// no member opened to by name: once it is deleted, only publishers and
+    /// admins see them.
     pub async fn services_closed_by_deleting(
         pool: &DbPool,
         group_id: i64,
@@ -153,7 +154,8 @@ impl GroupRepository {
              WHERE s.visibility = 'groups' \
              AND EXISTS (SELECT 1 FROM service_access a \
                          WHERE a.service_id = s.id AND a.group_id = ?) \
-             AND (SELECT COUNT(*) FROM service_access a WHERE a.service_id = s.id) = 1",
+             AND (SELECT COUNT(*) FROM service_access a WHERE a.service_id = s.id) = 1 \
+             AND NOT EXISTS (SELECT 1 FROM service_member_access m WHERE m.service_id = s.id)",
         )
         .bind(group_id)
         .fetch_one(pool)
@@ -165,7 +167,7 @@ impl GroupRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Role, Visibility};
+    use crate::models::{Grants, Role, Visibility};
     use crate::repositories::{ServiceRepository, UserRepository};
     use crate::test_helpers::test_pool;
 
@@ -263,7 +265,7 @@ mod tests {
         GroupRepository::add_members(&pool, group, &[user])
             .await
             .unwrap();
-        ServiceRepository::set_visibility(&pool, svc, Visibility::Groups, &[group])
+        ServiceRepository::set_visibility(&pool, svc, Visibility::Groups, Grants::groups(&[group]))
             .await
             .unwrap();
 
@@ -365,16 +367,21 @@ mod tests {
         let members = service(&pool, "Members").await;
         let elsewhere = service(&pool, "Elsewhere").await;
         let groups = Visibility::Groups;
-        ServiceRepository::set_visibility(&pool, only, groups, &[support])
+        ServiceRepository::set_visibility(&pool, only, groups, Grants::groups(&[support]))
             .await
             .unwrap();
-        ServiceRepository::set_visibility(&pool, shared, groups, &[support, sales])
+        ServiceRepository::set_visibility(&pool, shared, groups, Grants::groups(&[support, sales]))
             .await
             .unwrap();
-        ServiceRepository::set_visibility(&pool, members, Visibility::Members, &[support])
-            .await
-            .unwrap();
-        ServiceRepository::set_visibility(&pool, elsewhere, groups, &[sales])
+        ServiceRepository::set_visibility(
+            &pool,
+            members,
+            Visibility::Members,
+            Grants::groups(&[support]),
+        )
+        .await
+        .unwrap();
+        ServiceRepository::set_visibility(&pool, elsewhere, groups, Grants::groups(&[sales]))
             .await
             .unwrap();
 
@@ -382,5 +389,38 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(closed, 1, "only the service it alone opens");
+    }
+
+    #[tokio::test]
+    async fn a_service_also_opened_to_a_member_is_not_closed_by_deleting_the_group() {
+        let pool = test_pool().await;
+        let support = GroupRepository::create(&pool, "Support").await.unwrap();
+        let reader = member(&pool, "r@x.com").await;
+        let alone = service(&pool, "Alone").await;
+        let with_member = service(&pool, "WithMember").await;
+        ServiceRepository::set_visibility(
+            &pool,
+            alone,
+            Visibility::Groups,
+            Grants::groups(&[support]),
+        )
+        .await
+        .unwrap();
+        ServiceRepository::set_visibility(
+            &pool,
+            with_member,
+            Visibility::Groups,
+            Grants {
+                groups: &[support],
+                members: &[reader],
+            },
+        )
+        .await
+        .unwrap();
+
+        let closed = GroupRepository::services_closed_by_deleting(&pool, support)
+            .await
+            .unwrap();
+        assert_eq!(closed, 1, "the one with a member stays open to them");
     }
 }

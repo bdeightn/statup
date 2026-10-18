@@ -16,7 +16,7 @@ use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::is_htmx;
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher, Viewer};
 use crate::models::{
-    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, JournalKind, MemberGroup,
+    BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Grants, Icon, JournalKind, MemberGroup,
     Service, ServiceStatus, User, Visibility, find_builtin_icon,
 };
 use crate::modules::services::{LONG_DAYS, ServiceRow, Strip, service_history, strips};
@@ -632,7 +632,8 @@ async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<Service, AppErr
     )
     .await?;
     ServiceService::set_monitoring(pool, service.id, monitoring.as_ref()).await?;
-    ServiceRepository::set_visibility(pool, service.id, visibility, group_ids).await?;
+    ServiceRepository::set_visibility(pool, service.id, visibility, Grants::groups(group_ids))
+        .await?;
     Ok(service)
 }
 
@@ -651,7 +652,7 @@ async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), A
     )
     .await?;
     ServiceService::set_monitoring(pool, id, monitoring.as_ref()).await?;
-    ServiceRepository::set_visibility(pool, id, visibility, group_ids).await?;
+    ServiceRepository::set_visibility(pool, id, visibility, Grants::groups(group_ids)).await?;
     Ok(())
 }
 

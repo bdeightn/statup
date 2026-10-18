@@ -22,7 +22,7 @@ pub async fn scope_of(pool: &DbPool, user: Option<&User>) -> Result<Scope, sqlx:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Role, Visibility};
+    use crate::models::{Grants, Role, Visibility};
     use crate::repositories::{GroupRepository, UserRepository};
     use crate::test_helpers::test_pool;
 
@@ -37,7 +37,7 @@ mod tests {
             .await
             .unwrap()
             .id;
-        ServiceRepository::set_visibility(pool, id, visibility, groups)
+        ServiceRepository::set_visibility(pool, id, visibility, Grants::groups(groups))
             .await
             .unwrap();
         id

@@ -7,7 +7,9 @@ use chrono::{Duration, Utc};
 use common::TestApp;
 use sqlx::SqlitePool;
 use statup::i18n::{I18n, LANGUAGES};
-use statup::models::{Category, CreateEventInput, Kind, Lifecycle, Role, Severity, Visibility};
+use statup::models::{
+    Category, CreateEventInput, Grants, Kind, Lifecycle, Role, Severity, Visibility,
+};
 use statup::repositories::{GroupRepository, ServiceRepository, UserRepository};
 use statup::services::{EventService, ServiceService};
 
@@ -29,7 +31,8 @@ const ANNOUNCEMENT: &str = "Nouveautes Cobalt";
 /// A public instance with an open service, one for signed-in members and
 /// one restricted to the group "Paie", down under a critical incident that
 /// carries an update, and where a check found an outage. `inside` is a reader
-/// of the group, `outside` a reader who is not, `publisher` publishes. A second
+/// of the group, `outside` a reader who is not, `granted` a reader outside
+/// the group who is opened to the service by name, `publisher` publishes. A second
 /// incident touches both services, a maintenance is announced on the
 /// restricted one and another is over, and an announcement that names no
 /// service follows the first.
@@ -65,6 +68,9 @@ impl Fixture {
             .await;
         app.create_user("outside@x.com", PASSWORD, "Outside", Role::Reader)
             .await;
+        let granted = app
+            .create_user("granted@x.com", PASSWORD, "Granted", Role::Reader)
+            .await;
         app.create_user("publisher@x.com", PASSWORD, "Publisher", Role::Publisher)
             .await;
         let pool = &app.pool;
@@ -72,7 +78,7 @@ impl Fixture {
         GroupRepository::add_members(pool, group, &[inside])
             .await
             .unwrap();
-        let (open, restricted, members) = seed_services(pool, group).await;
+        let (open, restricted, members) = seed_services(pool, group, granted).await;
         let events = seed_events(pool, admin, open, restricted).await;
         Self {
             app,
@@ -136,7 +142,7 @@ impl Fixture {
     }
 }
 
-async fn seed_services(pool: &SqlitePool, group: i64) -> (i64, i64, i64) {
+async fn seed_services(pool: &SqlitePool, group: i64, granted: i64) -> (i64, i64, i64) {
     let open = ServiceRepository::create(pool, OPEN, "intranet", None, None, None)
         .await
         .unwrap()
@@ -145,14 +151,22 @@ async fn seed_services(pool: &SqlitePool, group: i64) -> (i64, i64, i64) {
         .await
         .unwrap()
         .id;
-    ServiceRepository::set_visibility(pool, restricted, Visibility::Groups, &[group])
-        .await
-        .unwrap();
+    ServiceRepository::set_visibility(
+        pool,
+        restricted,
+        Visibility::Groups,
+        Grants {
+            groups: &[group],
+            members: &[granted],
+        },
+    )
+    .await
+    .unwrap();
     let members = ServiceRepository::create(pool, MEMBERS_SERVICE, MEMBERS_SLUG, None, None, None)
         .await
         .unwrap()
         .id;
-    ServiceRepository::set_visibility(pool, members, Visibility::Members, &[])
+    ServiceRepository::set_visibility(pool, members, Visibility::Members, Grants::default())
         .await
         .unwrap();
     (open, restricted, members)
@@ -317,6 +331,11 @@ async fn a_restricted_event_opens_for_a_reader_of_the_group() {
 }
 
 #[tokio::test]
+async fn a_restricted_event_opens_for_a_reader_granted_by_name() {
+    assert_restricted_event_status(Some("granted@x.com"), 200).await;
+}
+
+#[tokio::test]
 async fn a_restricted_event_opens_for_an_administrator() {
     assert_restricted_event_status(Some("admin@x.com"), 200).await;
 }
@@ -334,6 +353,11 @@ async fn a_restricted_service_panel_is_missing_for_a_reader_outside_the_group() 
 #[tokio::test]
 async fn a_restricted_service_panel_opens_for_a_reader_of_the_group() {
     assert_restricted_service_panel_status(Some("inside@x.com"), 200).await;
+}
+
+#[tokio::test]
+async fn a_restricted_service_panel_opens_for_a_reader_granted_by_name() {
+    assert_restricted_service_panel_status(Some("granted@x.com"), 200).await;
 }
 
 #[tokio::test]
@@ -605,6 +629,13 @@ async fn the_sweep_shows_the_group_service_to_a_reader_of_the_group() {
 }
 
 #[tokio::test]
+async fn the_sweep_shows_the_service_to_a_reader_granted_by_name() {
+    let fixture = Fixture::signed_in("granted@x.com").await;
+    assert_eq!(fixture.unread_badge().await.as_deref(), Some("3"));
+    assert_sees_the_restricted_service(&fixture).await;
+}
+
+#[tokio::test]
 async fn the_sweep_shows_the_group_service_to_a_publisher() {
     let fixture = Fixture::signed_in("publisher@x.com").await;
     assert_sees_the_restricted_service(&fixture).await;
@@ -738,7 +769,7 @@ async fn a_visitor_who_sees_no_service_is_asked_to_sign_in() {
         .await
         .unwrap()
         .id;
-    ServiceRepository::set_visibility(&app.pool, only, Visibility::Members, &[])
+    ServiceRepository::set_visibility(&app.pool, only, Visibility::Members, Grants::default())
         .await
         .unwrap();
     let (_, body) = app.get("/").await;

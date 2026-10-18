@@ -8,7 +8,7 @@ use reqwest::StatusCode;
 
 use common::TestApp;
 use statup::i18n::{I18n, LANGUAGES};
-use statup::models::{Role, Visibility};
+use statup::models::{Grants, Role, Visibility};
 use statup::repositories::{GroupRepository, ServiceRepository, UserRepository};
 
 const ADMIN_EMAIL: &str = "admin@test.com";
@@ -342,15 +342,25 @@ async fn deleting_a_group_names_what_it_closes_and_clears_its_traces() {
         ServiceRepository::create(&app.pool, "Coffre Zephyr", "coffre", None, None, None)
             .await
             .unwrap();
-    ServiceRepository::set_visibility(&app.pool, only_paie.id, Visibility::Groups, &[paie])
-        .await
-        .unwrap();
+    ServiceRepository::set_visibility(
+        &app.pool,
+        only_paie.id,
+        Visibility::Groups,
+        Grants::groups(&[paie]),
+    )
+    .await
+    .unwrap();
     let shared = ServiceRepository::create(&app.pool, "Annuaire K2", "annuaire", None, None, None)
         .await
         .unwrap();
-    ServiceRepository::set_visibility(&app.pool, shared.id, Visibility::Groups, &[paie, compta])
-        .await
-        .unwrap();
+    ServiceRepository::set_visibility(
+        &app.pool,
+        shared.id,
+        Visibility::Groups,
+        Grants::groups(&[paie, compta]),
+    )
+    .await
+    .unwrap();
 
     let body = page(&app, &format!("/admin/groups/{paie}")).await;
     assert!(body.contains(&text("admin.delete_group_members")));

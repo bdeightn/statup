@@ -2,12 +2,14 @@
 //!
 //! A service that follows its folder carries a copy of the folder's setting
 //! (`services.visibility` and `service_access`), so the read rule never looks
-//! at folders. [`propagate`] is the only code that writes those copies.
+//! at folders. [`propagate`] is the only code that writes those copies, for
+//! groups (`service_access`) and for single members (`service_member_access`).
 
 use sqlx::Sqlite;
 
+use super::GrantTables;
 use crate::db::DbPool;
-use crate::models::{ServiceFolder, Visibility};
+use crate::models::{Grants, ServiceFolder, Visibility};
 
 pub struct FolderRepository;
 
@@ -87,15 +89,24 @@ impl FolderRepository {
         .await
     }
 
+    pub async fn member_ids_of(pool: &DbPool, folder_id: i64) -> Result<Vec<i64>, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT user_id FROM folder_member_access WHERE folder_id = ? ORDER BY user_id",
+        )
+        .bind(folder_id)
+        .fetch_all(pool)
+        .await
+    }
+
     /// Saves who sees the folder and hands it down to the services that
-    /// follow it. The groups only count for [`Visibility::Groups`]; ids of
-    /// groups that do not exist are dropped. Returns false when no such
-    /// folder exists.
+    /// follow it. The grants only count for [`Visibility::Groups`]; ids of
+    /// groups that do not exist are dropped, and so are members who are not
+    /// active readers. Returns false when no such folder exists.
     pub async fn set_visibility(
         pool: &DbPool,
         folder_id: i64,
         visibility: Visibility,
-        group_ids: &[i64],
+        grants: Grants<'_>,
     ) -> Result<bool, sqlx::Error> {
         // The write comes first: a deferred transaction that read first
         // could copy a value another writer has changed since.
@@ -108,21 +119,7 @@ impl FolderRepository {
         if updated.rows_affected() == 0 {
             return Ok(false);
         }
-        sqlx::query("DELETE FROM folder_access WHERE folder_id = ?")
-            .bind(folder_id)
-            .execute(&mut *tx)
-            .await?;
-        if visibility == Visibility::Groups {
-            let ids = serde_json::to_string(group_ids).unwrap_or_default();
-            sqlx::query(
-                "INSERT INTO folder_access (folder_id, group_id) \
-                 SELECT ?, id FROM member_groups WHERE id IN (SELECT value FROM json_each(?))",
-            )
-            .bind(folder_id)
-            .bind(&ids)
-            .execute(&mut *tx)
-            .await?;
-        }
+        super::replace_grants(&mut tx, GrantTables::Folder, folder_id, visibility, grants).await?;
         propagate(&mut tx, folder_id).await?;
         tx.commit().await?;
         Ok(true)
@@ -133,7 +130,8 @@ impl FolderRepository {
     /// an unknown folder moves nothing.
     ///
     /// A service follows the folder when it was visible to everyone or
-    /// already had exactly the folder's setting. Any other restriction of
+    /// already had exactly the folder's setting: same visibility, same groups
+    /// and same members. Any other restriction of
     /// its own is kept, so moving a service into a folder never shows it to
     /// more people. A follower moved from another folder carries that
     /// folder's copy, so the same rule applies to it.
@@ -156,6 +154,14 @@ impl FolderRepository {
                          AND NOT EXISTS (SELECT group_id FROM folder_access \
                                          WHERE folder_id = ?1 \
                                          EXCEPT SELECT group_id FROM service_access \
+                                                WHERE service_id = services.id) \
+                         AND NOT EXISTS (SELECT user_id FROM service_member_access \
+                                         WHERE service_id = services.id \
+                                         EXCEPT SELECT user_id FROM folder_member_access \
+                                                WHERE folder_id = ?1) \
+                         AND NOT EXISTS (SELECT user_id FROM folder_member_access \
+                                         WHERE folder_id = ?1 \
+                                         EXCEPT SELECT user_id FROM service_member_access \
                                                 WHERE service_id = services.id) \
                      THEN 1 ELSE 0 END, \
                  folder_id = ?1, \
@@ -264,14 +270,30 @@ async fn propagate(
     .bind(folder_id)
     .execute(&mut **tx)
     .await?;
+    sqlx::query(
+        "DELETE FROM service_member_access WHERE service_id IN \
+         (SELECT id FROM services WHERE folder_id = ?1 AND follows_folder = 1)",
+    )
+    .bind(folder_id)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO service_member_access (service_id, user_id) \
+         SELECT s.id, fm.user_id FROM services s \
+         JOIN folder_member_access fm ON fm.folder_id = s.folder_id \
+         WHERE s.folder_id = ?1 AND s.follows_folder = 1",
+    )
+    .bind(folder_id)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::Service;
-    use crate::repositories::{GroupRepository, ServiceRepository};
+    use crate::models::{Role, Service};
+    use crate::repositories::{GroupRepository, ServiceRepository, UserRepository};
     use crate::test_helpers::test_pool;
 
     async fn service(pool: &DbPool, name: &str) -> i64 {
@@ -294,16 +316,21 @@ mod tests {
 
     async fn folder_with(pool: &DbPool, name: &str, visibility: Visibility, groups: &[i64]) -> i64 {
         let id = FolderRepository::create(pool, name).await.unwrap();
-        FolderRepository::set_visibility(pool, id, visibility, groups)
+        FolderRepository::set_visibility(pool, id, visibility, Grants::groups(groups))
             .await
             .unwrap();
         id
     }
 
     async fn restrict(pool: &DbPool, service_id: i64, groups: &[i64]) {
-        ServiceRepository::set_visibility(pool, service_id, Visibility::Groups, groups)
-            .await
-            .unwrap();
+        ServiceRepository::set_visibility(
+            pool,
+            service_id,
+            Visibility::Groups,
+            Grants::groups(groups),
+        )
+        .await
+        .unwrap();
     }
 
     async fn ordered_names(pool: &DbPool) -> Vec<String> {
@@ -338,7 +365,22 @@ mod tests {
                     .await
                     .unwrap()
             );
+            assert_eq!(
+                ServiceRepository::member_ids_of(pool, service_id)
+                    .await
+                    .unwrap(),
+                FolderRepository::member_ids_of(pool, folder_id)
+                    .await
+                    .unwrap()
+            );
         }
+    }
+
+    async fn reader(pool: &DbPool, email: &str) -> i64 {
+        UserRepository::create(pool, email, "hash", "Someone", Role::Reader)
+            .await
+            .unwrap()
+            .id
     }
 
     #[tokio::test]
@@ -497,9 +539,14 @@ mod tests {
             .unwrap();
 
         assert!(
-            FolderRepository::set_visibility(&pool, folder, Visibility::Groups, &[g1, 999])
-                .await
-                .unwrap()
+            FolderRepository::set_visibility(
+                &pool,
+                folder,
+                Visibility::Groups,
+                Grants::groups(&[g1, 999])
+            )
+            .await
+            .unwrap()
         );
 
         assert_eq!(
@@ -516,9 +563,14 @@ mod tests {
         );
 
         assert!(
-            FolderRepository::set_visibility(&pool, folder, Visibility::Members, &[g1])
-                .await
-                .unwrap()
+            FolderRepository::set_visibility(
+                &pool,
+                folder,
+                Visibility::Members,
+                Grants::groups(&[g1])
+            )
+            .await
+            .unwrap()
         );
         assert_eq!(
             FolderRepository::group_ids_of(&pool, folder).await.unwrap(),
@@ -542,6 +594,141 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn members_granted_on_a_folder_reach_its_followers_only() {
+        let pool = test_pool().await;
+        let g1 = group(&pool, "G1").await;
+        let (ann, bob) = (
+            reader(&pool, "ann@x.com").await,
+            reader(&pool, "bob@x.com").await,
+        );
+        let folder = FolderRepository::create(&pool, "Apps").await.unwrap();
+        let follower = service(&pool, "Follower").await;
+        let own = service(&pool, "Own").await;
+        FolderRepository::add_services(&pool, folder, &[follower])
+            .await
+            .unwrap();
+        ServiceRepository::set_visibility(
+            &pool,
+            own,
+            Visibility::Groups,
+            Grants {
+                groups: &[],
+                members: &[bob],
+            },
+        )
+        .await
+        .unwrap();
+        FolderRepository::add_services(&pool, folder, &[own])
+            .await
+            .unwrap();
+
+        FolderRepository::set_visibility(
+            &pool,
+            folder,
+            Visibility::Groups,
+            Grants {
+                groups: &[g1],
+                members: &[ann],
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            FolderRepository::member_ids_of(&pool, folder)
+                .await
+                .unwrap(),
+            vec![ann]
+        );
+        assert_eq!(
+            ServiceRepository::member_ids_of(&pool, follower)
+                .await
+                .unwrap(),
+            vec![ann]
+        );
+        assert_eq!(
+            ServiceRepository::member_ids_of(&pool, own).await.unwrap(),
+            vec![bob]
+        );
+        assert_followers_match(&pool).await;
+
+        FolderRepository::set_visibility(&pool, folder, Visibility::Members, Grants::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            ServiceRepository::member_ids_of(&pool, follower)
+                .await
+                .unwrap(),
+            Vec::<i64>::new()
+        );
+        assert_followers_match(&pool).await;
+    }
+
+    #[tokio::test]
+    async fn a_service_follows_only_a_folder_with_the_same_groups_and_members() {
+        let pool = test_pool().await;
+        let g1 = group(&pool, "G1").await;
+        let (ann, bob) = (
+            reader(&pool, "ann@x.com").await,
+            reader(&pool, "bob@x.com").await,
+        );
+        let folder = FolderRepository::create(&pool, "Guarded").await.unwrap();
+        FolderRepository::set_visibility(
+            &pool,
+            folder,
+            Visibility::Groups,
+            Grants {
+                groups: &[g1],
+                members: &[ann],
+            },
+        )
+        .await
+        .unwrap();
+        let same = service(&pool, "Same").await;
+        let other_member = service(&pool, "OtherMember").await;
+        let no_member = service(&pool, "NoMember").await;
+        for (id, members) in [
+            (same, vec![ann]),
+            (other_member, vec![bob]),
+            (no_member, vec![]),
+        ] {
+            ServiceRepository::set_visibility(
+                &pool,
+                id,
+                Visibility::Groups,
+                Grants {
+                    groups: &[g1],
+                    members: &members,
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        let joined =
+            FolderRepository::add_services(&pool, folder, &[same, other_member, no_member])
+                .await
+                .unwrap();
+
+        let follows = |id: i64| {
+            joined
+                .iter()
+                .find(|j| j.service_id == id)
+                .map(|j| j.follows)
+        };
+        assert_eq!(follows(same), Some(true));
+        assert_eq!(follows(other_member), Some(false));
+        assert_eq!(follows(no_member), Some(false));
+        assert_eq!(
+            ServiceRepository::member_ids_of(&pool, other_member)
+                .await
+                .unwrap(),
+            vec![bob]
+        );
+        assert_followers_match(&pool).await;
+    }
+
+    #[tokio::test]
     async fn a_setting_made_on_a_follower_is_its_own() {
         let pool = test_pool().await;
         let g1 = group(&pool, "G1").await;
@@ -552,7 +739,7 @@ mod tests {
             .unwrap();
 
         restrict(&pool, wiki, &[g1]).await;
-        FolderRepository::set_visibility(&pool, folder, Visibility::Everyone, &[])
+        FolderRepository::set_visibility(&pool, folder, Visibility::Everyone, Grants::default())
             .await
             .unwrap();
 
@@ -568,9 +755,14 @@ mod tests {
         let wiki = service(&pool, "Wiki").await;
 
         assert!(
-            !FolderRepository::set_visibility(&pool, 999, Visibility::Groups, &[g1])
-                .await
-                .unwrap()
+            !FolderRepository::set_visibility(
+                &pool,
+                999,
+                Visibility::Groups,
+                Grants::groups(&[g1])
+            )
+            .await
+            .unwrap()
         );
         assert_eq!(
             FolderRepository::add_services(&pool, 999, &[wiki])
