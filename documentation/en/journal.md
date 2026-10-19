@@ -1,0 +1,33 @@
+---
+title: Journal
+description: "What happened on the instance, day by day, kept for administrators and exported as a CSV file."
+---
+
+The Journal lists what happened on the instance, day by day. Administrators open it from **Settings**, **Journal**, then **Open the journal**. The server output (`docker compose logs statup`) shows the same lines in English.
+
+## What the journal keeps
+
+**Change**, at the top, sets what the Journal keeps and for how long.
+
+**Essential**, the default, keeps the large changes and the problems:
+
+- services added, changed or deleted, the settings, the alert channels;
+- members added, their role or their account changed, an event deleted;
+- an outage detected and its end, a message to an alert channel given up;
+- sign-ins blocked after too many attempts, and the app's errors.
+
+**Detailed** keeps everything from the moment it is chosen: sign-ins and refused attempts, password resets, events published and updated, each failed check, each message sent.
+
+**Retention** is 90 days by default, from 1 to 365. Nobody can edit or delete a line; only the retention removes them.
+
+## Find a line
+
+**Search** looks through the lines. **Type** narrows them to **Members**, **Sign-ins**, **Monitoring**, **Alerts** or **System**, **Member** to one person, and **From** and **To** to a period.
+
+## Export
+
+**Export** downloads the lines shown, filters included, as a CSV file in UTF-8 named `journal-YYYY-MM-DD.csv`, of up to 10,000 lines. A spreadsheet opens it.
+
+## What is never written
+
+Sign-in lines keep the client address, read like the rest of the app: see [`TRUST_PROXY_HEADERS`](configuration.md#trust_proxy_headers). No password, reset link, webhook address, or anything after the host of a checked address is ever written.
