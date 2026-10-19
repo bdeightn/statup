@@ -8,8 +8,6 @@ pub struct ServiceFolder {
     pub name: String,
     pub position: i64,
     pub visibility: Visibility,
-    /// Filled by the listing query.
-    pub service_count: i64,
 }
 
 /// Longest folder name, in characters.

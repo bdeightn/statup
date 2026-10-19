@@ -108,11 +108,7 @@ async fn folder_names(
     if services.iter().all(|service| service.folder_id.is_none()) {
         return Ok(HashMap::new());
     }
-    let folders = FolderRepository::list(pool).await?;
-    Ok(folders
-        .into_iter()
-        .map(|folder| (folder.id, folder.name))
-        .collect())
+    Ok(FolderRepository::names(pool).await?)
 }
 
 #[derive(Template)]

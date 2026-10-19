@@ -5,6 +5,8 @@
 //! at folders. [`propagate`] is the only code that writes those copies, for
 //! groups (`service_access`) and for single members (`service_member_access`).
 
+use std::collections::HashMap;
+
 use sqlx::Sqlite;
 
 use super::GrantTables;
@@ -13,15 +15,13 @@ use crate::models::{Grants, ServiceFolder, Visibility};
 
 pub struct FolderRepository;
 
-/// A folder with its count of services.
-const FOLDER_COLUMNS: &str = "SELECT f.id, f.name, f.position, f.visibility, \
-     (SELECT COUNT(*) FROM services s WHERE s.folder_id = f.id) AS service_count \
-     FROM service_folders f";
+const FOLDER_COLUMNS: &str = "SELECT f.id, f.name, f.position, f.visibility FROM service_folders f";
 
 /// A service moved into a folder, and whether it now follows it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct Joined {
     pub service_id: i64,
+    pub name: String,
     pub follows: bool,
 }
 
@@ -71,7 +71,15 @@ impl FolderRepository {
             .await
     }
 
-    /// Every folder in the chosen order, with its count of services.
+    /// The name of each folder, by its id.
+    pub async fn names(pool: &DbPool) -> Result<HashMap<i64, String>, sqlx::Error> {
+        let rows: Vec<(i64, String)> = sqlx::query_as("SELECT id, name FROM service_folders")
+            .fetch_all(pool)
+            .await?;
+        Ok(rows.into_iter().collect())
+    }
+
+    /// Every folder in the chosen order.
     pub async fn list(pool: &DbPool) -> Result<Vec<ServiceFolder>, sqlx::Error> {
         sqlx::query_as::<_, ServiceFolder>(&format!(
             "{FOLDER_COLUMNS} ORDER BY f.position, f.name COLLATE NOCASE, f.id"
@@ -142,36 +150,26 @@ impl FolderRepository {
     ) -> Result<Vec<Joined>, sqlx::Error> {
         let ids = serde_json::to_string(service_ids).unwrap_or_default();
         let mut tx = pool.begin().await?;
-        let joined = sqlx::query_as::<_, Joined>(
+        let same_grants = [
+            same_set("service_access", "folder_access", "group_id"),
+            same_set("service_member_access", "folder_member_access", "user_id"),
+        ]
+        .join(" AND ");
+        let joined = sqlx::query_as::<_, Joined>(&format!(
             "UPDATE services SET \
                  follows_folder = CASE \
                      WHEN visibility = 'everyone' THEN 1 \
                      WHEN visibility = (SELECT visibility FROM service_folders WHERE id = ?1) \
-                         AND NOT EXISTS (SELECT group_id FROM service_access \
-                                         WHERE service_id = services.id \
-                                         EXCEPT SELECT group_id FROM folder_access \
-                                                WHERE folder_id = ?1) \
-                         AND NOT EXISTS (SELECT group_id FROM folder_access \
-                                         WHERE folder_id = ?1 \
-                                         EXCEPT SELECT group_id FROM service_access \
-                                                WHERE service_id = services.id) \
-                         AND NOT EXISTS (SELECT user_id FROM service_member_access \
-                                         WHERE service_id = services.id \
-                                         EXCEPT SELECT user_id FROM folder_member_access \
-                                                WHERE folder_id = ?1) \
-                         AND NOT EXISTS (SELECT user_id FROM folder_member_access \
-                                         WHERE folder_id = ?1 \
-                                         EXCEPT SELECT user_id FROM service_member_access \
-                                                WHERE service_id = services.id) \
-                     THEN 1 ELSE 0 END, \
+                         AND {same_grants} THEN 1 \
+                     ELSE 0 END, \
                  folder_id = ?1, \
                  position = (SELECT COALESCE(MAX(position), 0) + 1 FROM services) \
                      + (SELECT key FROM json_each(?2) WHERE value = services.id LIMIT 1) \
              WHERE id IN (SELECT value FROM json_each(?2)) \
                  AND folder_id IS NOT ?1 \
                  AND EXISTS (SELECT 1 FROM service_folders WHERE id = ?1) \
-             RETURNING id AS service_id, follows_folder AS follows",
-        )
+             RETURNING id AS service_id, name, follows_folder AS follows"
+        ))
         .bind(folder_id)
         .bind(&ids)
         .fetch_all(&mut *tx)
@@ -265,7 +263,19 @@ impl FolderRepository {
     }
 }
 
-/// Copies the folder's setting to the services that follow it.
+/// Whether the service's grants in `copy` are exactly the folder's (`?1`)
+/// in `source`: none on one side that the other lacks.
+fn same_set(copy: &str, source: &str, grantee: &str) -> String {
+    format!(
+        "NOT EXISTS (SELECT {grantee} FROM {copy} WHERE service_id = services.id \
+                     EXCEPT SELECT {grantee} FROM {source} WHERE folder_id = ?1) \
+         AND NOT EXISTS (SELECT {grantee} FROM {source} WHERE folder_id = ?1 \
+                         EXCEPT SELECT {grantee} FROM {copy} WHERE service_id = services.id)"
+    )
+}
+
+/// Copies the folder's setting to the services that follow it: its
+/// visibility, then its groups and its members.
 pub(super) async fn propagate(
     tx: &mut sqlx::Transaction<'_, Sqlite>,
     folder_id: i64,
@@ -277,38 +287,28 @@ pub(super) async fn propagate(
     .bind(folder_id)
     .execute(&mut **tx)
     .await?;
-    sqlx::query(
-        "DELETE FROM service_access WHERE service_id IN \
-         (SELECT id FROM services WHERE folder_id = ?1 AND follows_folder = 1)",
-    )
-    .bind(folder_id)
-    .execute(&mut **tx)
-    .await?;
-    sqlx::query(
-        "INSERT INTO service_access (service_id, group_id) \
-         SELECT s.id, fa.group_id FROM services s \
-         JOIN folder_access fa ON fa.folder_id = s.folder_id \
-         WHERE s.folder_id = ?1 AND s.follows_folder = 1",
-    )
-    .bind(folder_id)
-    .execute(&mut **tx)
-    .await?;
-    sqlx::query(
-        "DELETE FROM service_member_access WHERE service_id IN \
-         (SELECT id FROM services WHERE folder_id = ?1 AND follows_folder = 1)",
-    )
-    .bind(folder_id)
-    .execute(&mut **tx)
-    .await?;
-    sqlx::query(
-        "INSERT INTO service_member_access (service_id, user_id) \
-         SELECT s.id, fm.user_id FROM services s \
-         JOIN folder_member_access fm ON fm.folder_id = s.folder_id \
-         WHERE s.folder_id = ?1 AND s.follows_folder = 1",
-    )
-    .bind(folder_id)
-    .execute(&mut **tx)
-    .await?;
+    let copies = [
+        ("service_access", "folder_access", "group_id"),
+        ("service_member_access", "folder_member_access", "user_id"),
+    ];
+    for (copy, source, grantee) in copies {
+        sqlx::query(&format!(
+            "DELETE FROM {copy} WHERE service_id IN \
+             (SELECT id FROM services WHERE folder_id = ?1 AND follows_folder = 1)"
+        ))
+        .bind(folder_id)
+        .execute(&mut **tx)
+        .await?;
+        sqlx::query(&format!(
+            "INSERT INTO {copy} (service_id, {grantee}) \
+             SELECT s.id, a.{grantee} FROM services s \
+             JOIN {source} a ON a.folder_id = s.folder_id \
+             WHERE s.folder_id = ?1 AND s.follows_folder = 1"
+        ))
+        .bind(folder_id)
+        .execute(&mut **tx)
+        .await?;
+    }
     Ok(())
 }
 
@@ -420,9 +420,9 @@ mod tests {
         assert_eq!(
             folders
                 .iter()
-                .map(|f| (f.id, f.position, f.service_count))
+                .map(|f| (f.id, f.position))
                 .collect::<Vec<_>>(),
-            vec![(first, 1, 0), (second, 2, 1)]
+            vec![(first, 1), (second, 2)]
         );
         assert!(FolderRepository::rename(&pool, first, "Net").await.unwrap());
         assert_eq!(
@@ -502,6 +502,7 @@ mod tests {
             joined,
             vec![Joined {
                 service_id: other,
+                name: "Other".to_string(),
                 follows: false
             }]
         );

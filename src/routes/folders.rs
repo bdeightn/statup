@@ -2,8 +2,6 @@
 //! page adds and takes out its services, sets who sees it for the services
 //! that inherit it, renames it, and deletes it at its foot.
 
-use std::collections::HashMap;
-
 use askama::Template;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -229,11 +227,7 @@ async fn services_around(
     pool: &DbPool,
     id: i64,
 ) -> Result<(Vec<Service>, Vec<Candidate>), AppError> {
-    let folders: HashMap<i64, String> = FolderRepository::list(pool)
-        .await?
-        .into_iter()
-        .map(|folder| (folder.id, folder.name))
-        .collect();
+    let folders = FolderRepository::names(pool).await?;
     let (inside, outside): (Vec<Service>, Vec<Service>) = ServiceRepository::list_all(pool)
         .await?
         .into_iter()
@@ -405,18 +399,10 @@ pub async fn add_services(
 ) -> Result<Response, AppError> {
     let folder = find(&state.pool, id).await?;
     let joined = FolderRepository::add_services(&state.pool, id, &input.service_ids).await?;
-    let names: HashMap<i64, String> = ServiceRepository::list_all(&state.pool)
-        .await?
-        .into_iter()
-        .map(|service| (service.id, service.name))
-        .collect();
     for service in &joined {
-        let Some(name) = names.get(&service.service_id) else {
-            continue;
-        };
         NewJournalEntry::new(JournalKind::FolderServiceAdded)
             .by(&user)
-            .about(name)
+            .about(&service.name)
             .with_detail(&folder.name)
             .record(&state.pool)
             .await;
