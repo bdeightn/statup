@@ -97,7 +97,7 @@ Add them from the **Team** page: they open the same address. For HTTPS and a nam
 Planned, in this order, without dates:
 
 1. ~~**Activity log**: every action, check and sign-in, for administrators to look back on.~~ Shipped in 0.6.0.
-2. ~~**Groups and visibility**: choose which services and events each group of colleagues sees.~~ Shipped in 0.7.0, with folders of services.
+2. ~~**Groups and visibility**: choose which services and events each group of users sees.~~ Shipped in 0.7.0, with folders of services.
 3. **Email subscriptions**: visitors get each update in their inbox.
 4. **API and monitoring tools**: Zabbix, Grafana or a script open and close incidents by themselves.
 5. **Recurring maintenance**: announce a slot once, and see every maintenance in your calendar.
