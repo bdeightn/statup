@@ -13,6 +13,7 @@ The Journal lists what happened on the instance, day by day. Administrators open
 
 - services added, changed or deleted, the settings, the alert channels;
 - members added, their role or their account changed, an event deleted;
+- groups and folders created, renamed or deleted, the members of a group, the services of a folder, and who sees a service or a folder;
 - an outage detected and its end, a message to an alert channel given up;
 - sign-ins blocked after too many attempts, and the app's errors.
 

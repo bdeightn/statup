@@ -1,6 +1,6 @@
 ---
 title: Services
-description: "The tools people rely on, their state, how it changes on its own, and their availability history."
+description: "The tools people rely on, who sees them, their folders, their state, how it changes on its own, and their availability history."
 ---
 
 A service is a tool people rely on every day: mail, the VPN, the intranet, the phones, a website. Each one shows a state on the page, and the events that name it.
@@ -17,6 +17,7 @@ Editors and administrators manage services from the **Services** page. Readers a
 | **Description** | Optional, one sentence on what the service is for, up to 500 characters. |
 | **Monitoring** | **None**, **Web** or **Port**: see [Monitoring](monitoring.md). |
 | **Icon** | Optional: a built-in icon, or one you upload. |
+| **Visibility** | Who sees the service: see [below](#visibility). **Public** by default. |
 
 **Create the service** adds it at the end of the list, in the state **Operational**. Administrators can also add services during the [first launch](install.md#first-launch).
 
@@ -27,6 +28,57 @@ To change a service later, open it by its name or by its pencil on the Services 
 - 24 built-in icons, from Server to Printing.
 - **Upload an icon**: PNG, JPG, WebP or SVG, up to 256 KB. Images larger than 128 pixels are reduced; an SVG is cleaned of anything that could run or load something.
 - Uploaded icons form one library, shared by services, events and templates, under **Icons** on the Services page. An icon still in use cannot be deleted.
+
+## Visibility
+
+Each service says who sees it, in its form and in the panel of a [folder](#folders):
+
+| Value | Who sees the service |
+|---|---|
+| **Public** | Everyone who can see the page, visitors without an account included. The default. |
+| **Members** | Signed-in members only. |
+| **Restricted** | The groups and members listed under **Access**, plus editors and administrators. |
+
+When the page is for members only, the choice is **All members** or **Restricted**.
+
+With **Restricted**, **Add** opens a search over the [groups](team.md#groups), with their number of members, and over the readers; each one shows as a tag, with **Remove**. Past five tags, the list ends with "and 2 more". A line says who will see the service, such as "Visible to 3 members, plus editors and administrators." A restricted service needs at least one group or member.
+
+Editors and administrators always see every service. For the others:
+
+- Incidents, maintenance and announcements follow their services: an event is seen by anyone who sees one of the services it names, and shows only those. An announcement that names no service is for everyone.
+- A service someone may not see leaves no trace for them: not on the dashboard or the banner, not in the events, the search or the filters, and a direct link answers "not found". When a visitor sees no service at all, the banner says "No visible service".
+- The [Atom feed](status-page.md#the-atom-feed) always shows what a visitor without an account sees.
+- The text of an event (its title, description, updates and report) is shown as written to everyone who sees the event: name a restricted service there only when they may know about it.
+
+## Folders
+
+A folder groups services, such as Network or Lyon office, on one level: a folder holds no folder, and a service sits in one folder at most. On the dashboard, each folder is a title over its services, after the services in no folder; a reader sees a folder's title only when they see one of its services.
+
+On the Services page, each folder is a card with its name, its number of services and **Manage folder**; the services in no folder come first, in a card without a title.
+
+### Create a folder
+
+**New folder**, at the top of the Services page, then a **Folder name** of up to 100 characters, unique, and **Create the folder**. The folder's page opens.
+
+### A folder's page
+
+- **Rename**, beside its name.
+- "Visibility: Restricted, Accounting", with **Change**, opens the folder's visibility, the same setting as a service's, then **Save**.
+- **Add services** lists the services not in this folder, with a search past eight; tick them, then **Add**. A service in another folder moves here.
+- **Remove**, on a service's row, takes it out of the folder.
+
+### Inherited visibility
+
+A service in a folder inherits the folder's visibility by default: its form shows **Inherit from folder “Accounting”**, ticked, with the folder's setting. Changing the folder's visibility changes all the services that inherit it. Unticking the box keeps the setting as a starting point for the service's own.
+
+Folders never open a service by mistake:
+
+- A service added to a folder inherits from it when it was **Public**, or already had the folder's visibility. Any other keeps its own, and the folder's page lists it under **Own visibility**. The message after adding says which, such as "3 services added. 2 inherit the folder's visibility, 1 keeps its own."
+- A service taken out of a folder, or left by a deleted folder, keeps the visibility it had.
+
+### Delete a folder
+
+**Delete the folder**, at the foot of its page, with **Delete** to confirm. Its services stay, in no folder, with the visibility they had.
 
 ## States
 
@@ -39,7 +91,7 @@ To change a service later, open it by its name or by its pencil on the Services 
 
 ### Set a state by hand
 
-On the Services page, each service has a state menu. A choice is published at once, with **Undo** beside it. **Outage** first asks "Show “Outage” to every visitor?", then **Publish**.
+On the Services page, each service has a state menu. A choice is published at once, with **Undo** beside it. **Outage** first asks "Publish status “Outage”?", then **Publish**.
 
 ### When a state changes on its own
 
@@ -53,9 +105,9 @@ While an event or a detected outage holds a service, its menu gives way to the s
 
 ## Order
 
-**Change order** puts an up and a down arrow on each service. The order is saved a moment after the last move, and applies wherever services are listed, the dashboard included. **Done** or Escape leaves the mode.
+**Change order** puts an up and a down arrow on each service, which moves it within its card, and on each folder, which moves the folder among the others. The order is saved a moment after the last move, and applies wherever services are listed, the dashboard included. **Done** or Escape leaves the mode.
 
-In the same mode, **Put services with a problem first** lists every service that is not **Operational** before the others, each group in the chosen order. It is off by default.
+In the same mode, **Show disrupted services first** lists every service that is not **Operational** before the others, each group in the chosen order. It is off by default.
 
 ## Availability history
 
@@ -86,4 +138,5 @@ A service that events name is kept, so their history stays whole. To stop showin
 |---|---|---|---|
 | See the states and the history, open a service's side panel | Yes | Yes | Yes |
 | Create, edit, set a state, change the order, delete, manage icons | | Yes | Yes |
+| Choose who sees a service, manage folders | | Yes | Yes |
 | Leave a service out of the dashboard | | | Yes |

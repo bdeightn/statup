@@ -5,6 +5,8 @@ description: "Ce que lisent les collègues et les visiteurs : le bandeau, les s
 
 Ce que tout le monde lit, depuis un poste ou un téléphone. Avec **Qui peut voir la page** sur **Tout le monde**, les visiteurs la lisent sans compte ; avec **Membres seulement**, ils doivent se connecter. Les noms des membres de l'équipe ne sont montrés qu'aux membres connectés.
 
+Chaque lecteur ne voit que les services que leur [visibilité](services.md#visibility) lui permet, et les événements qui les citent.
+
 ## Le tableau de bord
 
 La page s'actualise d'elle-même chaque minute tant qu'elle est ouverte, et quand le lecteur revient sur son onglet. Si la connexion tombe, elle indique « Connexion perdue, nouvel essai en cours. »
@@ -17,13 +19,14 @@ Toujours en haut, il donne d'abord la réponse :
 
 - « Tous les services fonctionnent normalement » ;
 - ou « 2 services perturbés », avec une ligne pour chacun, le plus grave en premier : son état, l'événement qui l'explique et depuis quand, la prochaine mise à jour annoncée, et le début de la dernière mise à jour ;
-- ou « Maintenance en cours », quand des travaux sont en cours et que rien n'est perturbé.
+- ou « Maintenance en cours », quand des travaux sont en cours et que rien n'est perturbé ;
+- ou « Aucun service visible », avec « Connectez-vous pour voir tous les services. », quand un visiteur ne peut en voir aucun.
 
 Une panne trouvée par la [surveillance](monitoring.md) et pas encore déclarée s'affiche « Détecté automatiquement », avec sa durée. Quand rien n'est perturbé, le bandeau annonce aussi une maintenance prévue dans les sept jours.
 
 ### Services
 
-Chaque service avec son état et sa disponibilité jour par jour. Un service s'ouvre dans un panneau latéral : son état, ses 30 derniers jours, ses trois derniers événements. Voir [Services](services.md).
+Chaque service avec son état et sa disponibilité jour par jour, sous le titre de son [dossier](services.md#folders) ; les services hors dossier viennent en premier. Un service s'ouvre dans un panneau latéral : son état, ses 30 derniers jours, ses trois derniers événements. Voir [Services](services.md).
 
 ### Activité récente
 

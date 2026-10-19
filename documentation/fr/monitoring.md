@@ -10,7 +10,7 @@ Statup peut vérifier lui-même un service, chaque minute, depuis le serveur sur
 Dans le formulaire du service, sous **Surveillance**, choisissez :
 
 - **Aucune**, par défaut : pas de vérification.
-- **Web**, pour une adresse qui doit répondre. **Adresse du site** est une adresse complète en `http://` ou `https://`, comme `https://intranet.example.com`, de 2 000 caractères au plus. Cochez **Accepter un certificat interne** pour un outil dont le certificat n'est signé par aucune autorité publique.
+- **Web**, pour une adresse qui doit répondre. **URL** est une adresse complète en `http://` ou `https://`, comme `https://intranet.example.com`, de 2 000 caractères au plus. Cochez **Accepter un certificat interne** pour un outil dont le certificat n'est signé par aucune autorité publique.
 - **Port**, pour un hôte et son port, comme `192.168.1.1` et `443` : un serveur, ou un routeur ou un pare-feu par son port d'administration. **Port** est un nombre de 1 à 65535.
 
 Une adresse qui contient un identifiant ou un mot de passe est refusée : les vérifications ne conservent aucun identifiant de connexion.

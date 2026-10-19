@@ -10,7 +10,7 @@ A service can be checked by Statup itself, every minute, from the server it runs
 In the service's form, under **Monitoring**, choose:
 
 - **None**, the default: no check.
-- **Web**, for an address that should answer. **Web address** is a full `http://` or `https://` address, such as `https://intranet.example.com`, of up to 2,000 characters. Tick **Accept an internal certificate** for a tool whose certificate no public authority signed.
+- **Web**, for an address that should answer. **URL** is a full `http://` or `https://` address, such as `https://intranet.example.com`, of up to 2,000 characters. Tick **Accept an internal certificate** for a tool whose certificate no public authority signed.
 - **Port**, for a host and its port, such as `192.168.1.1` and `443`: a server, or a router or a firewall by its administration port. **Port** is a number from 1 to 65535.
 
 An address that holds a user name or a password is refused: the checks keep no credentials.
