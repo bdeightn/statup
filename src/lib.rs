@@ -73,6 +73,24 @@ pub fn asset(path: &str) -> String {
     }
 }
 
+/// Address of a documentation page on statup.dev. French readers get the
+/// French pages; the others, English, the only other language published.
+/// `part` is the English heading's address, the same in both languages.
+pub fn docs_url(locale: &str, page: &str, part: &str) -> String {
+    let language = if locale == "fr" { "/fr" } else { "" };
+    let page = if page.is_empty() {
+        String::new()
+    } else {
+        format!("{page}/")
+    };
+    let part = if part.is_empty() {
+        String::new()
+    } else {
+        format!("#{part}")
+    };
+    format!("https://statup.dev{language}/docs/{page}{part}")
+}
+
 /// Fingerprints every file under `static/`. Call once at startup, from the
 /// directory the server serves.
 pub fn init_asset_versions() {
@@ -135,6 +153,20 @@ pub mod test_helpers {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn documentation_links_follow_the_published_languages() {
+        assert_eq!(docs_url("en", "", ""), "https://statup.dev/docs/");
+        assert_eq!(
+            docs_url("fr", "webhook", ""),
+            "https://statup.dev/fr/docs/webhook/"
+        );
+        assert_eq!(
+            docs_url("de", "configuration", "smtp_host"),
+            "https://statup.dev/docs/configuration/#smtp_host"
+        );
+        assert_eq!(docs_url("es", "", ""), "https://statup.dev/docs/");
+    }
 
     #[test]
     fn unknown_assets_keep_their_plain_path() {
