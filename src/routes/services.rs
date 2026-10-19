@@ -116,14 +116,14 @@ impl ServiceListTemplate {
 }
 
 /// A card of the list: the services of a folder, or of none, untitled.
-struct ServiceGroup {
-    folder: Option<ServiceFolder>,
-    services: Vec<Service>,
+pub(super) struct ServiceGroup {
+    pub(super) folder: Option<ServiceFolder>,
+    pub(super) services: Vec<Service>,
 }
 
 /// Those in no folder first, then each folder in its order, empty ones
 /// included so that their page stays within reach.
-fn grouped(services: Vec<Service>, folders: Vec<ServiceFolder>) -> Vec<ServiceGroup> {
+pub(super) fn grouped(services: Vec<Service>, folders: Vec<ServiceFolder>) -> Vec<ServiceGroup> {
     let mut by_folder: HashMap<Option<i64>, Vec<Service>> = HashMap::new();
     for service in services {
         by_folder

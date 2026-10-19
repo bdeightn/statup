@@ -1,6 +1,7 @@
 // A long list narrows as a name is typed in its search box: the items of
-// the same [data-filter-scope] whose text does not hold it hide. The box
-// takes the focus when its panel opens, and Enter in it sends nothing.
+// the same [data-filter-scope] whose text does not hold it hide, and a
+// [data-filter-group] hides with its last item. The box takes the focus
+// when its panel opens, and Enter in it sends nothing.
 (function () {
     "use strict";
 
@@ -16,6 +17,9 @@
             const match = item.dataset.filterText.toLocaleLowerCase().includes(wanted);
             item.hidden = !match;
             if (match) shown += 1;
+        }
+        for (const group of scope.querySelectorAll("[data-filter-group]")) {
+            group.hidden = !group.querySelector("[data-filter-text]:not([hidden])");
         }
         const none = scope.querySelector("[data-filter-none]");
         if (none) none.hidden = shown > 0;

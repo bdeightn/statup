@@ -306,6 +306,8 @@
   "events.time_required": "Geben Sie die Startzeit an.",
   "events.zone_hint": "Die Zeiten gelten in der Zeitzone der Instanz ({zone}).",
   "events.no_services_available": "Es gibt noch keinen Dienst.",
+  "events.search_service": "Dienst suchen",
+  "events.no_service_found": "Kein Dienst passt.",
   "events.title_label": "Titel",
   "events.title_placeholder": "Zum Beispiel: E-Mail nicht erreichbar",
   "events.template_suggestions": "Gespeicherte Vorlagen",

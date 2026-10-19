@@ -306,6 +306,8 @@
   "events.time_required": "Añada la hora de inicio.",
   "events.zone_hint": "Las horas están en la zona de la instancia ({zone}).",
   "events.no_services_available": "Aún no existe ningún servicio.",
+  "events.search_service": "Buscar un servicio",
+  "events.no_service_found": "Ningún servicio coincide.",
   "events.title_label": "Título",
   "events.title_placeholder": "Por ejemplo: Correo no disponible",
   "events.template_suggestions": "Plantillas guardadas",

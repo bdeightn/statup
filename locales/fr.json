@@ -306,6 +306,8 @@
   "events.time_required": "Ajoutez l'heure de début.",
   "events.zone_hint": "Heures de l'instance ({zone}).",
   "events.no_services_available": "Aucun service n'existe encore.",
+  "events.search_service": "Rechercher un service",
+  "events.no_service_found": "Aucun service ne correspond.",
   "events.title_label": "Titre",
   "events.title_placeholder": "Par exemple : Messagerie indisponible",
   "events.template_suggestions": "Modèles enregistrés",

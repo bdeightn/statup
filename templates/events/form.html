@@ -9,6 +9,7 @@
 {% block scripts %}
 <script src="{{ crate::asset("js/custom-select.js") }}" defer></script>
 <script src="{{ crate::asset("js/event-form.js") }}" defer></script>
+{% if self.searchable() %}<script src="{{ crate::asset("js/list-filter.js") }}" defer></script>{% endif %}
 <script src="{{ crate::asset("js/schedule.js") }}" defer></script>
 {% endblock %}
 
@@ -136,20 +137,38 @@
                         </fieldset>
                     </div>
 
-                    <section class="form-block" aria-labelledby="services-label">
+                    {# The services under their folders, as on the dashboard: a
+                       folder's box checks all of them, and only the services'
+                       own boxes are sent. #}
+                    <section class="form-block" aria-labelledby="services-label" data-filter-scope>
                         <h2 id="services-label" class="field-label">{{ i18n.t("events.services_concerned") }}</h2>
-                        {% if services.is_empty() %}
+                        {% if sections.is_empty() %}
                         <p class="field-hint mt-1">{{ i18n.t("events.no_services_available") }} <a href="/services/new" class="link">{{ i18n.t("services.new") }}</a></p>
                         {% else %}
+                        {% if self.searchable() %}
+                        <input type="search" class="input mt-2" autocomplete="off" placeholder="{{ i18n.t("events.search_service") }}" data-filter-input aria-label="{{ i18n.t("events.search_service") }}">
+                        {% endif %}
                         <div class="svc-pick-list" role="group" aria-labelledby="services-label">
-                            {% for service in services %}
-                            <label class="svc-pick">
-                                <input type="checkbox" name="service_ids" value="{{ service.id }}" class="checkbox" data-service-name="{{ service.name }}"{% if form.has_service(service.id) %} checked{% endif %}>
-                                <span class="svc-pick-name">{{ service.name }}</span>
-                                <span class="state" data-tone="{{ service.status.tone().as_str() }}">{{ i18n.t(service.status.i18n_key()) }}</span>
-                            </label>
+                            {% for section in sections %}
+                            <div class="svc-pick-section" data-filter-group{% if let Some(folder) = section.folder %} role="group" aria-labelledby="svc-folder-{{ folder.id }}" data-folder-pick{% endif %}>
+                                {% if let Some(folder) = section.folder %}
+                                <label class="svc-pick svc-pick-folder">
+                                    <input type="checkbox" class="checkbox" data-folder-box{% if self.folder_checked(section) %} checked{% endif %}>
+                                    <span id="svc-folder-{{ folder.id }}" class="svc-pick-name">{{ folder.name }}</span>
+                                    <span class="count">{{ section.services.len() }}</span>
+                                </label>
+                                {% endif %}
+                                {% for service in section.services %}
+                                <label class="svc-pick" data-filter-text="{{ service.name }}{% if let Some(folder) = section.folder %} {{ folder.name }}{% endif %}">
+                                    <input type="checkbox" name="service_ids" value="{{ service.id }}" class="checkbox" data-service-name="{{ service.name }}"{% if form.has_service(service.id) %} checked{% endif %}>
+                                    <span class="svc-pick-name">{{ service.name }}</span>
+                                    <span class="state" data-tone="{{ service.status.tone().as_str() }}">{{ i18n.t(service.status.i18n_key()) }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
                             {% endfor %}
                         </div>
+                        <p class="field-hint mt-2" data-filter-none hidden>{{ i18n.t("events.no_service_found") }}</p>
                         {% endif %}
                         <p class="consequence" role="status" data-consequence-row hidden>
                             <span class="dot" data-consequence-dot hidden aria-hidden="true"></span>

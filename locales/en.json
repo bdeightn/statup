@@ -306,6 +306,8 @@
   "events.time_required": "Add the start time.",
   "events.zone_hint": "Times are in the instance zone ({zone}).",
   "events.no_services_available": "No service exists yet.",
+  "events.search_service": "Search for a service",
+  "events.no_service_found": "No service matches.",
   "events.title_label": "Title",
   "events.title_placeholder": "For example: Email unavailable",
   "events.template_suggestions": "Saved templates",

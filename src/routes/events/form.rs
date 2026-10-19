@@ -6,17 +6,19 @@ use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
 use crate::clock;
+use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
 use crate::models::{
     Category, CreateEventInput, Event, EventWithServices, JournalKind, Kind, Lifecycle, NextUpdate,
-    SEPARATOR, Scope, Service, Severity, UpdateEventInput, User,
+    SEARCH_FROM, SEPARATOR, Scope, Service, Severity, UpdateEventInput, User,
 };
 use crate::repositories::{
-    CreateTemplateInput, EventRepository, EventTemplateRepository, NewJournalEntry,
-    OutageRepository, ServiceRepository,
+    CreateTemplateInput, EventRepository, EventTemplateRepository, FolderRepository,
+    NewJournalEntry, OutageRepository, ServiceRepository,
 };
+use crate::routes::services::{ServiceGroup, grouped};
 use crate::routes::{Frame, render};
 use crate::services::{EventService, EventTemplateService, can_modify, read_next_update};
 use crate::state::AppState;
@@ -323,7 +325,9 @@ impl EventFormData {
 struct EventFormTemplate {
     frame: Frame,
     error: Option<String>,
-    services: Vec<Service>,
+    /// The services under their folders, those in none first.
+    sections: Vec<ServiceGroup>,
+    service_count: usize,
     /// Recent maintenances an announcement may follow.
     maintenances: Vec<MaintenanceChoice>,
     edit_id: Option<i64>,
@@ -337,6 +341,37 @@ struct EventFormTemplate {
     i18n: I18n,
 }
 
+impl EventFormTemplate {
+    /// A folder's box starts checked when the event names all its services.
+    fn folder_checked(&self, section: &ServiceGroup) -> bool {
+        section
+            .services
+            .iter()
+            .all(|service| self.form.service_ids.contains(&service.id))
+    }
+
+    fn searchable(&self) -> bool {
+        self.service_count > SEARCH_FROM
+    }
+}
+
+/// The services under their folders; a folder with none is left out. The
+/// folders are only read when a service is in one.
+async fn service_sections(
+    pool: &DbPool,
+    services: Vec<Service>,
+) -> Result<Vec<ServiceGroup>, AppError> {
+    let folders = if services.iter().any(|service| service.folder_id.is_some()) {
+        FolderRepository::list(pool).await?
+    } else {
+        Vec::new()
+    };
+    Ok(grouped(services, folders)
+        .into_iter()
+        .filter(|section| !section.services.is_empty())
+        .collect())
+}
+
 async fn render_form(
     state: &AppState,
     user: &User,
@@ -346,9 +381,11 @@ async fn render_form(
     form: EventFormData,
     error: Option<String>,
 ) -> Result<Response, AppError> {
+    let services = ServiceRepository::list_all(&state.pool).await?;
     render(&EventFormTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
-        services: ServiceRepository::list_all(&state.pool).await?,
+        service_count: services.len(),
+        sections: service_sections(&state.pool, services).await?,
         maintenances: maintenance_choices(state, form.follows_event_id, &i18n).await?,
         zone_hint: i18n.tf(
             "events.zone_hint",
