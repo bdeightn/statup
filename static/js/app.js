@@ -495,10 +495,11 @@
         return false;
     }
 
-    // The folded actions of an event close on any click outside them.
+    // The folded actions of an event close on any click outside them; a
+    // menu opened inside another keeps the one around it open.
     function closeMoreActions(except) {
         document.querySelectorAll("details[data-more-actions][open]").forEach((menu) => {
-            if (menu !== except) menu.open = false;
+            if (menu !== except && !menu.contains(except)) menu.open = false;
         });
     }
 
@@ -627,7 +628,8 @@
                 if (button) button.focus();
                 return;
             }
-            const more = document.querySelector("details[data-more-actions][open]");
+            // The innermost open menu closes first, then the one around it.
+            const more = [...document.querySelectorAll("details[data-more-actions][open]")].pop();
             if (more && !(event.target instanceof Element && event.target.closest(".confirm"))) {
                 more.open = false;
                 more.querySelector("summary").focus();

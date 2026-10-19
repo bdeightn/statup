@@ -5,6 +5,8 @@ description: "What colleagues and visitors read: the banner, the services, the r
 
 What everyone reads, from a desk or a phone. With **Who can see the page** set to **Everyone**, visitors read it without an account; with **Members only**, they are asked to sign in. The names of the team are shown to signed-in members only.
 
+Each reader sees only the services their [visibility](services.md#visibility) allows, and the events that name them.
+
 ## The dashboard
 
 The page refreshes itself every minute while it is open, and when the reader comes back to its tab. If the connection drops, it says "Connection lost, trying again."
@@ -17,13 +19,14 @@ Always at the top, it gives the answer first:
 
 - "All services are working normally";
 - or "2 services disrupted", with a line for each, the most serious first: its state, the event that explains it and since when, the next update announced, and the start of the latest update;
-- or "Maintenance in progress", when work is under way and nothing is disrupted.
+- or "Maintenance in progress", when work is under way and nothing is disrupted;
+- or "No visible service", with "Sign in to see every service.", when a visitor may see none of them.
 
 An outage found by [monitoring](monitoring.md) and not yet declared reads "Detected automatically", with how long it has lasted. When nothing is disrupted, the banner also announces a maintenance planned within seven days.
 
 ### Services
 
-Each service with its state and its availability day by day. A service opens in a side panel: its state, its last 30 days, its three latest events. See [Services](services.md).
+Each service with its state and its availability day by day, under the title of its [folder](services.md#folders); the services in no folder come first. A service opens in a side panel: its state, its last 30 days, its three latest events. See [Services](services.md).
 
 ### Recent activity
 

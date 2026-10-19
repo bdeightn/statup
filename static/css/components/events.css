@@ -1324,6 +1324,32 @@
         white-space: nowrap;
     }
 
+    /* A folder's row heads its services, which sit under its name; its
+       count follows the name rather than the statuses' column. */
+    .svc-pick.svc-pick-folder {
+        display: flex;
+    }
+
+    .svc-pick-folder .svc-pick-name {
+        flex: 0 1 auto;
+        font-weight: 600;
+    }
+
+    .svc-pick-section[data-folder-pick] > .svc-pick:not(.svc-pick-folder) {
+        padding-left: 32px;
+    }
+
+    /* Rows are ruled between them, never under the last one shown: the
+       list's own edge closes it, while a search hides rows too. */
+    .svc-pick-section:not(:last-child) > .svc-pick:last-child {
+        border-bottom: 1px solid var(--hairline);
+    }
+
+    .svc-pick-section:not(:has(~ .svc-pick-section:not([hidden])))
+        > .svc-pick:not(:has(~ .svc-pick:not([hidden]))) {
+        border-bottom: 0;
+    }
+
     .suggest {
         position: relative;
     }

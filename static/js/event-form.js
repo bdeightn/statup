@@ -1,6 +1,6 @@
-// Event form: rows follow the chosen kind, the line under the services says
-// what the public page will show, the title writes itself until typed in,
-// and a saved template fills the form.
+// Event form: a folder's box checks its services, rows follow the chosen
+// kind, the line under the services says what the public page will show,
+// the title writes itself until typed in, and a saved template fills the form.
 (function () {
     "use strict";
 
@@ -18,6 +18,30 @@
             });
         });
     }
+
+    // A folder's box is checked when all its services are, and shows a dash
+    // while only some are; ticked, it takes the services the search shows,
+    // never one it hides. Its own listener comes first, so that the line
+    // under the services reads the boxes it has just changed.
+    function settleFolder(folder) {
+        const box = folder.querySelector("[data-folder-box]");
+        const services = Array.from(folder.querySelectorAll('input[name="service_ids"]'));
+        const ticked = services.filter((service) => service.checked).length;
+        box.checked = ticked === services.length;
+        box.indeterminate = ticked > 0 && ticked < services.length;
+    }
+
+    form.querySelectorAll("[data-folder-pick]").forEach(settleFolder);
+    form.addEventListener("change", (event) => {
+        const folder = event.target.closest("[data-folder-pick]");
+        if (!folder) return;
+        if (event.target.matches("[data-folder-box]")) {
+            folder.querySelectorAll('input[name="service_ids"]').forEach((service) => {
+                if (!service.closest("[data-filter-text]").hidden) service.checked = event.target.checked;
+            });
+        }
+        settleFolder(folder);
+    });
 
     // An edited event keeps its kind: the rows are settled once and the
     // wording of a new event is not needed.

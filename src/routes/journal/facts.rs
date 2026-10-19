@@ -9,7 +9,9 @@ use chrono::{DateTime, Utc};
 
 use crate::clock;
 use crate::i18n::I18n;
-use crate::models::{ChannelKind, JournalEntry, JournalKind, Kind, Lifecycle, Role, ServiceStatus};
+use crate::models::{
+    ChannelKind, JournalEntry, JournalKind, Kind, Lifecycle, Role, ServiceStatus, Visibility,
+};
 use crate::routes::notifications::reason_of;
 
 /// The separator the app writes between the parts of a detail.
@@ -110,6 +112,10 @@ fn detail_facts(kind: JournalKind, detail: &str, i18n: &I18n) -> Vec<String> {
             .ok()
             .map_or_else(|| vec![detail.to_string()], |role| said(role.i18n_key())),
         K::ServiceStatusSet => status_facts(detail, i18n),
+        K::ServiceVisibilityChanged | K::FolderVisibilityChanged => visibility_facts(detail, i18n),
+        K::GroupRenamed | K::FolderRenamed => {
+            vec![i18n.tf("journal.fact_formerly", &[("name", detail)])]
+        }
         K::ProblemsFirstChanged => match detail {
             "on" => said("journal.fact_on"),
             _ => said("journal.fact_off"),
@@ -143,6 +149,31 @@ fn status_facts(detail: &str, i18n: &I18n) -> Vec<String> {
         facts.push(i18n.t("journal.fact_undo").to_string());
     }
     facts
+}
+
+/// Who sees the service: `everyone`, `members`, `folder` (it follows its
+/// folder), or `groups:2;members:1`. Lines written before members could be
+/// granted say `groups:3` alone.
+fn visibility_facts(detail: &str, i18n: &I18n) -> Vec<String> {
+    if detail == "folder" {
+        return vec![i18n.t("journal.fact_inherited").to_string()];
+    }
+    if let Ok(mode @ (Visibility::Everyone | Visibility::Members)) = detail.parse::<Visibility>() {
+        return vec![i18n.t(mode.i18n_key()).to_string()];
+    }
+    let Some(counts) = detail.strip_prefix("groups:") else {
+        return vec![detail.to_string()];
+    };
+    let (groups, members) = counts.split_once(";members:").unwrap_or((counts, "0"));
+    match (leading_number(groups), leading_number(members)) {
+        (Some(groups), Some(0)) => vec![i18n.plural("journal.fact_groups", groups)],
+        (Some(0), Some(members)) => vec![i18n.plural("journal.fact_members", members)],
+        (Some(groups), Some(members)) => vec![
+            i18n.plural("journal.fact_groups", groups),
+            i18n.plural("journal.fact_members", members),
+        ],
+        _ => vec![detail.to_string()],
+    }
 }
 
 /// `name, logo, time_zone, access`, as the settings page names them.
@@ -361,6 +392,35 @@ mod tests {
         assert_eq!(
             said(JournalKind::ServiceStatusSet, "major_outage, undo"),
             ["En panne", "annulation"]
+        );
+    }
+
+    #[test]
+    fn who_sees_a_service_is_said_in_the_reader_s_words() {
+        let said = |detail| said(JournalKind::ServiceVisibilityChanged, detail);
+        assert_eq!(said("everyone"), ["Publique"]);
+        assert_eq!(said("members"), ["Membres"]);
+        assert_eq!(said("folder"), ["héritée du dossier"]);
+        assert_eq!(said("groups:1"), ["1 groupe"]);
+        assert_eq!(said("groups:12"), ["12 groupes"]);
+        assert_eq!(said("groups:2;members:0"), ["2 groupes"]);
+        assert_eq!(said("groups:0;members:3"), ["3 membres"]);
+        assert_eq!(said("groups:1;members:1"), ["1 groupe", "1 membre"]);
+        assert_eq!(said("somebody"), ["somebody"]);
+        assert_eq!(
+            super::facts(
+                &entry(JournalKind::ServiceVisibilityChanged, "groups:2"),
+                &I18n::new("en")
+            ),
+            ["2 groups"]
+        );
+    }
+
+    #[test]
+    fn a_renamed_group_says_its_former_name() {
+        assert_eq!(
+            said(JournalKind::GroupRenamed, "Support"),
+            ["anciennement «\u{a0}Support\u{a0}»"]
         );
     }
 

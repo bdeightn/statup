@@ -2,9 +2,12 @@
 
 use chrono::{DateTime, Utc};
 
+use super::GrantTables;
 use super::outage_repo::{close_outage, delete_open_outage, open_outage};
 use crate::db::DbPool;
-use crate::models::{CheckedService, Service, ServiceCheck, ServiceStatus};
+use crate::models::{
+    CheckedService, Grants, Scope, Service, ServiceCheck, ServiceStatus, Visibility,
+};
 
 pub struct ServiceRepository;
 
@@ -12,9 +15,13 @@ const WITH_ICON: &str = "SELECT s.*, i.filename AS icon_filename, \
      EXISTS(SELECT 1 FROM event_services es WHERE es.service_id = s.id) AS has_history \
      FROM services s LEFT JOIN icons i ON i.id = s.icon_id";
 
-/// The order chosen on the Services page; services at the same position,
-/// as written by a seed that leaves it out, fall back to their name.
-pub(crate) const CHOSEN_ORDER: &str = "s.position, s.name COLLATE NOCASE, s.id";
+/// The order chosen on the Services page: services without a folder first,
+/// then each folder in its own order with its services by their position.
+/// Services at the same position, as written by a seed that leaves it out,
+/// fall back to their name.
+pub(crate) const CHOSEN_ORDER: &str = "s.folder_id IS NOT NULL, \
+     COALESCE((SELECT f.position FROM service_folders f WHERE f.id = s.folder_id), 0), \
+     s.folder_id, s.position, s.name COLLATE NOCASE, s.id";
 
 impl ServiceRepository {
     pub async fn create(
@@ -65,6 +72,13 @@ impl ServiceRepository {
         sqlx::query_as::<_, Service>(&format!("{WITH_ICON} ORDER BY {CHOSEN_ORDER}"))
             .fetch_all(pool)
             .await
+    }
+
+    /// The services a viewer may see, in the chosen order.
+    pub async fn list_visible(pool: &DbPool, scope: &Scope) -> Result<Vec<Service>, sqlx::Error> {
+        let mut services = Self::list_all(pool).await?;
+        services.retain(|service| scope.sees_service(service.id));
+        Ok(services)
     }
 
     /// Saves the order of every service, first to last. Returns false, and
@@ -248,6 +262,82 @@ impl ServiceRepository {
             .await
     }
 
+    /// The ids of the services this reader may see, with the count of all
+    /// services. `None` is a visitor who is not signed in. A `groups` service
+    /// with neither group nor member left matches nobody here.
+    pub async fn visible_ids(
+        pool: &DbPool,
+        reader_id: Option<i64>,
+    ) -> Result<(Vec<i64>, usize), sqlx::Error> {
+        let rows: Vec<(i64, bool)> = sqlx::query_as(
+            "SELECT s.id, CASE \
+                 WHEN s.visibility = 'everyone' THEN 1 \
+                 WHEN ?1 IS NULL THEN 0 \
+                 WHEN s.visibility = 'members' THEN 1 \
+                 ELSE EXISTS(SELECT 1 FROM service_access a \
+                             JOIN group_members m ON m.group_id = a.group_id \
+                             WHERE a.service_id = s.id AND m.user_id = ?1) \
+                 OR EXISTS(SELECT 1 FROM service_member_access ma \
+                           WHERE ma.service_id = s.id AND ma.user_id = ?1) \
+             END FROM services s",
+        )
+        .bind(reader_id)
+        .fetch_all(pool)
+        .await?;
+        let total = rows.len();
+        let visible = rows
+            .into_iter()
+            .filter_map(|(id, visible)| visible.then_some(id))
+            .collect();
+        Ok((visible, total))
+    }
+
+    /// Saves who sees the service. The grants only count for
+    /// [`Visibility::Groups`]; ids of groups that do not exist are dropped,
+    /// and so are members who are not active readers (publishers and admins
+    /// see everything already). A setting made here is the service's own: it
+    /// stops following its folder.
+    pub async fn set_visibility(
+        pool: &DbPool,
+        service_id: i64,
+        visibility: Visibility,
+        grants: Grants<'_>,
+    ) -> Result<(), sqlx::Error> {
+        let mut tx = pool.begin().await?;
+        sqlx::query("UPDATE services SET visibility = ?, follows_folder = 0 WHERE id = ?")
+            .bind(visibility)
+            .bind(service_id)
+            .execute(&mut *tx)
+            .await?;
+        super::replace_grants(
+            &mut tx,
+            GrantTables::Service,
+            service_id,
+            visibility,
+            grants,
+        )
+        .await?;
+        tx.commit().await
+    }
+
+    pub async fn group_ids_of(pool: &DbPool, service_id: i64) -> Result<Vec<i64>, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT group_id FROM service_access WHERE service_id = ? ORDER BY group_id",
+        )
+        .bind(service_id)
+        .fetch_all(pool)
+        .await
+    }
+
+    pub async fn member_ids_of(pool: &DbPool, service_id: i64) -> Result<Vec<i64>, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT user_id FROM service_member_access WHERE service_id = ? ORDER BY user_id",
+        )
+        .bind(service_id)
+        .fetch_all(pool)
+        .await
+    }
+
     pub async fn delete(pool: &DbPool, id: i64) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM services WHERE id = ?")
             .bind(id)
@@ -262,8 +352,8 @@ mod tests {
     use chrono::TimeZone;
 
     use super::*;
-    use crate::models::CheckKind;
-    use crate::repositories::OutageRepository;
+    use crate::models::{CheckKind, Role, User};
+    use crate::repositories::{GroupRepository, OutageRepository, UserRepository};
     use crate::test_helpers::test_pool;
 
     fn at(hour: u32) -> DateTime<Utc> {
@@ -603,5 +693,253 @@ mod tests {
         ServiceRepository::delete(&pool, svc.id).await.unwrap();
         let spans = OutageRepository::since(&pool, at(0)).await.unwrap();
         assert!(spans.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_service_inserted_without_visibility_is_seen_by_everyone() {
+        let pool = test_pool().await;
+        sqlx::query("INSERT INTO services (name, slug) VALUES ('Wiki', 'wiki')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let services = ServiceRepository::list_all(&pool).await.unwrap();
+        assert_eq!(services[0].visibility, Visibility::Everyone);
+    }
+
+    #[tokio::test]
+    async fn visible_ids_follow_the_reader_and_count_every_service() {
+        let pool = test_pool().await;
+        let open = create(&pool, "Open", "open").await;
+        let members = create(&pool, "Members", "members").await;
+        let closed = create(&pool, "Closed", "closed").await;
+        ServiceRepository::set_visibility(
+            &pool,
+            members.id,
+            Visibility::Members,
+            Grants::default(),
+        )
+        .await
+        .unwrap();
+        ServiceRepository::set_visibility(&pool, closed.id, Visibility::Groups, Grants::default())
+            .await
+            .unwrap();
+
+        let (anonymous, total) = ServiceRepository::visible_ids(&pool, None).await.unwrap();
+        assert_eq!((anonymous, total), (vec![open.id], 3));
+        let (reader, total) = ServiceRepository::visible_ids(&pool, Some(1))
+            .await
+            .unwrap();
+        assert_eq!((reader, total), (vec![open.id, members.id], 3));
+    }
+
+    #[tokio::test]
+    async fn only_the_groups_choice_stores_access_rows() {
+        let pool = test_pool().await;
+        let svc = create(&pool, "Wiki", "wiki").await;
+        let group = GroupRepository::create(&pool, "Support").await.unwrap();
+
+        ServiceRepository::set_visibility(
+            &pool,
+            svc.id,
+            Visibility::Groups,
+            Grants::groups(&[group, 999]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            ServiceRepository::group_ids_of(&pool, svc.id)
+                .await
+                .unwrap(),
+            vec![group]
+        );
+        let stored = ServiceRepository::find_by_id(&pool, svc.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.visibility, Visibility::Groups);
+
+        for visibility in [Visibility::Members, Visibility::Everyone] {
+            ServiceRepository::set_visibility(
+                &pool,
+                svc.id,
+                Visibility::Groups,
+                Grants::groups(&[group]),
+            )
+            .await
+            .unwrap();
+            ServiceRepository::set_visibility(&pool, svc.id, visibility, Grants::groups(&[group]))
+                .await
+                .unwrap();
+            assert!(
+                ServiceRepository::group_ids_of(&pool, svc.id)
+                    .await
+                    .unwrap()
+                    .is_empty(),
+                "{visibility:?}"
+            );
+        }
+    }
+
+    async fn account(pool: &DbPool, email: &str, role: Role) -> User {
+        UserRepository::create(pool, email, "hash", "Someone", role)
+            .await
+            .unwrap()
+    }
+
+    fn members_only(ids: &[i64]) -> Grants<'_> {
+        Grants {
+            groups: &[],
+            members: ids,
+        }
+    }
+
+    async fn sees(pool: &DbPool, user: &User, service_id: i64) -> bool {
+        crate::services::scope_of(pool, Some(user))
+            .await
+            .unwrap()
+            .sees_service(service_id)
+    }
+
+    #[tokio::test]
+    async fn a_reader_granted_by_name_sees_a_groups_service_and_another_does_not() {
+        let pool = test_pool().await;
+        let svc = create(&pool, "Wiki", "wiki").await;
+        let granted = account(&pool, "in@x.com", Role::Reader).await;
+        let other = account(&pool, "out@x.com", Role::Reader).await;
+
+        ServiceRepository::set_visibility(
+            &pool,
+            svc.id,
+            Visibility::Groups,
+            members_only(&[granted.id]),
+        )
+        .await
+        .unwrap();
+
+        assert!(sees(&pool, &granted, svc.id).await);
+        assert!(!sees(&pool, &other, svc.id).await);
+        assert_eq!(
+            ServiceRepository::member_ids_of(&pool, svc.id)
+                .await
+                .unwrap(),
+            vec![granted.id]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_group_and_a_member_both_open_the_service() {
+        let pool = test_pool().await;
+        let svc = create(&pool, "Wiki", "wiki").await;
+        let group = GroupRepository::create(&pool, "Support").await.unwrap();
+        let in_group = account(&pool, "g@x.com", Role::Reader).await;
+        let by_name = account(&pool, "n@x.com", Role::Reader).await;
+        let other = account(&pool, "o@x.com", Role::Reader).await;
+        GroupRepository::add_members(&pool, group, &[in_group.id])
+            .await
+            .unwrap();
+
+        ServiceRepository::set_visibility(
+            &pool,
+            svc.id,
+            Visibility::Groups,
+            Grants {
+                groups: &[group],
+                members: &[by_name.id],
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(sees(&pool, &in_group, svc.id).await);
+        assert!(sees(&pool, &by_name, svc.id).await);
+        assert!(!sees(&pool, &other, svc.id).await);
+    }
+
+    #[tokio::test]
+    async fn only_active_readers_are_stored_as_members() {
+        let pool = test_pool().await;
+        let svc = create(&pool, "Wiki", "wiki").await;
+        let reader = account(&pool, "r@x.com", Role::Reader).await;
+        let publisher = account(&pool, "p@x.com", Role::Publisher).await;
+        let admin = account(&pool, "a@x.com", Role::Admin).await;
+        let disabled = account(&pool, "d@x.com", Role::Reader).await;
+        UserRepository::set_active(&pool, disabled.id, false)
+            .await
+            .unwrap();
+
+        let ids = [reader.id, publisher.id, admin.id, disabled.id, 999];
+        ServiceRepository::set_visibility(&pool, svc.id, Visibility::Groups, members_only(&ids))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            ServiceRepository::member_ids_of(&pool, svc.id)
+                .await
+                .unwrap(),
+            vec![reader.id]
+        );
+    }
+
+    #[tokio::test]
+    async fn deleting_a_user_removes_the_access_granted_to_them() {
+        let pool = test_pool().await;
+        let svc = create(&pool, "Wiki", "wiki").await;
+        let reader = account(&pool, "r@x.com", Role::Reader).await;
+        ServiceRepository::set_visibility(
+            &pool,
+            svc.id,
+            Visibility::Groups,
+            members_only(&[reader.id]),
+        )
+        .await
+        .unwrap();
+
+        sqlx::query("DELETE FROM users WHERE id = ?")
+            .bind(reader.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            ServiceRepository::member_ids_of(&pool, svc.id)
+                .await
+                .unwrap(),
+            Vec::<i64>::new()
+        );
+    }
+
+    #[tokio::test]
+    async fn leaving_the_groups_choice_clears_groups_and_members() {
+        let pool = test_pool().await;
+        let svc = create(&pool, "Wiki", "wiki").await;
+        let group = GroupRepository::create(&pool, "Support").await.unwrap();
+        let reader = account(&pool, "r@x.com", Role::Reader).await;
+        let grants = Grants {
+            groups: &[group],
+            members: &[reader.id],
+        };
+
+        for visibility in [Visibility::Members, Visibility::Everyone] {
+            ServiceRepository::set_visibility(&pool, svc.id, Visibility::Groups, grants)
+                .await
+                .unwrap();
+            ServiceRepository::set_visibility(&pool, svc.id, visibility, grants)
+                .await
+                .unwrap();
+            assert!(
+                ServiceRepository::group_ids_of(&pool, svc.id)
+                    .await
+                    .unwrap()
+                    .is_empty(),
+                "{visibility:?}"
+            );
+            assert!(
+                ServiceRepository::member_ids_of(&pool, svc.id)
+                    .await
+                    .unwrap()
+                    .is_empty(),
+                "{visibility:?}"
+            );
+        }
     }
 }

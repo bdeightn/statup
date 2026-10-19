@@ -374,8 +374,30 @@
         display: none;
     }
 
+    /* The Services page: one card per folder, after the services in none. */
+    .svc-groups {
+        display: grid;
+        gap: 16px;
+    }
+
+    .svc-rows {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    /* The folder's name and arrows on the edges of its rows. */
+    .svc-group > .card-head {
+        padding-inline: 20px;
+    }
+
     /* Choosing the order: each row keeps its name and gains two arrows
-       where its pencil was; its state, pencil and history step aside. */
+       where its pencil was; its state, pencil and history step aside. A
+       folder's arrows take the place of "Manage folder". */
+    .is-ordering .svc-group-manage {
+        display: none;
+    }
+
     .svc-move {
         display: none;
         gap: 4px;
@@ -468,16 +490,59 @@
             grid-column: auto;
         }
 
-        /* A question opened in a row takes the full width under it rather
-           than squeezing the name into one letter per line. */
-        .member-row .admin-row-actions:has(.confirm:not([hidden])) {
-            grid-column: 1 / -1;
-        }
     }
 
-    /* While a question is open, the other action of the row steps aside. */
-    .admin-row-actions:has(.confirm:not([hidden])) > form:not(:has(.confirm:not([hidden]))) {
+    /* A member's action asks first in a panel under the row's actions, as
+       wide as its question, so the row keeps its place. */
+    .member-row .admin-row-actions {
+        position: relative;
+    }
+
+    .member-row .member-confirm {
+        position: static;
+    }
+
+    .member-confirm > .confirm-panel {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+        width: max-content;
+        max-width: min(360px, calc(100vw - 32px));
+        padding: 16px;
+        color: var(--ink);
+    }
+
+    .confirm-panel-text {
+        margin: 0;
+        font-size: var(--text-sm);
+        font-weight: 500;
+    }
+
+    .confirm-panel-desc {
+        margin: 0;
+        font-size: var(--text-sm);
+        color: var(--muted);
+    }
+
+    .confirm-panel-go {
+        align-self: flex-end;
+        margin-top: 12px;
+    }
+
+    /* Adding a member: only the chosen role says what it allows. */
+    .role-descs {
+        margin-top: 8px;
+    }
+
+    .role-descs > [data-role-hint] {
         display: none;
+    }
+
+    .choice-group:has([value="reader"]:checked) [data-role-hint="reader"],
+    .choice-group:has([value="publisher"]:checked) [data-role-hint="publisher"],
+    .choice-group:has([value="admin"]:checked) [data-role-hint="admin"] {
+        display: block;
     }
 
     /* The row the last save named: a wash that fades once. */
@@ -1048,6 +1113,451 @@
 
     .steps li + li {
         margin-top: 6px;
+    }
+
+    /* The groups of the team, on their own card under it: one link per
+       group to its page. */
+    .groups-card {
+        margin-top: 40px;
+    }
+
+    .group-links,
+    .group-members {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .group-link {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto 16px;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 20px;
+        color: var(--ink);
+        border-bottom: 1px solid var(--line);
+        transition: background-color 120ms ease;
+    }
+
+    .group-links li:last-child .group-link {
+        border-bottom: 0;
+    }
+
+    .group-link:hover {
+        background: var(--surface-hover);
+    }
+
+    .group-link-name {
+        min-width: 0;
+        font-size: var(--text-md);
+        font-weight: 600;
+        overflow-wrap: anywhere;
+    }
+
+    .group-link-meta {
+        font-size: var(--text-sm);
+        color: var(--muted);
+        white-space: nowrap;
+    }
+
+    .group-link svg {
+        width: 16px;
+        height: 16px;
+        color: var(--muted);
+    }
+
+    .groups-empty {
+        padding: 16px 20px;
+        font-size: var(--text-md);
+        color: var(--ink-soft);
+    }
+
+    /* A panel over the page: a name to give, or members to add. 16px all
+       around, one left edge, the button across the foot. */
+    .more-actions > .group-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        width: 320px;
+        max-width: calc(100vw - 32px);
+        padding: 16px;
+        color: var(--ink);
+    }
+
+    .group-panel > .field-label {
+        margin-bottom: 6px;
+    }
+
+    .group-panel > .field-error {
+        margin-top: 6px;
+    }
+
+    .group-panel-submit {
+        width: 100%;
+        margin-top: 16px;
+    }
+
+    .more-actions > summary.card-action,
+    .group-rename > summary {
+        cursor: pointer;
+    }
+
+    /* A group's page: its name with "Rename" beside it. */
+    .group-title-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 16px;
+    }
+
+    .group-rename > summary {
+        font-size: var(--text-sm);
+    }
+
+    .group-rename > .group-panel {
+        right: auto;
+        left: 0;
+    }
+
+    /* On a phone the panel opens from the start of the title line, so it
+       stays on the screen. */
+    @media (max-width: 639px) {
+        .group-title-row {
+            position: relative;
+        }
+
+        .group-title-row > .group-rename {
+            position: static;
+        }
+    }
+
+    /* Who sees a service or a folder: three choices as buttons, the groups
+       and members granted as tags, and the sentence of what it does. A
+       service that inherits from its folder shows that setting, dimmed. */
+    .access-field > .field-label {
+        display: block;
+        margin-bottom: 6px;
+    }
+
+    .access-inherit {
+        margin-bottom: 10px;
+    }
+
+    .access-body {
+        display: grid;
+        justify-items: start;
+        gap: 10px;
+    }
+
+    .access-field:has([data-access-inherit]:checked) .access-body {
+        opacity: 0.55;
+    }
+
+    /* Inherited, the tags are read only: nothing to take off or add. */
+    .access-field:has([data-access-inherit]:checked) :is(.grant-remove, .grant-add) {
+        display: none;
+    }
+
+    .access-field:not(:has([name="visibility"][value="groups"]:checked)) .access-grants {
+        display: none;
+    }
+
+    .access-modes {
+        margin: 0;
+    }
+
+    .access-grants {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        max-width: 560px;
+    }
+
+    .grant {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 28px;
+        padding: 0 3px 0 8px;
+        font-size: var(--text-sm);
+        color: var(--ink);
+        white-space: nowrap;
+        background: var(--card);
+        border: 1px solid var(--edge-input);
+        border-radius: 4px;
+    }
+
+    .grant.is-extra {
+        display: none;
+    }
+
+    .grant > svg {
+        flex: none;
+        width: 14px;
+        height: 14px;
+        color: var(--muted);
+    }
+
+    .grant-meta {
+        font-size: var(--text-xs);
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+    }
+
+    .grant-remove {
+        display: inline-grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        color: var(--muted);
+        border-radius: 3px;
+        cursor: pointer;
+    }
+
+    .grant-remove svg {
+        width: 12px;
+        height: 12px;
+    }
+
+    .grant-remove:hover {
+        color: var(--ink);
+        background: var(--hover);
+    }
+
+    .grant-remove:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: -2px;
+    }
+
+    .grant-more {
+        font-size: var(--text-sm);
+        color: var(--ink);
+        text-decoration: underline;
+        text-decoration-color: var(--line-strong);
+        text-underline-offset: 3px;
+        cursor: pointer;
+    }
+
+    .grant-add {
+        position: relative;
+    }
+
+    /* On a phone the panel opens from the start of the tags, so it stays
+       on the screen. */
+    @media (max-width: 639px) {
+        .access-grants {
+            position: relative;
+        }
+
+        .grant-add {
+            position: static;
+        }
+    }
+
+    .grant-add > summary {
+        list-style: none;
+        cursor: pointer;
+    }
+
+    .grant-add > summary::-webkit-details-marker {
+        display: none;
+    }
+
+    /* The panel to add from: 16px all around, one left edge, the groups
+       then the members, the button at the foot on the right. */
+    .more-actions > .grant-panel {
+        right: auto;
+        left: 0;
+        display: flex;
+        flex-direction: column;
+        width: 340px;
+        max-width: calc(100vw - 32px);
+        padding: 16px;
+        color: var(--ink);
+    }
+
+    .grant-section {
+        margin: 14px 0 0;
+        font-size: var(--text-xs);
+        font-weight: 600;
+        color: var(--muted);
+    }
+
+    .grant-panel > .grant-section:first-child {
+        margin-top: 0;
+    }
+
+    .grant-panel .picker-list {
+        max-height: 220px;
+        margin-top: 4px;
+        border-top: 0;
+    }
+
+    /* The name stays whole; the address, the count or the folder gives
+       way. */
+    :is(.grant-panel, .member-picker-panel) .svc-pick {
+        display: flex;
+    }
+
+    :is(.grant-panel, .member-picker-panel) .svc-pick-name {
+        flex: 0 1 auto;
+    }
+
+    :is(.grant-panel, .member-picker-panel) .picker-email {
+        flex: 1 1 0;
+        min-width: 0;
+        overflow: hidden;
+        text-align: right;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        overflow-wrap: normal;
+    }
+
+    .grant-panel > .picker-note {
+        margin-top: 12px;
+    }
+
+    .grant-submit {
+        align-self: flex-end;
+        margin-top: 16px;
+    }
+
+    .access-effect {
+        max-width: 62ch;
+        margin: 0;
+        font-size: var(--text-sm);
+        color: var(--ink-soft);
+    }
+
+    .access-field > .field-error {
+        margin-top: 6px;
+    }
+
+    /* The groups of a large team are searched before they are listed. */
+    .groups-search {
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--line);
+    }
+
+    .groups-search > .input {
+        max-width: 360px;
+    }
+
+    /* The members a group can take in, narrowed by the search. */
+    .picker-list {
+        max-height: 280px;
+        margin: 12px -16px 0;
+        padding: 0 12px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        border-top: 1px solid var(--line);
+    }
+
+    .picker-email {
+        font-size: var(--text-sm);
+        color: var(--muted);
+        overflow-wrap: anywhere;
+    }
+
+    .picker-note {
+        margin: 0;
+        font-size: var(--text-sm);
+        color: var(--muted);
+    }
+
+    .picker-none {
+        margin-top: 12px;
+    }
+
+    /* A group's page: the services it opens, with their folder. */
+    .group-services {
+        margin-top: 16px;
+    }
+
+    .group-service-folder {
+        font-size: var(--text-sm);
+        color: var(--muted);
+        white-space: nowrap;
+    }
+
+    .group-access-end {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+
+    /* A panel in sections, folders then services: the first heading at the
+       top, each list right under its heading. */
+    /* A panel of choices is as wide as its longest line, within bounds:
+       never a wide box around one short name. */
+    .more-actions > .member-picker-panel {
+        width: max-content;
+        min-width: 240px;
+        max-width: min(360px, calc(100vw - 32px));
+    }
+
+    .member-picker-panel > input[type="hidden"] + .grant-section {
+        margin-top: 0;
+    }
+
+    .member-picker-panel .grant-section + .picker-list {
+        margin-top: 4px;
+        border-top: 0;
+    }
+
+    /* Without a search box, the list starts at the top of its panel. */
+    .member-picker-panel > input[type="hidden"] + .picker-list {
+        margin-top: -8px;
+        border-top: 0;
+    }
+
+    /* A folder's page: who sees it, in a panel under "Change" as for the
+       journal's settings, wide enough for a few tags. The panel to add
+       groups and members opens under the tags, across the panel. */
+    .folder-menu > .folder-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        width: 380px;
+        max-width: calc(100vw - 32px);
+        padding: 16px;
+        color: var(--ink);
+    }
+
+    .folder-panel > .access-field {
+        margin-top: 0;
+    }
+
+    .folder-panel .access-grants {
+        position: relative;
+        justify-self: stretch;
+    }
+
+    .folder-panel .grant-add {
+        position: static;
+    }
+
+    .folder-panel .more-actions > .grant-panel {
+        right: 0;
+        left: 0;
+        width: auto;
+    }
+
+    /* On a phone the line sits under the title: the panel opens from its
+       start rather than from "Change". */
+    @media (max-width: 639px) {
+        .folder-menu > .folder-panel {
+            right: auto;
+            left: 0;
+        }
+    }
+
+    /* "New folder" is followed by "New service", or starts a wrapped
+       line: its panel opens from its start at any width. */
+    .folder-new > .group-panel {
+        right: auto;
+        left: 0;
     }
 
     @media (prefers-reduced-motion: reduce) {

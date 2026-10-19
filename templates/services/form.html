@@ -9,6 +9,8 @@
 {% block scripts %}
 <script src="{{ crate::asset("js/icon-picker.js") }}" defer></script>
 <script src="{{ crate::asset("js/service-check.js") }}" defer></script>
+<script src="{{ crate::asset("js/list-filter.js") }}" defer></script>
+<script src="{{ crate::asset("js/access-field.js") }}" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -40,7 +42,7 @@
                 <div class="form-col">
                     <div class="field">
                         <label for="name" class="field-label">{{ i18n.t("services.name_label") }}</label>
-                        <input id="name" name="name" type="text" class="input" required maxlength="100"
+                        <input id="name" name="name" type="text" class="input input-name" required maxlength="100"
                                value="{{ form.name }}" placeholder="{{ i18n.t("services.name_placeholder") }}"
                                {% if name_error.is_some() %}aria-invalid="true" aria-describedby="name-error" autofocus{% endif %}>
                         {% if let Some(message) = name_error %}
@@ -50,11 +52,13 @@
 
                     <div class="form-block field">
                         <label for="description" class="field-label">{{ i18n.t("services.description") }} <span class="field-note">{{ i18n.t("common.optional") }}</span></label>
-                        <textarea id="description" name="description" class="input" rows="3" maxlength="500"
+                        <textarea id="description" name="description" class="input input-brief" rows="2" maxlength="500"
                                   placeholder="{{ i18n.t("services.description_placeholder") }}">{{ form.description }}</textarea>
                     </div>
 
                     {% include "components/check_fields.html" %}
+
+                    {% include "components/access_field.html" %}
                 </div>
                 <div class="form-col">
                     <div class="form-block">

@@ -6,7 +6,7 @@ test("services keep the order chosen with the arrows", async ({ page }, testInfo
     const last = `Ordre ${testInfo.project.name}`;
     const names = () =>
         page
-            .locator("[data-service-order] > li")
+            .locator("[data-service-order] [data-service-id]")
             .evaluateAll((rows) => rows.map((row) => row.dataset.serviceName));
 
     await page.goto("/services/new");

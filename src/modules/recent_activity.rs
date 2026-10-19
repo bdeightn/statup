@@ -43,7 +43,8 @@ impl Module for RecentActivityModule {
 
     async fn render(&self, ctx: &ModuleRenderContext<'_>) -> Result<String, AppError> {
         let kinds = shown_kinds(ctx.hidden);
-        let events = EventRepository::list_recent_activity(ctx.pool, LIMIT, &kinds).await?;
+        let events =
+            EventRepository::list_recent_activity(ctx.pool, LIMIT, &kinds, ctx.scope).await?;
         let template = RecentActivityTemplate {
             groups: group_by_day(events, ctx.i18n, |event| &event.created_at),
             i18n: ctx.i18n.clone(),

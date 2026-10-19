@@ -5,12 +5,16 @@
 //! health check skip them.
 
 mod admin;
+mod audience;
 mod auth;
 mod checks;
 mod dashboard;
 mod dashboard_layout;
 mod events;
 mod feed;
+mod folders;
+mod group_access;
+mod groups;
 mod health;
 mod icons;
 mod journal;
@@ -198,6 +202,29 @@ fn publisher_routes() -> Router<AppState> {
             "/services/{id}/edit",
             get(services::edit_form).post(services::update),
         )
+        .route("/services/folders/new", post(folders::create_folder))
+        .route("/services/folders/order", post(folders::save_order))
+        .route("/services/folders/{id}", get(folders::folder_page))
+        .route(
+            "/services/folders/{id}/rename",
+            post(folders::rename_folder),
+        )
+        .route(
+            "/services/folders/{id}/visibility",
+            post(folders::save_visibility),
+        )
+        .route(
+            "/services/folders/{id}/services",
+            post(folders::add_services),
+        )
+        .route(
+            "/services/folders/{id}/services/{service_id}/remove",
+            post(folders::remove_service),
+        )
+        .route(
+            "/services/folders/{id}/delete",
+            post(folders::delete_folder),
+        )
         .route("/services/order", post(services::save_order))
         .route(
             "/services/problems-first",
@@ -239,6 +266,24 @@ fn admin_routes() -> Router<AppState> {
         .route(
             "/admin/users/{id}/reset-password",
             post(admin::reset_member_password),
+        )
+        .route("/admin/groups/new", post(groups::create_group))
+        .route("/admin/groups/{id}", get(groups::group_page))
+        .route("/admin/groups/{id}/rename", post(groups::rename_group))
+        .route("/admin/groups/{id}/members", post(groups::add_members))
+        .route(
+            "/admin/groups/{id}/members/{user_id}/remove",
+            post(groups::remove_member),
+        )
+        .route("/admin/groups/{id}/delete", post(groups::delete_group))
+        .route("/admin/groups/{id}/access", post(group_access::open))
+        .route(
+            "/admin/groups/{id}/folders/{folder_id}/remove",
+            post(group_access::close_folder),
+        )
+        .route(
+            "/admin/groups/{id}/services/{service_id}/remove",
+            post(group_access::close_service),
         )
         .route(
             "/admin/dashboard/layout/order",

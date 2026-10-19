@@ -93,6 +93,9 @@ pub struct NextMaintenance {
 #[template(path = "modules/status_banner.html")]
 struct StatusBannerTemplate {
     has_services: bool,
+    /// The instance has services but none this viewer may see: whether
+    /// they are signed in, to say so differently.
+    nothing_visible: Option<bool>,
     tone: &'static str,
     headline: String,
     rows: Vec<BannerRow>,
@@ -129,9 +132,10 @@ impl Module for StatusBannerModule {
     }
 
     async fn render(&self, ctx: &ModuleRenderContext<'_>) -> Result<String, AppError> {
-        let services = ServiceRepository::list_all(ctx.pool).await?;
-        let events = EventRepository::list_open_for_banner(ctx.pool).await?;
-        let maintenance = EventRepository::list_open_maintenance(ctx.pool).await?;
+        let services = ServiceRepository::list_visible(ctx.pool, ctx.scope).await?;
+        let any_service = !services.is_empty() || ServiceRepository::any(ctx.pool).await?;
+        let events = EventRepository::list_open_for_banner(ctx.pool, ctx.scope).await?;
+        let maintenance = EventRepository::list_open_maintenance(ctx.pool, ctx.scope).await?;
         // Only a service the checks found down has an outage to date.
         let outage_starts = if services.iter().any(|s| s.detected_status.is_some()) {
             OutageRepository::open_starts(ctx.pool).await?
@@ -152,6 +156,7 @@ impl Module for StatusBannerModule {
         keep_each_update_once(&mut rows);
         let template = StatusBannerTemplate {
             has_services: !services.is_empty(),
+            nothing_visible: (any_service && services.is_empty()).then_some(ctx.user.is_some()),
             tone: banner_tone(&affected).as_str(),
             headline: headline(&affected, i18n),
             rows,
@@ -229,7 +234,7 @@ fn cause_of<'a>(service: &Service, events: &'a [EventSummary]) -> Option<&'a Eve
     };
     events
         .iter()
-        .find(|event| event.kind == kind && event.services().contains(&service.name.as_str()))
+        .find(|event| event.kind == kind && event.names_service(service.id))
 }
 
 fn cause(event: &EventSummary, i18n: &I18n) -> Cause {
@@ -323,7 +328,18 @@ fn headline(affected: &[&Service], i18n: &I18n) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Lifecycle, NAME_SEPARATOR, Severity};
+    use crate::models::{Lifecycle, NAME_SEPARATOR, Severity, Visibility};
+
+    /// The id each test service carries, so events can name them.
+    fn id_of(name: &str) -> i64 {
+        match name {
+            "Mail" => 1,
+            "Wiki" => 2,
+            "Paie" => 3,
+            "Intranet" => 4,
+            _ => 9,
+        }
+    }
 
     fn event(
         kind: Kind,
@@ -351,6 +367,12 @@ mod tests {
             has_review: false,
             service_names: services.to_string(),
             service_icons: String::new(),
+            service_ids: services
+                .split(NAME_SEPARATOR)
+                .filter(|name| !name.is_empty())
+                .map(|name| id_of(name).to_string())
+                .collect::<Vec<_>>()
+                .join(","),
             last_activity_at: None,
             review_body: None,
             latest_update: None,
@@ -361,7 +383,7 @@ mod tests {
 
     fn service(name: &str, status: ServiceStatus) -> Service {
         Service {
-            id: 1,
+            id: id_of(name),
             name: name.to_string(),
             slug: name.to_lowercase(),
             description: None,
@@ -374,6 +396,9 @@ mod tests {
             check_internal_cert: false,
             outage_after_minutes: crate::services::DEFAULT_OUTAGE_AFTER,
             detected_status: None,
+            visibility: Visibility::Everyone,
+            folder_id: None,
+            follows_folder: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),
             icon_filename: None,
@@ -466,6 +491,21 @@ mod tests {
         ];
         let found = cause_of(&mail, &events).map(|e| e.severity);
         assert_eq!(found, Some(Some(Severity::Minor)));
+    }
+
+    #[test]
+    fn a_service_is_explained_by_its_own_events_not_by_a_namesake() {
+        let mail = service("Mail", ServiceStatus::MajorOutage);
+        let mut other_mail = service("Mail", ServiceStatus::MajorOutage);
+        other_mail.id = 7;
+        let events = [event(
+            Kind::Incident,
+            Some(Severity::Critical),
+            Lifecycle::Investigating,
+            "Mail",
+        )];
+        assert!(cause_of(&mail, &events).is_some());
+        assert!(cause_of(&other_mail, &events).is_none());
     }
 
     #[test]

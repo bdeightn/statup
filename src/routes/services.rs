@@ -8,19 +8,22 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
+use super::audience::{
+    AccessBlock, Audience, VISIBILITY_CHOICE, VISIBILITY_NO_FOLDER, VISIBILITY_REQUIRED,
+};
 use super::checks::{CheckFields, CheckInput, OUTAGE_AFTER_INVALID};
 use super::{Frame, members_only, render};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::is_htmx;
-use crate::middleware::{CsrfToken, HtmlForm, OptionalUser, RequirePublisher};
+use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher, Viewer};
 use crate::models::{
     BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, JournalKind, Service,
-    ServiceStatus, User, find_builtin_icon,
+    ServiceFolder, ServiceStatus, User, find_builtin_icon,
 };
 use crate::modules::services::{LONG_DAYS, ServiceRow, Strip, service_history, strips};
-use crate::repositories::{EventRepository, NewJournalEntry, ServiceRepository};
+use crate::repositories::{EventRepository, FolderRepository, NewJournalEntry, ServiceRepository};
 use crate::services::{
     DEFAULT_OUTAGE_AFTER, IconService, LastCheck, ServiceService, put_problems_first,
 };
@@ -30,7 +33,10 @@ use crate::state::AppState;
 #[template(path = "services/list.html")]
 struct ServiceListTemplate {
     frame: Frame,
-    services: Vec<Service>,
+    /// The services under their folders, in the chosen order.
+    groups: Vec<ServiceGroup>,
+    service_count: usize,
+    folder_count: usize,
     /// The event holding each service in its state, by service.
     drivers: HashMap<i64, (i64, String)>,
     /// The list renders the status control at rest, never a receipt.
@@ -49,6 +55,8 @@ struct ServiceListTemplate {
     problems_first: bool,
     chosen_places: HashMap<i64, usize>,
     deleted_name: Option<String>,
+    folder_deleted: Option<String>,
+    new_folder: NewFolderForm,
     error: Option<String>,
     i18n: I18n,
 }
@@ -95,6 +103,51 @@ impl ServiceListTemplate {
     fn move_label(&self, key: &str, name: &str) -> String {
         self.i18n.tf(key, &[("name", name)])
     }
+
+    /// Arrows move services within their folder and folders among themselves.
+    fn orderable(&self) -> bool {
+        self.service_count > 1 || self.folder_count > 1
+    }
+
+    fn folder_deleted_notice(&self, name: &str) -> String {
+        self.i18n
+            .tf("services.folder_deleted_notice", &[("name", name)])
+    }
+}
+
+/// A card of the list: the services of a folder, or of none, untitled.
+pub(super) struct ServiceGroup {
+    pub(super) folder: Option<ServiceFolder>,
+    pub(super) services: Vec<Service>,
+}
+
+/// Those in no folder first, then each folder in its order, empty ones
+/// included so that their page stays within reach.
+pub(super) fn grouped(services: Vec<Service>, folders: Vec<ServiceFolder>) -> Vec<ServiceGroup> {
+    let mut by_folder: HashMap<Option<i64>, Vec<Service>> = HashMap::new();
+    for service in services {
+        by_folder
+            .entry(service.folder_id)
+            .or_default()
+            .push(service);
+    }
+    let loose = by_folder.remove(&None).unwrap_or_default();
+    let first = (!loose.is_empty()).then_some(ServiceGroup {
+        folder: None,
+        services: loose,
+    });
+    let folders = folders.into_iter().map(|folder| ServiceGroup {
+        services: by_folder.remove(&Some(folder.id)).unwrap_or_default(),
+        folder: Some(folder),
+    });
+    first.into_iter().chain(folders).collect()
+}
+
+/// The panel of "New folder", open again with the refused name and why.
+#[derive(Default)]
+pub struct NewFolderForm {
+    value: String,
+    error: Option<String>,
 }
 
 /// The last check of a monitored service, as its row says it: the latency,
@@ -128,10 +181,11 @@ impl Pulse {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 pub struct ListQuery {
     saved: Option<i64>,
     deleted: Option<String>,
+    folder_deleted: Option<String>,
 }
 
 async fn render_list(
@@ -140,7 +194,7 @@ async fn render_list(
     csrf_token: String,
     i18n: I18n,
     query: ListQuery,
-    error: Option<String>,
+    (error, new_folder): (Option<String>, NewFolderForm),
 ) -> Result<Response, AppError> {
     let mut services = ServiceRepository::list_all(&state.pool).await?;
     let chosen_places = services
@@ -165,9 +219,12 @@ async fn render_list(
         .map(|service| (service.id, Pulse::new(state.checks.get(service.id), &i18n)))
         .collect();
     let histories = strips(&state.pool, &services, LONG_DAYS, &i18n).await?;
+    let folders = FolderRepository::list(&state.pool).await?;
     render(&ServiceListTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
-        services,
+        service_count: services.len(),
+        folder_count: folders.len(),
+        groups: grouped(services, folders),
         drivers: EventRepository::state_drivers(&state.pool, None).await?,
         previous: None,
         saved_id: query.saved,
@@ -178,6 +235,8 @@ async fn render_list(
         problems_first,
         chosen_places,
         deleted_name: query.deleted,
+        folder_deleted: query.folder_deleted,
+        new_folder,
         error,
         i18n,
     })
@@ -190,7 +249,24 @@ pub async fn list(
     csrf_token: CsrfToken,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    render_list(&state, &user, csrf_token.0, i18n, query, None).await
+    let page = (None, NewFolderForm::default());
+    render_list(&state, &user, csrf_token.0, i18n, query, page).await
+}
+
+/// The list again, with the panel of "New folder" open on a refused name.
+pub(super) async fn new_folder_refused(
+    state: &AppState,
+    user: &User,
+    (csrf_token, i18n): (String, I18n),
+    key: &str,
+    name: String,
+) -> Result<Response, AppError> {
+    let new_folder = NewFolderForm {
+        error: Some(i18n.t(key).to_string()),
+        value: name,
+    };
+    let page = (None, new_folder);
+    render_list(state, user, csrf_token, i18n, ListQuery::default(), page).await
 }
 
 #[derive(Template)]
@@ -203,6 +279,8 @@ struct ServiceFormTemplate {
     outage_error: Option<String>,
     edit_id: Option<i64>,
     form: ServiceFormData,
+    /// Who sees the service.
+    access: AccessBlock,
     selected_icon_id: Option<i64>,
     selected_icon_url: Option<String>,
     selected_icon_name: Option<String>,
@@ -254,6 +332,33 @@ pub struct ServiceFormData {
     pub description: String,
     pub status: ServiceStatus,
     pub check: CheckFields,
+    pub visibility: Audience,
+}
+
+/// Records a change of audience; a save that changes nothing leaves no
+/// line. A line that cannot be written never fails the save it follows.
+async fn record_audience_change(
+    pool: &DbPool,
+    user: &User,
+    (id, name): (i64, &str),
+    before: &Audience,
+) {
+    let after = match Audience::of_service(pool, id).await {
+        Ok(after) => after,
+        Err(error) => {
+            tracing::warn!(%error, "Audience of a saved service not read");
+            return;
+        }
+    };
+    if *before == after {
+        return;
+    }
+    NewJournalEntry::new(JournalKind::ServiceVisibilityChanged)
+        .by(user)
+        .about(name)
+        .with_detail(after.detail())
+        .record(pool)
+        .await;
 }
 
 impl ServiceFormData {
@@ -266,12 +371,14 @@ impl ServiceFormData {
                 outage_after: Some(DEFAULT_OUTAGE_AFTER.to_string()),
                 ..CheckFields::default()
             },
+            visibility: Audience::EVERYONE,
         }
     }
 
     /// An edited service as saved.
-    fn from_service(service: Service) -> Self {
+    fn from_service(service: Service, visibility: Audience) -> Self {
         Self {
+            visibility,
             check: CheckFields {
                 outage_after: Some(service.outage_after_minutes.to_string()),
                 ..CheckFields::from_saved(
@@ -306,6 +413,14 @@ pub struct ServiceInput {
     icon_id: Option<String>,
     #[serde(default)]
     icon_name: Option<String>,
+    #[serde(default)]
+    visibility: String,
+    #[serde(default)]
+    group_ids: Vec<i64>,
+    #[serde(default)]
+    member_ids: Vec<i64>,
+    #[serde(default)]
+    inherit: Option<String>,
     #[serde(flatten)]
     check: CheckInput,
 }
@@ -322,12 +437,23 @@ impl ServiceInput {
         self.icon_name.clone().filter(|name| !name.is_empty())
     }
 
+    fn audience(&self) -> Result<Audience, AppError> {
+        Audience::from_form(
+            &self.visibility,
+            &self.group_ids,
+            &self.member_ids,
+            self.inherit.is_some(),
+        )
+    }
+
     fn into_page(self, edit_id: Option<i64>, status: ServiceStatus, error_key: String) -> FormPage {
         FormPage {
             edit_id,
             icon_id: self.icon_id(),
             icon_name: self.icon_name(),
             form: ServiceFormData {
+                // Shown again only; a choice that does not parse saved nothing.
+                visibility: self.audience().unwrap_or(Audience::EVERYONE),
                 check: self.check.fields_and_delay(),
                 name: self.name,
                 description: self.description,
@@ -352,22 +478,36 @@ async fn render_form(
         .icon_id
         .and_then(|id| custom_icons.iter().find(|icon| icon.id == id))
         .map(Icon::url);
-    let deletable = match page.edit_id {
-        Some(id) => ServiceRepository::find_by_id(&state.pool, id)
-            .await?
-            .is_some_and(|service| !service.has_history),
-        None => false,
+    let service = match page.edit_id {
+        Some(id) => ServiceRepository::find_by_id(&state.pool, id).await?,
+        None => None,
     };
-    let (error, name_error, check_error, outage_error) =
-        place_error(page.error_key.as_deref(), &i18n);
+    let deletable = service.as_ref().is_some_and(|service| !service.has_history);
+    let folder = match service.and_then(|service| service.folder_id) {
+        Some(id) => FolderRepository::find(&state.pool, id).await?,
+        None => None,
+    };
+    let placed = place_error(page.error_key.as_deref(), &i18n);
+    let audience = shown_audience(&state.pool, &page.form.visibility, folder.as_ref()).await?;
+    let access = AccessBlock::load(
+        &state.pool,
+        &i18n,
+        audience,
+        state.is_public_mode(),
+        folder.as_ref().map(|folder| folder.name.as_str()),
+        placed.visibility,
+    )
+    .await?
+    .for_viewer(user);
     render(&ServiceFormTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
-        error,
-        name_error,
-        check_error,
-        outage_error,
+        error: placed.form,
+        name_error: placed.name,
+        check_error: placed.check,
+        outage_error: placed.outage,
         edit_id: page.edit_id,
         form: page.form,
+        access,
         selected_icon_id: page.icon_id.filter(|_| selected_icon_url.is_some()),
         selected_icon_url,
         selected_icon_name: page.icon_name,
@@ -379,30 +519,66 @@ async fn render_form(
     })
 }
 
+/// What the Visibility block shows: a service that inherits shows its
+/// folder's setting, read only, also when a refused form comes back with
+/// nothing but the box ticked.
+async fn shown_audience(
+    pool: &DbPool,
+    posted: &Audience,
+    folder: Option<&ServiceFolder>,
+) -> Result<Audience, AppError> {
+    match folder {
+        Some(folder) if posted.inherit => Ok(Audience {
+            inherit: true,
+            ..Audience::of_folder(pool, folder.id).await?
+        }),
+        _ => Ok(posted.clone()),
+    }
+}
+
 /// One message per place a refusal can be said: above the form, under the
-/// name, under the address to check, under the delay.
-type PlacedError = (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-);
+/// name, under the address to check, under the delay, under who sees it.
+#[derive(Default)]
+struct PlacedError {
+    form: Option<String>,
+    name: Option<String>,
+    check: Option<String>,
+    outage: Option<String>,
+    visibility: Option<String>,
+}
 
 /// A refusal is said under its field when it has one: the name, the
-/// address to check, the delay; anything else above the form.
+/// address to check, the delay, who sees it; anything else above the form.
 fn place_error(key: Option<&str>, i18n: &I18n) -> PlacedError {
     let Some(key) = key else {
-        return (None, None, None, None);
+        return PlacedError::default();
     };
     let message = Some(i18n.t(key).to_string());
     if key.starts_with("validation.service_name_") {
-        (None, message, None, None)
+        PlacedError {
+            name: message,
+            ..PlacedError::default()
+        }
     } else if key.starts_with("validation.check_") {
-        (None, None, message, None)
+        PlacedError {
+            check: message,
+            ..PlacedError::default()
+        }
     } else if key == OUTAGE_AFTER_INVALID {
-        (None, None, None, message)
+        PlacedError {
+            outage: message,
+            ..PlacedError::default()
+        }
+    } else if [VISIBILITY_REQUIRED, VISIBILITY_CHOICE, VISIBILITY_NO_FOLDER].contains(&key) {
+        PlacedError {
+            visibility: message,
+            ..PlacedError::default()
+        }
     } else {
-        (message, None, None, None)
+        PlacedError {
+            form: message,
+            ..PlacedError::default()
+        }
     }
 }
 
@@ -436,6 +612,8 @@ pub async fn create(
                 .about(&service.name)
                 .record(&state.pool)
                 .await;
+            let saved = (service.id, service.name.as_str());
+            record_audience_change(&state.pool, &user, saved, &Audience::EVERYONE).await;
             Ok(Redirect::to(&format!("/services?saved={}", service.id)).into_response())
         }
         Err(AppError::Validation(key)) => {
@@ -446,9 +624,11 @@ pub async fn create(
     }
 }
 
-/// The check is read first, so a refused address or delay saves nothing.
+/// The check and who sees it are read first, so a refusal saves nothing.
 async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<Service, AppError> {
     let monitoring = input.check.monitoring()?;
+    let audience = input.audience()?;
+    audience.check(pool, false).await?;
     let icon_name = input.icon_name();
     let service = ServiceService::create(
         pool,
@@ -459,11 +639,18 @@ async fn save_new(pool: &DbPool, input: &ServiceInput) -> Result<Service, AppErr
     )
     .await?;
     ServiceService::set_monitoring(pool, service.id, monitoring.as_ref()).await?;
+    audience.save_for_service(pool, service.id, None).await?;
     Ok(service)
 }
 
 async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), AppError> {
+    let folder_id = ServiceRepository::find_by_id(pool, id)
+        .await?
+        .ok_or(AppError::NotFound)?
+        .folder_id;
     let monitoring = input.check.monitoring()?;
+    let audience = input.audience()?;
+    audience.check(pool, folder_id.is_some()).await?;
     let icon_name = input.icon_name();
     ServiceService::update(
         pool,
@@ -474,7 +661,9 @@ async fn save_edit(pool: &DbPool, id: i64, input: &ServiceInput) -> Result<(), A
         icon_name.as_deref(),
     )
     .await?;
-    ServiceService::set_monitoring(pool, id, monitoring.as_ref()).await
+    ServiceService::set_monitoring(pool, id, monitoring.as_ref()).await?;
+    audience.save_for_service(pool, id, folder_id).await?;
+    Ok(())
 }
 
 pub async fn edit_form(
@@ -487,11 +676,12 @@ pub async fn edit_form(
     let service = ServiceRepository::find_by_id(&state.pool, id)
         .await?
         .ok_or(AppError::NotFound)?;
+    let audience = Audience::of_service(&state.pool, id).await?;
     let page = FormPage {
         edit_id: Some(id),
         icon_id: service.icon_id,
         icon_name: service.icon_name.clone(),
-        form: ServiceFormData::from_service(service),
+        form: ServiceFormData::from_service(service, audience),
         error_key: None,
     };
     render_form(&state, &user, csrf_token.0, i18n, page).await
@@ -505,13 +695,16 @@ pub async fn update(
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<ServiceInput>,
 ) -> Result<Response, AppError> {
+    let before = Audience::of_service(&state.pool, id).await?;
     match save_edit(&state.pool, id, &input).await {
         Ok(()) => {
+            let name = input.name.trim();
             NewJournalEntry::new(JournalKind::ServiceUpdated)
                 .by(&user)
-                .about(input.name.trim())
+                .about(name)
                 .record(&state.pool)
                 .await;
+            record_audience_change(&state.pool, &user, (id, name), &before).await;
             Ok(Redirect::to(&format!("/services?saved={id}")).into_response())
         }
         Err(AppError::Validation(key)) => {
@@ -551,12 +744,16 @@ pub async fn delete(
             Ok(Redirect::to(&format!("/services?deleted={name}")).into_response())
         }
         Err(AppError::Validation(key)) => {
-            let error = Some(i18n.t(&key).to_string());
-            let query = ListQuery {
-                saved: None,
-                deleted: None,
-            };
-            render_list(&state, &user, csrf_token.0, i18n, query, error).await
+            let page = (Some(i18n.t(&key).to_string()), NewFolderForm::default());
+            render_list(
+                &state,
+                &user,
+                csrf_token.0,
+                i18n,
+                ListQuery::default(),
+                page,
+            )
+            .await
         }
         Err(e) => Err(e),
     }
@@ -712,14 +909,17 @@ impl ServiceDrawerTemplate {
 /// A service as the side panel shows it to anyone who may read the page:
 /// what it is, how it fared this month, its last events.
 pub async fn drawer_content(
-    OptionalUser(user): OptionalUser,
+    viewer: Viewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     headers: HeaderMap,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    if let Some(redirect) = members_only(&state, user.as_ref(), &headers) {
+    if let Some(redirect) = members_only(&state, viewer.user.as_ref(), &headers) {
         return Ok(redirect);
+    }
+    if !viewer.scope.sees_service(id) {
+        return Err(AppError::NotFound);
     }
     let service = ServiceRepository::find_by_id(&state.pool, id)
         .await?
@@ -729,7 +929,7 @@ pub async fn drawer_content(
         limit: PANEL_EVENTS,
         ..EventFilters::default()
     };
-    let events = EventRepository::list_page(&state.pool, &filters).await?;
+    let events = EventRepository::list_page(&state.pool, &filters, &viewer.scope).await?;
     let detected = service.detected_status.is_some()
         && !EventRepository::state_drivers(&state.pool, Some(id))
             .await?
@@ -739,7 +939,32 @@ pub async fn drawer_content(
         row,
         events,
         detected,
-        can_edit: user.is_some_and(|u| u.role.can_publish()),
+        can_edit: viewer.user.is_some_and(|u| u.role.can_publish()),
         i18n,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn input(body: &str) -> ServiceInput {
+        serde_html_form::from_str(body).unwrap()
+    }
+
+    #[test]
+    fn groups_ticked_beside_the_monitoring_fields_are_read() {
+        let form = input(
+            "name=Paie&check_kind=http&check_url=https%3A%2F%2Fpaie&visibility=groups&group_ids=3&group_ids=7",
+        );
+        assert_eq!(form.group_ids, vec![3, 7]);
+        assert!(form.check.monitoring().is_ok());
+    }
+
+    #[test]
+    fn members_and_inherit_are_read_beside_the_groups() {
+        let form = input("visibility=groups&group_ids=3&member_ids=5&member_ids=6&inherit=on");
+        assert_eq!(form.member_ids, vec![5, 6]);
+        assert!(form.audience().unwrap().inherit);
+    }
 }

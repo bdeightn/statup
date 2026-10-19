@@ -9,9 +9,15 @@ use chrono::Utc;
 use reqwest::StatusCode;
 
 use common::{TestApp, extract_csrf_token};
+use statup::i18n::{I18n, LANGUAGES};
 use statup::models::{CheckKind, CheckedService, Lifecycle, Role, ServiceCheck, ServiceStatus};
 use statup::repositories::{EventRepository, ServiceRepository};
 use statup::services::{Finding, MonitorState, Prober, Report, ServiceService, run_round};
+
+/// A page text with its `{minutes}` filled, in the language a client that asks for none gets.
+fn text_with_minutes(key: &str, minutes: &str) -> String {
+    I18n::new(LANGUAGES[0].code).tf(key, &[("minutes", minutes)])
+}
 
 impl TestApp {
     /// POST via the `X-CSRF-Token` header, the way htmx sends it.
@@ -667,6 +673,7 @@ async fn rejected_service_creation_gives_the_input_back() {
             &[
                 ("name", "  "),
                 ("description", "Handles checkout and refunds."),
+                ("visibility", "everyone"),
             ],
         )
         .await;
@@ -702,6 +709,7 @@ async fn a_service_saved_with_a_check_is_watched() {
                 ("check_url", " https://intranet.example.com "),
                 ("check_host", "left over from the other kind"),
                 ("check_internal_cert", "on"),
+                ("visibility", "everyone"),
             ],
         )
         .await;
@@ -715,7 +723,10 @@ async fn a_service_saved_with_a_check_is_watched() {
 
     let (_, list) = app.get(&format!("/services?saved={}", checked[0].id)).await;
     assert!(
-        list.contains("surveillé chaque minute"),
+        list.contains(&text_with_minutes(
+            "services.saved_monitored_notice",
+            &checked[0].outage_after_minutes.to_string()
+        )),
         "the notice says what monitoring means"
     );
 
@@ -785,7 +796,11 @@ async fn removing_the_check_clears_a_detected_outage() {
         .post_form(
             &format!("/services/{id}/edit"),
             &csrf,
-            &[("name", "Paie"), ("check_kind", "none")],
+            &[
+                ("name", "Paie"),
+                ("check_kind", "none"),
+                ("visibility", "everyone"),
+            ],
         )
         .await;
     assert_eq!(status, StatusCode::SEE_OTHER);
@@ -866,7 +881,7 @@ async fn testing_an_open_port_says_it_answers() {
     assert!(body.contains(r#"data-tone="ok""#));
     assert!(body.contains("Le port accepte la connexion"));
     assert!(
-        body.contains("Sans réponse pendant 15 min, il passera en panne"),
+        body.contains(&text_with_minutes("services.check_result_rule", "15")),
         "an answer says what the monitoring will do, with the delay typed"
     );
 }
@@ -913,6 +928,7 @@ async fn each_service_keeps_the_delay_typed_for_it() {
             ("check_host", "10.0.0.7"),
             ("check_port", "9100"),
             ("check_outage_after", delay),
+            ("visibility", "everyone"),
         ]
     };
     let (status, _, _) = app.post_form("/services/new", &csrf, &fields("15")).await;
@@ -923,7 +939,7 @@ async fn each_service_keeps_the_delay_typed_for_it() {
 
     let (_, list) = app.get(&format!("/services?saved={id}")).await;
     assert!(
-        list.contains("sans réponse pendant 15 min"),
+        list.contains(&text_with_minutes("services.saved_monitored_notice", "15")),
         "the notice gives the service's own delay"
     );
     let (_, form) = app.get(&format!("/services/{id}/edit")).await;
@@ -946,6 +962,7 @@ async fn each_service_keeps_the_delay_typed_for_it() {
             ("name", "Imprimante"),
             ("check_kind", "none"),
             ("check_outage_after", "left over"),
+            ("visibility", "everyone"),
         ],
     )
     .await;
@@ -2053,6 +2070,7 @@ async fn a_publisher_edits_a_service() {
             &[
                 ("name", "Billing API"),
                 ("description", "Handles invoices."),
+                ("visibility", "everyone"),
             ],
         )
         .await;
@@ -2077,7 +2095,11 @@ async fn an_empty_name_is_refused_on_the_service_edit_form() {
         .post_form(
             &format!("/services/{service_id}/edit"),
             &csrf,
-            &[("name", "  "), ("description", "Handles invoices.")],
+            &[
+                ("name", "  "),
+                ("description", "Handles invoices."),
+                ("visibility", "everyone"),
+            ],
         )
         .await;
 

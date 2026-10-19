@@ -38,6 +38,8 @@ pub enum JournalKind {
     ServiceUpdated,
     /// A member deleted a service.
     ServiceDeleted,
+    /// A member changed who sees a service.
+    ServiceVisibilityChanged,
     /// A member set the status of a service.
     ServiceStatusSet,
     /// A member changed the order of the services.
@@ -70,6 +72,28 @@ pub enum JournalKind {
     MemberEnabled,
     /// A member gave someone a temporary password.
     MemberPasswordReset,
+    /// A member created a group of members.
+    GroupCreated,
+    /// A member renamed a group.
+    GroupRenamed,
+    /// A member deleted a group.
+    GroupDeleted,
+    /// A member put someone in a group.
+    GroupMemberAdded,
+    /// A member took someone out of a group.
+    GroupMemberRemoved,
+    /// A member created a folder of services.
+    FolderCreated,
+    /// A member renamed a folder.
+    FolderRenamed,
+    /// A member deleted a folder; its services stay.
+    FolderDeleted,
+    /// A member changed who sees a folder.
+    FolderVisibilityChanged,
+    /// A member put a service in a folder.
+    FolderServiceAdded,
+    /// A member took a service out of a folder.
+    FolderServiceRemoved,
     /// A member published an event.
     EventCreated,
     /// A member edited an event.
@@ -178,6 +202,7 @@ impl JournalKind {
             Self::ServiceCreated => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Service created", "journal.service_created"),
             Self::ServiceUpdated => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Service updated", "journal.service_updated"),
             Self::ServiceDeleted => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Service deleted", "journal.service_deleted"),
+            Self::ServiceVisibilityChanged => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Service visibility changed", "journal.service_visibility_changed"),
             Self::ServiceStatusSet => row(Cat::Members, false, Level::INFO, Tone::Neutral, "Service status set", "journal.service_status_set"),
             Self::ServicesReordered => row(Cat::Members, false, Level::INFO, Tone::Neutral, "Services reordered", "journal.services_reordered"),
             Self::ProblemsFirstChanged => row(Cat::Members, false, Level::INFO, Tone::Neutral, "Problems first changed", "journal.problems_first_changed"),
@@ -194,6 +219,17 @@ impl JournalKind {
             Self::MemberDisabled => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Member disabled", "journal.member_disabled"),
             Self::MemberEnabled => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Member enabled", "journal.member_enabled"),
             Self::MemberPasswordReset => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Member password reset", "journal.member_password_reset"),
+            Self::GroupCreated => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Group created", "journal.group_created"),
+            Self::GroupRenamed => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Group renamed", "journal.group_renamed"),
+            Self::GroupDeleted => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Group deleted", "journal.group_deleted"),
+            Self::GroupMemberAdded => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Group member added", "journal.group_member_added"),
+            Self::GroupMemberRemoved => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Group member removed", "journal.group_member_removed"),
+            Self::FolderCreated => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Folder created", "journal.folder_created"),
+            Self::FolderRenamed => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Folder renamed", "journal.folder_renamed"),
+            Self::FolderDeleted => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Folder deleted", "journal.folder_deleted"),
+            Self::FolderVisibilityChanged => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Folder visibility changed", "journal.folder_visibility_changed"),
+            Self::FolderServiceAdded => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Service added to a folder", "journal.folder_service_added"),
+            Self::FolderServiceRemoved => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Service removed from a folder", "journal.folder_service_removed"),
             Self::EventCreated => row(Cat::Members, false, Level::INFO, Tone::Neutral, "Event created", "journal.event_created"),
             Self::EventEdited => row(Cat::Members, false, Level::INFO, Tone::Neutral, "Event edited", "journal.event_edited"),
             Self::EventUpdatePosted => row(Cat::Members, false, Level::INFO, Tone::Neutral, "Event update posted", "journal.event_update_posted"),

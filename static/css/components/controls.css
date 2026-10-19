@@ -289,6 +289,11 @@
         transition: border-color 150ms ease, box-shadow 150ms ease;
     }
 
+    /* A name is short: its box stops at 360px. */
+    .input-name {
+        max-width: 360px;
+    }
+
     .input:hover {
         border-color: var(--focus);
     }
@@ -312,6 +317,11 @@
         min-height: 104px;
         line-height: 1.55;
         resize: vertical;
+    }
+
+    /* A sentence or two: two lines, longer on demand. */
+    textarea.input-brief {
+        min-height: 62px;
     }
 
     /* Custom select over a native one; the list is portaled to the body. */
@@ -357,7 +367,8 @@
     }
 
     .cs-trigger:focus-visible,
-    .cs-open .cs-trigger {
+    .cs-open .cs-trigger,
+    details[open] > .cs-trigger {
         border-color: var(--focus);
         box-shadow: 0 0 0 3px var(--focus-halo);
         outline: none;
@@ -391,7 +402,8 @@
         transition: transform 150ms ease;
     }
 
-    .cs-open .cs-caret {
+    .cs-open .cs-caret,
+    details[open] > .cs-trigger .cs-caret {
         transform: rotate(180deg);
     }
 
@@ -485,6 +497,23 @@
     .checkbox:checked::after {
         opacity: 1;
         transform: rotate(45deg);
+    }
+
+    /* Some of what the box stands for is checked: a dash instead of the
+       tick. */
+    .checkbox:indeterminate {
+        background: var(--primary);
+        border-color: var(--primary);
+    }
+
+    .checkbox:indeterminate::after {
+        top: 6.5px;
+        left: 3.5px;
+        width: 8px;
+        height: 0;
+        border-width: 0 0 2px;
+        opacity: 1;
+        transform: none;
     }
 
     /* The monitoring of a service: one section, its rows close together. */

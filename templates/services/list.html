@@ -10,7 +10,7 @@
 <script src="{{ crate::asset("js/custom-select.js") }}" defer></script>
 <script src="{{ crate::asset("js/status-publish.js") }}" defer></script>
 <script src="{{ crate::asset("js/uptime-tooltip.js") }}" defer></script>
-{% if services.len() > 1 %}
+{% if self.orderable() %}
 <script src="{{ crate::asset("js/service-order.js") }}" defer></script>
 {% endif %}
 {% endblock %}
@@ -22,7 +22,7 @@
             <h1 class="page-title">{{ i18n.t("services.heading") }}</h1>
         </div>
         <div class="page-actions">
-            {% if services.len() > 1 %}
+            {% if self.orderable() %}
             {# Revealed by its script, without which it would do nothing. Both
                labels hold their place, so the header keeps its width. #}
             <button type="button" class="btn btn-ghost order-toggle" data-order-toggle aria-pressed="false" hidden>
@@ -31,17 +31,35 @@
             </button>
             {% endif %}
             <a href="/icons" class="btn btn-ghost">{{ i18n.t("icons.title") }}</a>
+            {# A folder starts from its name and opens on its own page, where
+               its services are added. #}
+            <details class="more-actions folder-new" data-more-actions{% if new_folder.error.is_some() %} open{% endif %}>
+                <summary class="btn btn-ghost">{% call ui::plus() %}{% endcall %}{{ i18n.t("folders.new") }}</summary>
+                <form class="more-actions-menu group-panel" method="post" action="/services/folders/new">
+                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                    <label for="new-folder" class="field-label">{{ i18n.t("folders.name") }}</label>
+                    <input id="new-folder" name="name" type="text" class="input" required maxlength="{{ crate::models::FOLDER_NAME_MAX_CHARS }}" autocomplete="off" value="{{ new_folder.value }}" placeholder="{{ i18n.t("folders.name_placeholder") }}"
+                           {% if new_folder.error.is_some() %}aria-invalid="true" aria-describedby="new-folder-error" autofocus{% endif %}>
+                    {% if let Some(message) = new_folder.error %}
+                    <p id="new-folder-error" class="field-error" role="alert">{{ message }}</p>
+                    {% endif %}
+                    <button type="submit" class="btn btn-primary group-panel-submit">{{ i18n.t("folders.create") }}</button>
+                </form>
+            </details>
             <a href="/services/new" class="btn btn-primary">{% call ui::plus() %}{% endcall %}{{ i18n.t("services.new") }}</a>
         </div>
     </header>
 
-    {% if services.len() > 1 %}
+    {% if service_count > 1 %}
     {# Shown by the ordering mode, which also puts back the chosen order. #}
     <label class="check-row order-option mb-5" data-problems-first-field hidden><input type="checkbox" class="checkbox" data-problems-first{% if problems_first %} checked{% endif %}><span>{{ i18n.t("services.problems_first") }}</span></label>
     {% endif %}
 
     {% if let Some(name) = saved_name %}
     <div class="form-notice mb-5" role="status"><p><q>{{ name }}</q> {{ self.saved_notice() }}</p></div>
+    {% endif %}
+    {% if let Some(name) = folder_deleted %}
+    <div class="form-notice mb-5" role="status"><p>{{ self.folder_deleted_notice(name) }}</p></div>
     {% endif %}
     {% if let Some(name) = deleted_name %}
     <div class="form-notice mb-5" role="status"><p><q>{{ name }}</q> {{ i18n.t("services.deleted_notice") }}</p></div>
@@ -50,55 +68,80 @@
     <div class="form-error mb-5" role="alert"><p>{{ message }}</p></div>
     {% endif %}
 
-    {% if services.is_empty() %}
+    {% if groups.is_empty() %}
     <div class="card empty-state">
         <p class="empty-state-title">{{ i18n.t("services.empty_title") }}</p>
-        <p class="empty-state-text">{{ i18n.t("services.empty_text") }}</p>
     </div>
     {% else %}
-    <ul class="admin-list" data-service-order data-moved="{{ i18n.t("services.moved") }}" data-saved="{{ i18n.t("services.order_saved") }}">
-        {% for service in services %}
-        <li class="admin-row svc-admin-row{% if self.is_saved(service.id) %} row-saved{% endif %}" id="{{ service.anchor() }}"{% if self.is_saved(service.id) %} data-scroll-into-view{% endif %} data-service-id="{{ service.id }}" data-service-name="{{ service.name }}" data-place="{{ self.chosen_place(service.id) }}">
-            <div class="admin-row-ident">
-                <span class="svc-icon">{% call ui::service_icon(service) %}{% endcall %}</span>
-                <div class="min-w-0">
-                    <p class="admin-row-name"><a href="/services/{{ service.id }}/edit" class="row-link">{{ service.name }}</a></p>
-                    {% let pulse = self.pulse_of(service.id) %}
-                    {% if service.description.is_some() || pulse.is_some() %}
-                    <p class="admin-row-sub">
-                        {%- if let Some(description) = service.description %}{{ description }}{% if pulse.is_some() %}&nbsp;<span aria-hidden="true">·</span> {% endif %}{% endif -%}
-                        {%- if let Some(pulse) = pulse -%}
-                        <span class="svc-pulse" role="img" aria-label="{{ pulse.label }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>{% if let Some(text) = pulse.text %}<span aria-hidden="true">{{ text }}</span>{% endif %}</span>
-                        {%- endif -%}
-                    </p>
-                    {% endif %}
+    {# One card per folder, after the services in none, untitled. The
+       ordering mode moves a service within its card and a folder among
+       the folders. #}
+    <div class="svc-groups" data-service-order data-moved="{{ i18n.t("services.moved") }}" data-folder-moved="{{ i18n.t("folders.moved") }}" data-saved="{{ i18n.t("services.order_saved") }}">
+        {% for group in groups %}
+        {% match group.folder %}
+        {% when Some with (folder) %}
+        <section class="card svc-group" data-folder-id="{{ folder.id }}" data-folder-name="{{ folder.name }}" aria-labelledby="folder-{{ folder.id }}">
+            <header class="card-head">
+                <h2 id="folder-{{ folder.id }}" class="card-title wrap-anywhere">{{ folder.name }} <span class="count">{{ group.services.len() }}</span></h2>
+                <a href="/services/folders/{{ folder.id }}" class="card-action svc-group-manage">{{ i18n.t("folders.manage") }}</a>
+                <div class="svc-move">
+                    <button type="button" class="btn btn-ghost btn-icon" data-move-folder="up" aria-label="{{ self.move_label("folders.move_up", folder.name) }}">{% call ui::arrow_up() %}{% endcall %}</button>
+                    <button type="button" class="btn btn-ghost btn-icon" data-move-folder="down" aria-label="{{ self.move_label("folders.move_down", folder.name) }}">{% call ui::arrow_down() %}{% endcall %}</button>
                 </div>
-            </div>
-            <div class="admin-row-cell">
-                {% let driver = self.driver_of(service.id) %}
-                {% let csrf_token = frame.csrf_token.as_str() %}
-                {% include "components/status_selector.html" %}
-            </div>
-            <div class="svc-move">
-                <button type="button" class="btn btn-ghost btn-icon" data-move="up" aria-label="{{ self.move_label("services.move_up", service.name) }}">{% call ui::arrow_up() %}{% endcall %}</button>
-                <button type="button" class="btn btn-ghost btn-icon" data-move="down" aria-label="{{ self.move_label("services.move_down", service.name) }}">{% call ui::arrow_down() %}{% endcall %}</button>
-            </div>
-            <a href="/services/{{ service.id }}/edit" class="btn btn-ghost btn-icon svc-edit" title="{{ i18n.t("services.edit") }} {{ service.name }}" aria-label="{{ i18n.t("services.edit") }} {{ service.name }}">{% call ui::pencil_icon() %}{% endcall %}</a>
-            {% if let Some(history) = self.history_of(service.id) %}
-            {# Ninety days across the row; a phone keeps the last thirty. #}
-            <div class="svc-history">
-                <div class="svc-bars" aria-hidden="true">{% for day in history.days %}<span class="{{ day.class() }}{% if day.early %} bar-early{% endif %}" data-day-date="{{ day.date }}" data-day-status="{{ day.status }}"></span>{% endfor %}</div>
-                <p class="svc-history-caption">
-                    <span class="svc-history-end" aria-hidden="true">{{ history.since }}</span>
-                    <span class="svc-history-long">{{ history.summary }}</span>
-                    <span class="svc-history-short">{{ history.recent_summary }}</span>
-                    <span class="svc-history-end" aria-hidden="true">{{ i18n.t("date.today") }}</span>
-                </p>
-            </div>
+            </header>
+        {% when None %}
+        <section class="card svc-group">
+        {% endmatch %}
+            {% if group.services.is_empty() %}
+            <p class="groups-empty">{{ i18n.t("folders.no_service") }}</p>
+            {% else %}
+            <ul class="svc-rows">
+                {% for service in group.services %}
+                <li class="admin-row svc-admin-row{% if self.is_saved(service.id) %} row-saved{% endif %}" id="{{ service.anchor() }}"{% if self.is_saved(service.id) %} data-scroll-into-view{% endif %} data-service-id="{{ service.id }}" data-service-name="{{ service.name }}" data-place="{{ self.chosen_place(service.id) }}">
+                    <div class="admin-row-ident">
+                        <span class="svc-icon">{% call ui::service_icon(service) %}{% endcall %}</span>
+                        <div class="min-w-0">
+                            <p class="admin-row-name"><a href="/services/{{ service.id }}/edit" class="row-link">{{ service.name }}</a></p>
+                            {% let pulse = self.pulse_of(service.id) %}
+                            {% if service.description.is_some() || pulse.is_some() %}
+                            <p class="admin-row-sub">
+                                {%- if let Some(description) = service.description %}{{ description }}{% if pulse.is_some() %}&nbsp;<span aria-hidden="true">·</span> {% endif %}{% endif -%}
+                                {%- if let Some(pulse) = pulse -%}
+                                <span class="svc-pulse" role="img" aria-label="{{ pulse.label }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>{% if let Some(text) = pulse.text %}<span aria-hidden="true">{{ text }}</span>{% endif %}</span>
+                                {%- endif -%}
+                            </p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="admin-row-cell">
+                        {% let driver = self.driver_of(service.id) %}
+                        {% let csrf_token = frame.csrf_token.as_str() %}
+                        {% include "components/status_selector.html" %}
+                    </div>
+                    <div class="svc-move">
+                        <button type="button" class="btn btn-ghost btn-icon" data-move="up" aria-label="{{ self.move_label("services.move_up", service.name) }}">{% call ui::arrow_up() %}{% endcall %}</button>
+                        <button type="button" class="btn btn-ghost btn-icon" data-move="down" aria-label="{{ self.move_label("services.move_down", service.name) }}">{% call ui::arrow_down() %}{% endcall %}</button>
+                    </div>
+                    <a href="/services/{{ service.id }}/edit" class="btn btn-ghost btn-icon svc-edit" title="{{ i18n.t("services.edit") }} {{ service.name }}" aria-label="{{ i18n.t("services.edit") }} {{ service.name }}">{% call ui::pencil_icon() %}{% endcall %}</a>
+                    {% if let Some(history) = self.history_of(service.id) %}
+                    {# Ninety days across the row; a phone keeps the last thirty. #}
+                    <div class="svc-history">
+                        <div class="svc-bars" aria-hidden="true">{% for day in history.days %}<span class="{{ day.class() }}{% if day.early %} bar-early{% endif %}" data-day-date="{{ day.date }}" data-day-status="{{ day.status }}"></span>{% endfor %}</div>
+                        <p class="svc-history-caption">
+                            <span class="svc-history-end" aria-hidden="true">{{ history.since }}</span>
+                            <span class="svc-history-long">{{ history.summary }}</span>
+                            <span class="svc-history-short">{{ history.recent_summary }}</span>
+                            <span class="svc-history-end" aria-hidden="true">{{ i18n.t("date.today") }}</span>
+                        </p>
+                    </div>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
             {% endif %}
-        </li>
+        </section>
         {% endfor %}
-    </ul>
+    </div>
     {% endif %}
 </div>
 {% endblock %}

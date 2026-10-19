@@ -88,7 +88,7 @@ impl Frame {
     ) -> Result<Self, AppError> {
         let now = Utc::now();
         let unread_count = match user {
-            Some(u) => EventService::unread_count(pool, u.last_seen_at).await?,
+            Some(u) => EventService::unread_count(pool, u).await?,
             None => 0,
         };
         let bell = match user {

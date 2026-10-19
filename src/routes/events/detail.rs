@@ -10,8 +10,10 @@ use serde::Deserialize;
 use super::form::MaintenanceChoice;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
-use crate::middleware::{CsrfToken, OptionalUser};
-use crate::models::{Event, EventReview, Kind, Lifecycle, Service, ServiceTag, User, delay_text};
+use crate::middleware::{CsrfToken, Viewer};
+use crate::models::{
+    Event, EventReview, Kind, Lifecycle, Scope, Service, ServiceTag, User, delay_text,
+};
 use crate::repositories::{EventRepository, EventReviewRepository, ServiceRepository};
 use crate::routes::timeline::{self, TimelineEntry};
 use crate::routes::{Frame, members_only, render};
@@ -204,24 +206,18 @@ pub struct StateLine {
 async fn load_view(
     state: &AppState,
     id: i64,
-    user: Option<&User>,
+    viewer: &Viewer,
     i18n: &I18n,
 ) -> Result<EventView, AppError> {
-    let ews = EventService::find_with_services(&state.pool, id).await?;
+    let user = viewer.user.as_ref();
+    let ews = EventService::find_with_services(&state.pool, id, &viewer.scope).await?;
     let updates = EventRepository::list_updates(&state.pool, id).await?;
     let last_posted = updates.iter().map(|update| update.created_at).max();
     let author = match user {
         Some(_) => Some(author_name(state, ews.event.author_id, i18n).await?),
         None => None,
     };
-    let follows = match ews.event.follows_event_id {
-        Some(id) => EventRepository::find_by_id(&state.pool, id)
-            .await?
-            .map(|m| {
-                MaintenanceChoice::new(id, m.title, &m.ended_at.unwrap_or(m.updated_at), i18n)
-            }),
-        None => None,
-    };
+    let follows = load_follows(state, &ews.event, &viewer.scope, i18n).await?;
     let mut timeline = timeline::build(
         &ews.event,
         sanitize_markdown(&ews.event.description),
@@ -244,6 +240,24 @@ async fn load_view(
         services: ews.services,
         timeline,
     })
+}
+
+/// The maintenance an announcement follows; none when the viewer may not
+/// see it, so the link does not betray it.
+async fn load_follows(
+    state: &AppState,
+    event: &Event,
+    scope: &Scope,
+    i18n: &I18n,
+) -> Result<Option<MaintenanceChoice>, AppError> {
+    let Some(id) = event.follows_event_id else {
+        return Ok(None);
+    };
+    let found = EventRepository::find_with_services(&state.pool, id, scope).await?;
+    Ok(found.map(|ews| {
+        let m = ews.event;
+        MaintenanceChoice::new(id, m.title, &m.ended_at.unwrap_or(m.updated_at), i18n)
+    }))
 }
 
 /// The review of a resolved incident; none for any other event, nor for an
@@ -327,7 +341,7 @@ pub struct DetailQuery {
 }
 
 pub async fn detail(
-    OptionalUser(user): OptionalUser,
+    viewer: Viewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Query(query): Query<DetailQuery>,
@@ -335,13 +349,13 @@ pub async fn detail(
     csrf_token: CsrfToken,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    if let Some(redirect) = members_only(&state, user.as_ref(), &headers) {
+    if let Some(redirect) = members_only(&state, viewer.user.as_ref(), &headers) {
         return Ok(redirect);
     }
     let page = detail_page(
         &state,
         id,
-        user.as_ref(),
+        &viewer,
         csrf_token.0,
         i18n,
         Composer::default(),
@@ -366,13 +380,14 @@ impl DrawerTemplate {
 pub(super) async fn detail_page(
     state: &AppState,
     id: i64,
-    user: Option<&User>,
+    viewer: &Viewer,
     csrf_token: String,
     i18n: I18n,
     composer: Composer,
     review_form: ReviewForm,
 ) -> Result<EventDetailTemplate, AppError> {
-    let view = load_view(state, id, user, &i18n).await?;
+    let user = viewer.user.as_ref();
+    let view = load_view(state, id, viewer, &i18n).await?;
     let composer = composer.prefilled(&view.event);
     let review_form = review_form.prefilled(&view);
     let can_edit = user.is_some_and(|u| can_modify(&view.event, u.role));
@@ -401,12 +416,13 @@ fn revert_label(event: &Event, i18n: &I18n) -> Option<String> {
 pub(super) async fn drawer_page(
     state: &AppState,
     id: i64,
-    user: Option<&User>,
+    viewer: &Viewer,
     csrf_token: String,
     i18n: I18n,
     composer: Composer,
 ) -> Result<DrawerTemplate, AppError> {
-    let view = load_view(state, id, user, &i18n).await?;
+    let user = viewer.user.as_ref();
+    let view = load_view(state, id, viewer, &i18n).await?;
     let composer = composer.prefilled(&view.event);
     let can_edit = user.is_some_and(|u| can_modify(&view.event, u.role));
     Ok(DrawerTemplate {
@@ -429,7 +445,7 @@ pub struct DrawerQuery {
 }
 
 pub async fn drawer_content(
-    OptionalUser(user): OptionalUser,
+    viewer: Viewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Query(query): Query<DrawerQuery>,
@@ -437,19 +453,12 @@ pub async fn drawer_content(
     csrf_token: CsrfToken,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    if let Some(redirect) = members_only(&state, user.as_ref(), &headers) {
+    if let Some(redirect) = members_only(&state, viewer.user.as_ref(), &headers) {
         return Ok(redirect);
     }
-    let mut page = drawer_page(
-        &state,
-        id,
-        user.as_ref(),
-        csrf_token.0,
-        i18n,
-        Composer::default(),
-    )
-    .await?;
-    if let Some(service_id) = query.service {
+    let mut page =
+        drawer_page(&state, id, &viewer, csrf_token.0, i18n, Composer::default()).await?;
+    if let Some(service_id) = query.service.filter(|id| viewer.scope.sees_service(*id)) {
         page.back_to = ServiceRepository::find_by_id(&state.pool, service_id)
             .await?
             .map(|service| (service.id, service.name));

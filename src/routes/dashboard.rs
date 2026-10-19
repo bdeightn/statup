@@ -15,8 +15,7 @@ use crate::clock;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::is_htmx;
-use crate::middleware::{CsrfToken, OptionalUser};
-use crate::models::User;
+use crate::middleware::{CsrfToken, OptionalUser, Viewer};
 use crate::modules::{ColumnWidth, ModuleOption, ModuleRenderContext};
 use crate::repositories::{ServiceRepository, UserRepository};
 use crate::services::DashboardLayoutService;
@@ -77,10 +76,11 @@ pub struct DashboardQuery {
 
 async fn render_modules(
     state: &AppState,
-    user: Option<&User>,
+    viewer: &Viewer,
     page_address: &str,
     i18n: &I18n,
 ) -> Result<LiveModules, AppError> {
+    let user = viewer.user.as_ref();
     let mut live = LiveModules {
         banner_html: None,
         row: Vec::new(),
@@ -102,6 +102,7 @@ async fn render_modules(
         let ctx = ModuleRenderContext {
             pool: &state.pool,
             user,
+            scope: &viewer.scope,
             i18n,
             page_address,
             hidden: item.hidden.as_deref(),
@@ -161,23 +162,24 @@ fn live_version(live: &LiveModules) -> String {
 }
 
 pub async fn index(
-    OptionalUser(user): OptionalUser,
+    viewer: Viewer,
     State(state): State<AppState>,
     Query(query): Query<DashboardQuery>,
     headers: HeaderMap,
     csrf_token: CsrfToken,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    if let Some(redirect) = members_only(&state, user.as_ref(), &headers) {
+    let user = viewer.user.as_ref();
+    if let Some(redirect) = members_only(&state, user, &headers) {
         return Ok(redirect);
     }
     let page_address = origin(&state, &headers);
-    let live = render_modules(&state, user.as_ref(), &page_address, &i18n).await?;
+    let live = render_modules(&state, &viewer, &page_address, &i18n).await?;
     if is_htmx(&headers) {
         return live_response(live, i18n);
     }
-    let frame = Frame::load(&state.pool, user.as_ref(), csrf_token.0, &i18n).await?;
-    if let Some(u) = &user {
+    let frame = Frame::load(&state.pool, user, csrf_token.0, &i18n).await?;
+    if let Some(u) = user {
         UserRepository::mark_seen(&state.pool, u.id).await;
     }
     let has_services = ServiceRepository::any(&state.pool).await?;

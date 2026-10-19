@@ -11,10 +11,10 @@ use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{
     CreateEventInput, Event, EventWithServices, Happening, Kind, Lifecycle, NextUpdate,
-    Notification, ReviewSaved, Role, Severity, UpdateEventInput, User,
+    Notification, ReviewSaved, Role, Scope, Severity, UpdateEventInput, User,
 };
 use crate::repositories::{EventRepository, EventReviewRepository};
-use crate::services::{ServiceService, notify};
+use crate::services::{ServiceService, notify, scope_of};
 
 /// How often announced maintenances are started and completed.
 const SCHEDULE_INTERVAL: Duration = Duration::from_secs(60);
@@ -214,20 +214,20 @@ impl EventService {
         Ok(())
     }
 
-    /// Incidents and maintenances created since the reader's last visit.
-    pub async fn unread_count(
-        pool: &DbPool,
-        last_seen_at: Option<DateTime<Utc>>,
-    ) -> Result<i64, AppError> {
-        let since = last_seen_at.unwrap_or(DateTime::UNIX_EPOCH);
-        Ok(EventRepository::count_since(pool, since).await?)
+    /// Incidents and maintenances created since the member's last visit,
+    /// among those they may see.
+    pub async fn unread_count(pool: &DbPool, member: &User) -> Result<i64, AppError> {
+        let since = member.last_seen_at.unwrap_or(DateTime::UNIX_EPOCH);
+        let scope = scope_of(pool, Some(member)).await?;
+        Ok(EventRepository::count_since(pool, since, &scope).await?)
     }
 
     pub async fn find_with_services(
         pool: &DbPool,
         event_id: i64,
+        scope: &Scope,
     ) -> Result<EventWithServices, AppError> {
-        EventRepository::find_with_services(pool, event_id)
+        EventRepository::find_with_services(pool, event_id, scope)
             .await?
             .ok_or(AppError::NotFound)
     }

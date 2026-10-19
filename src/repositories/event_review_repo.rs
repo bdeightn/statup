@@ -81,7 +81,7 @@ async fn touch_event(tx: &mut Transaction<'_, Sqlite>, event_id: i64) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{CreateEventInput, Kind, Role, Severity};
+    use crate::models::{CreateEventInput, Kind, Role, Scope, Severity};
     use crate::repositories::{EventRepository, UserRepository};
     use crate::test_helpers::test_pool;
 
@@ -124,7 +124,7 @@ mod tests {
     }
 
     async fn feed_entry(pool: &DbPool, id: i64) -> crate::models::EventSummary {
-        EventRepository::list_for_feed(pool, 10)
+        EventRepository::list_for_feed(pool, 10, &Scope::All)
             .await
             .unwrap()
             .into_iter()

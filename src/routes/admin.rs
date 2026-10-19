@@ -13,7 +13,9 @@ use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::no_store;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
 use crate::models::{JournalKind, Role, User, check_display_name};
-use crate::repositories::{NewJournalEntry, NotificationRepository, UserRepository};
+use crate::repositories::{
+    GroupRepository, NewJournalEntry, NotificationRepository, UserRepository,
+};
 use crate::services::{AuthService, CURRENT_VERSION, LogoService, NewerRelease};
 use crate::state::AppState;
 
@@ -150,7 +152,23 @@ struct UsersListTemplate {
     add_form: AddMemberForm,
     /// The add-member fold opens itself when its form came back refused.
     add_open: bool,
+    groups: Vec<GroupRow>,
+    new_group: NewGroupForm,
     i18n: I18n,
+}
+
+/// A group on the Team page: a link to its own page.
+struct GroupRow {
+    id: i64,
+    name: String,
+    members: String,
+}
+
+/// The "New group" panel, open again with the refused name and why.
+#[derive(Default)]
+struct NewGroupForm {
+    value: String,
+    error: Option<String>,
 }
 
 struct UserRow {
@@ -171,6 +189,7 @@ enum NoticeKind {
     RoleUpdated(Role),
     Disabled,
     Enabled,
+    GroupDeleted,
 }
 
 /// A new account, or a reset, with the temporary password to hand over.
@@ -192,10 +211,17 @@ struct AddMemberForm {
 pub struct UsersQuery {
     role: Option<i64>,
     toggled: Option<i64>,
+    group_deleted: Option<u8>,
 }
 
 impl UsersQuery {
     fn notice(&self, users: &[UserRow]) -> Option<Notice> {
+        if self.group_deleted.is_some() {
+            return Some(Notice {
+                name: String::new(),
+                kind: NoticeKind::GroupDeleted,
+            });
+        }
         let find = |id: Option<i64>| id.and_then(|id| users.iter().find(|u| u.id == id));
         if let Some(user) = find(self.role) {
             return Some(Notice {
@@ -314,6 +340,42 @@ async fn show_password(
     Ok(no_store(response))
 }
 
+async fn load_groups(state: &AppState, i18n: &I18n) -> Result<Vec<GroupRow>, AppError> {
+    Ok(GroupRepository::list(&state.pool)
+        .await?
+        .into_iter()
+        .map(|group| GroupRow {
+            members: i18n.plural(
+                "admin.group_members",
+                usize::try_from(group.member_count).unwrap_or(0),
+            ),
+            id: group.id,
+            name: group.name,
+        })
+        .collect())
+}
+
+/// The Team page again, with the "New group" panel open on the refused
+/// name and why.
+pub(super) async fn refused_page(
+    state: &AppState,
+    admin: &User,
+    csrf_token: String,
+    i18n: I18n,
+    key: &str,
+    name: String,
+) -> Result<Response, AppError> {
+    let users = load_rows(state, &i18n).await?;
+    let page = ListPage {
+        new_group: NewGroupForm {
+            error: Some(i18n.t(key).to_string()),
+            value: name,
+        },
+        ..ListPage::default()
+    };
+    render_users(state, admin, csrf_token, i18n, users, page).await
+}
+
 async fn load_rows(state: &AppState, i18n: &I18n) -> Result<Vec<UserRow>, AppError> {
     Ok(UserRepository::list_all(&state.pool)
         .await?
@@ -330,6 +392,7 @@ struct ListPage {
     error: Option<String>,
     add_form: AddMemberForm,
     add_open: bool,
+    new_group: NewGroupForm,
 }
 
 impl ListPage {
@@ -359,6 +422,8 @@ async fn render_users(
         error: page.error,
         add_form: page.add_form,
         add_open: page.add_open,
+        groups: load_groups(state, &i18n).await?,
+        new_group: page.new_group,
         i18n,
     })
 }
