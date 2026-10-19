@@ -39,9 +39,6 @@ package() {
     find "$stage/static/css" -name '*.css' ! -name style.css ! -name setup-transitions.css -delete
     find "$stage/static/css" -mindepth 1 -type d -exec rm -rf {} +
     cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$ROOT/README.md" "$stage/"
-    # Where the README links to it.
-    mkdir -p "$stage/.github"
-    cp "$ROOT/.github/SELF-HOSTING.md" "$stage/.github/"
 
     tar -C "$OUTPUT_DIR" -czf "$OUTPUT_DIR/$name.tar.gz" "$name"
     rm -rf "$stage"
