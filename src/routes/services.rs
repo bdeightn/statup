@@ -488,10 +488,11 @@ async fn render_form(
         None => None,
     };
     let placed = place_error(page.error_key.as_deref(), &i18n);
+    let audience = shown_audience(&state.pool, &page.form.visibility, folder.as_ref()).await?;
     let access = AccessBlock::load(
         &state.pool,
         &i18n,
-        page.form.visibility.clone(),
+        audience,
         state.is_public_mode(),
         folder.as_ref().map(|folder| folder.name.as_str()),
         placed.visibility,
@@ -515,6 +516,23 @@ async fn render_form(
         upload_error: None,
         i18n,
     })
+}
+
+/// What the Visibility block shows: a service that inherits shows its
+/// folder's setting, read only, also when a refused form comes back with
+/// nothing but the box ticked.
+async fn shown_audience(
+    pool: &DbPool,
+    posted: &Audience,
+    folder: Option<&ServiceFolder>,
+) -> Result<Audience, AppError> {
+    match folder {
+        Some(folder) if posted.inherit => Ok(Audience {
+            inherit: true,
+            ..Audience::of_folder(pool, folder.id).await?
+        }),
+        _ => Ok(posted.clone()),
+    }
 }
 
 /// One message per place a refusal can be said: above the form, under the

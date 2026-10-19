@@ -703,3 +703,29 @@ async fn a_reader_cannot_set_the_order_of_folders() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(folder_names(&app).await, ["Network", "Mail"]);
 }
+
+#[tokio::test]
+async fn a_refused_form_that_inherits_shows_the_folders_setting() {
+    let app = spawn_with_publisher().await;
+    let group = create_group(&app, "Compta").await;
+    let folder = create_guarded_folder(&app, "Paie", &[group]).await;
+    let service = create_service(&app, "Notes de frais").await;
+    FolderRepository::add_services(&app.pool, folder, &[service])
+        .await
+        .expect("failed to add the service");
+
+    let edit = format!("/services/{service}/edit");
+    let fields = [("name", ""), ("check_kind", "none"), ("inherit", "on")];
+    let (status, body, _) = post(&app, &edit, &fields).await;
+
+    assert_eq!(status, StatusCode::OK, "the form comes back");
+    assert!(body.contains(&text("validation.service_name_required")));
+    // The sentence under the block, not the texts its script keeps in
+    // attributes.
+    let effect = |key: &str| format!("data-access-effect>{}</p>", text(key));
+    assert!(
+        body.contains(&effect("services.effect_staff_only")),
+        "the folder's restriction, not the public default"
+    );
+    assert!(!body.contains(&effect("services.effect_public")));
+}
