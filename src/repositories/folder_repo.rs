@@ -71,6 +71,17 @@ impl FolderRepository {
             .await
     }
 
+    /// How many services follow the folder.
+    pub async fn follower_count(pool: &DbPool, folder_id: i64) -> Result<usize, sqlx::Error> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM services WHERE folder_id = ? AND follows_folder = 1",
+        )
+        .bind(folder_id)
+        .fetch_one(pool)
+        .await?;
+        Ok(usize::try_from(count).unwrap_or(0))
+    }
+
     /// The name of each folder, by its id.
     pub async fn names(pool: &DbPool) -> Result<HashMap<i64, String>, sqlx::Error> {
         let rows: Vec<(i64, String)> = sqlx::query_as("SELECT id, name FROM service_folders")

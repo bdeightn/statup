@@ -268,19 +268,6 @@ impl GroupRepository {
         Ok(result.rows_affected() == 1)
     }
 
-    /// How many restricted services are opened to no group and no member:
-    /// only publishers and admins see them.
-    pub async fn staff_only_count(pool: &DbPool) -> Result<usize, sqlx::Error> {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM services s WHERE s.visibility = 'groups' \
-             AND NOT EXISTS (SELECT 1 FROM service_access a WHERE a.service_id = s.id) \
-             AND NOT EXISTS (SELECT 1 FROM service_member_access m WHERE m.service_id = s.id)",
-        )
-        .fetch_one(pool)
-        .await?;
-        Ok(usize::try_from(count).unwrap_or(0))
-    }
-
     /// How many restricted services have this group as their only one and
     /// no member opened to by name: once it is deleted, only publishers and
     /// admins see them.
@@ -614,40 +601,5 @@ mod tests {
         assert_eq!(second, (Vec::new(), Vec::new()));
         assert_eq!(count(&pool, "folder_access").await, 1);
         assert_eq!(count(&pool, "service_access").await, 1);
-    }
-
-    #[tokio::test]
-    async fn staff_only_services_are_the_restricted_ones_opened_to_no_group_and_no_member() {
-        let pool = test_pool().await;
-        let group = GroupRepository::create(&pool, "Support").await.unwrap();
-        let reader = member(&pool, "r@x.com").await;
-        let nobody = service(&pool, "Nobody").await;
-        let to_group = service(&pool, "ToGroup").await;
-        let to_member = service(&pool, "ToMember").await;
-        service(&pool, "Public").await;
-        let groups = Visibility::Groups;
-        ServiceRepository::set_visibility(&pool, nobody, groups, Grants::groups(&[]))
-            .await
-            .unwrap();
-        ServiceRepository::set_visibility(&pool, to_group, groups, Grants::groups(&[group]))
-            .await
-            .unwrap();
-        ServiceRepository::set_visibility(
-            &pool,
-            to_member,
-            groups,
-            Grants {
-                groups: &[],
-                members: &[reader],
-            },
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(
-            GroupRepository::staff_only_count(&pool).await.unwrap(),
-            1,
-            "neither the public service nor the ones opened to someone"
-        );
     }
 }

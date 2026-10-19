@@ -185,12 +185,10 @@ pub async fn open(
     for service in &services {
         record_service(&state.pool, &admin, *service).await;
     }
-    let followers = ServiceRepository::list_all(&state.pool)
-        .await?
-        .iter()
-        .filter(|s| s.follows_folder && s.folder_id.is_some_and(|f| folders.contains(&f)))
-        .count();
-    let opened = followers + services.len();
+    let mut opened = services.len();
+    for folder in &folders {
+        opened += FolderRepository::follower_count(&state.pool, *folder).await?;
+    }
     Ok(Redirect::to(&format!("/admin/groups/{id}?opened={opened}")).into_response())
 }
 
@@ -200,14 +198,15 @@ pub async fn close_folder(
     Path((id, folder_id)): Path<(i64, i64)>,
 ) -> Result<Response, AppError> {
     find_group(&state.pool, id).await?;
-    let before = GroupRepository::staff_only_count(&state.pool).await?;
     if !GroupRepository::close_folder(&state.pool, id, folder_id).await? {
         return Err(AppError::NotFound);
     }
-    record_folder(&state.pool, &admin, folder_id).await;
-    let staff_only = GroupRepository::staff_only_count(&state.pool)
-        .await?
-        .saturating_sub(before);
+    let staff_only = match record_folder(&state.pool, &admin, folder_id).await {
+        Some(audience) if opens_to_nobody(&audience) => {
+            FolderRepository::follower_count(&state.pool, folder_id).await?
+        }
+        _ => 0,
+    };
     let to = format!("/admin/groups/{id}?closed_folder={folder_id}&staff_only={staff_only}");
     Ok(Redirect::to(&to).into_response())
 }
@@ -218,20 +217,25 @@ pub async fn close_service(
     Path((id, service_id)): Path<(i64, i64)>,
 ) -> Result<Response, AppError> {
     find_group(&state.pool, id).await?;
-    let before = GroupRepository::staff_only_count(&state.pool).await?;
     if !GroupRepository::close_service(&state.pool, id, service_id).await? {
         return Err(AppError::NotFound);
     }
-    record_service(&state.pool, &admin, service_id).await;
-    let staff_only = GroupRepository::staff_only_count(&state.pool)
-        .await?
-        .saturating_sub(before);
+    let audience = record_service(&state.pool, &admin, service_id).await;
+    let staff_only = usize::from(audience.as_ref().is_some_and(opens_to_nobody));
     let to = format!("/admin/groups/{id}?closed_service={service_id}&staff_only={staff_only}");
     Ok(Redirect::to(&to).into_response())
 }
 
-/// A line that cannot be written never fails the change it follows.
-async fn record_folder(pool: &DbPool, admin: &User, id: i64) {
+/// Restricted, with no group and no member left: only the team sees it.
+fn opens_to_nobody(audience: &Audience) -> bool {
+    audience.mode == Visibility::Groups
+        && audience.group_ids.is_empty()
+        && audience.member_ids.is_empty()
+}
+
+/// A line that cannot be written never fails the change it follows. Returns
+/// who sees the folder now, when it could be read.
+async fn record_folder(pool: &DbPool, admin: &User, id: i64) -> Option<Audience> {
     let read = async {
         let folder = FolderRepository::find(pool, id)
             .await?
@@ -246,12 +250,16 @@ async fn record_folder(pool: &DbPool, admin: &User, id: i64) {
                 .with_detail(audience.detail())
                 .record(pool)
                 .await;
+            Some(audience)
         }
-        Err(error) => tracing::warn!(%error, "Audience of a folder changed from a group not read"),
+        Err(error) => {
+            tracing::warn!(%error, "Audience of a folder changed from a group not read");
+            None
+        }
     }
 }
 
-async fn record_service(pool: &DbPool, admin: &User, id: i64) {
+async fn record_service(pool: &DbPool, admin: &User, id: i64) -> Option<Audience> {
     let read = async {
         let service = ServiceRepository::find_by_id(pool, id)
             .await?
@@ -266,7 +274,11 @@ async fn record_service(pool: &DbPool, admin: &User, id: i64) {
                 .with_detail(audience.detail())
                 .record(pool)
                 .await;
+            Some(audience)
         }
-        Err(error) => tracing::warn!(%error, "Audience of a service changed from a group not read"),
+        Err(error) => {
+            tracing::warn!(%error, "Audience of a service changed from a group not read");
+            None
+        }
     }
 }
