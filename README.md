@@ -91,13 +91,13 @@ Add them from the **Team** page: they open the same address. For HTTPS and a nam
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/assets/roadmap-dark.png">
-  <img src=".github/assets/roadmap.png" alt="Roadmap: shipped are automatic monitoring, notifications, four languages, password reset and clearer incident updates; step 1, the activity log, shipped in 0.6.0; coming next, in order, steps 2 to 9 listed below, then the stable 1.0 release" width="1296">
+  <img src=".github/assets/roadmap.png" alt="Roadmap: shipped are automatic monitoring, notifications, four languages, password reset and clearer incident updates; step 1, the activity log, shipped in 0.6.0; step 2, groups and visibility, shipped in 0.7.0; coming next, in order, steps 3 to 9 listed below, then the stable 1.0 release" width="1296">
 </picture>
 
 Planned, in this order, without dates:
 
 1. ~~**Activity log**: every action, check and sign-in, for administrators to look back on.~~ Shipped in 0.6.0.
-2. **Groups and visibility**: choose which services and events each group of colleagues sees.
+2. ~~**Groups and visibility**: choose which services and events each group of colleagues sees.~~ Shipped in 0.7.0, with folders of services.
 3. **Email subscriptions**: visitors get each update in their inbox.
 4. **API and monitoring tools**: Zabbix, Grafana or a script open and close incidents by themselves.
 5. **Recurring maintenance**: announce a slot once, and see every maintenance in your calendar.
