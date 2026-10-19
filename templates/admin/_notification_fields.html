@@ -14,7 +14,7 @@
             {% endfor %}
         </select>
         {% if let Some(message) = self.error_for(Field::Kind) %}
-        <p id="kind-error" class="field-error" role="alert">{{ message }}{% if !email_ready %} <a class="link" href="{{ crate::docs_url(i18n.locale(), "configuration", "email") }}">{{ i18n.t("common.documentation") }}</a>{% endif %}</p>
+        <p id="kind-error" class="field-error" role="alert">{{ message }}{% if !email_ready %} <a class="link" href="{{ crate::docs_url(i18n.locale(), "configuration", "email") }}">{{ i18n.t("notifications.email_server_link") }}</a>{% endif %}</p>
         {% endif %}
     </div>
     <div class="field">
@@ -35,7 +35,7 @@
            aria-describedby="hint-{{ self.chosen().as_str() }}{% if self.error_for(Field::Target).is_some() %} target-error{% endif %}"
            {% if self.error_for(Field::Target).is_some() %}aria-invalid="true" autofocus{% endif %}>
     {% for kind in self.kinds() %}
-    <p id="hint-{{ kind.as_str() }}" class="field-hint" data-hint-for="{{ kind.as_str() }}"{% if form.kind != kind.as_str() %} hidden{% endif %}>{{ i18n.t(kind.hint_key()) }}{% if kind.as_str() == "webhook" %} <a class="link" href="{{ crate::docs_url(i18n.locale(), "webhook", "") }}">{{ i18n.t("common.documentation") }}</a>{% endif %}</p>
+    <p id="hint-{{ kind.as_str() }}" class="field-hint" data-hint-for="{{ kind.as_str() }}"{% if form.kind != kind.as_str() %} hidden{% endif %}>{{ i18n.t(kind.hint_key()) }}{% if kind.as_str() == "webhook" %} <a class="link" href="{{ crate::docs_url(i18n.locale(), "webhook", "") }}">{{ i18n.t("notifications.webhook_format_link") }}</a>{% endif %}</p>
     {% endfor %}
     {% if let Some(message) = self.error_for(Field::Target) %}
     <p id="target-error" class="field-error" role="alert">{{ message }}</p>
