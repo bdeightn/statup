@@ -166,6 +166,7 @@ impl FolderRepository {
                      THEN 1 ELSE 0 END, \
                  folder_id = ?1, \
                  position = (SELECT COALESCE(MAX(position), 0) + 1 FROM services) \
+                     + (SELECT key FROM json_each(?2) WHERE value = services.id LIMIT 1) \
              WHERE id IN (SELECT value FROM json_each(?2)) \
                  AND folder_id IS NOT ?1 \
                  AND EXISTS (SELECT 1 FROM service_folders WHERE id = ?1) \
@@ -846,6 +847,21 @@ mod tests {
         assert!(find_position(&pool, second).await > position);
         assert_eq!(ordered_names(&pool).await, vec!["Last", "First", "Second"]);
         assert_eq!(find_service(&pool, last).await.folder_id, None);
+    }
+
+    #[tokio::test]
+    async fn services_added_together_keep_the_order_they_were_sent_in() {
+        let pool = test_pool().await;
+        let folder = FolderRepository::create(&pool, "Network").await.unwrap();
+        let alpha = service(&pool, "Alpha").await;
+        let beta = service(&pool, "Beta").await;
+        let gamma = service(&pool, "Gamma").await;
+
+        FolderRepository::add_services(&pool, folder, &[gamma, alpha, beta])
+            .await
+            .unwrap();
+
+        assert_eq!(ordered_names(&pool).await, vec!["Gamma", "Alpha", "Beta"]);
     }
 
     async fn find_position(pool: &DbPool, service_id: i64) -> i64 {
