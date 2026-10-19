@@ -12,7 +12,7 @@ In the form, with **Type** set to **Incident**:
 | Field | Description |
 |---|---|
 | **Impact** | Required: **Minor** or **Major**. |
-| **Services affected** | Optional. Services are listed under their [folders](services.md#folders), each folder with a box that ticks all its services; past eight services, a search narrows the list. A line under the list says what will change, such as "Email: outage." |
+| **Services affected** | Optional. Services are listed under their [folders](services.md#folders), each folder with a box that ticks its services; past eight services, a search narrows the list, and the box then ticks only the services it shows. A line under the list says what will change, such as "Email: outage." |
 | **Title** | Required, up to 200 characters. Until you type one, it writes itself, such as "Outage on Email". |
 | **Description** | Optional: what is affected, what is known. |
 

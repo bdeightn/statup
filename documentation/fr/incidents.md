@@ -12,7 +12,7 @@ Dans le formulaire, avec **Type** sur **Incident** :
 | Champ | Description |
 |---|---|
 | **Impact** | Obligatoire : **Mineur** ou **Majeur**. |
-| **Services concernés** | Facultatif. Les services sont rangés sous leurs [dossiers](services.md#folders), chaque dossier avec une case qui coche tous ses services ; au-delà de huit services, une recherche filtre la liste. Une ligne sous la liste dit ce qui va changer, comme « Messagerie : en panne. » |
+| **Services concernés** | Facultatif. Les services sont rangés sous leurs [dossiers](services.md#folders), chaque dossier avec une case qui coche ses services ; au-delà de huit services, une recherche filtre la liste, et la case ne coche alors que les services affichés. Une ligne sous la liste dit ce qui va changer, comme « Messagerie : en panne. » |
 | **Titre** | Obligatoire, 200 caractères au plus. Tant que vous n'en tapez pas, il s'écrit tout seul, comme « Panne sur Messagerie ». |
 | **Description** | Facultative : ce qui est touché, ce que l'on sait. |
 
