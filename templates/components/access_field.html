@@ -51,7 +51,7 @@
                     <p class="grant-section" data-grant-section>{{ i18n.t("services.access_members") }}</p>
                     <div class="picker-list" role="group" aria-label="{{ i18n.t("services.access_members") }}">
                         {% for m in access.members %}
-                        <label class="svc-pick" data-choice-text="{{ m.name }} {{ m.meta }}"{% if !m.granted %} data-filter-text="{{ m.name }} {{ m.meta }}"{% endif %} data-grant-choice="member_ids:{{ m.id }}"{% if m.granted %} hidden{% endif %}><input type="checkbox" name="member_ids" value="{{ m.id }}" class="checkbox"><span class="svc-pick-name">{{ m.name }}</span><span class="picker-email">{{ m.meta }}</span></label>
+                        <label class="svc-pick" data-choice-text="{{ m.name }} {{ m.meta }}"{% if !m.granted %} data-filter-text="{{ m.name }} {{ m.meta }}"{% endif %} data-grant-choice="member_ids:{{ m.id }}"{% if m.granted %} hidden{% endif %}><input type="checkbox" name="member_ids" value="{{ m.id }}" class="checkbox"><span class="svc-pick-name">{{ m.name }}</span>{% if !m.meta.is_empty() %}<span class="picker-email">{{ m.meta }}</span>{% endif %}</label>
                         {% endfor %}
                     </div>
                     {% endif %}

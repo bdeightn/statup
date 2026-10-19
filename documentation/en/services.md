@@ -41,7 +41,7 @@ Each service says who sees it, in its form and in the panel of a [folder](#folde
 
 When the page is for members only, the choice is **All members** or **Restricted**.
 
-With **Restricted**, **Add** opens a search over the [groups](team.md#groups), with their number of members, and over the readers; each one shows as a tag, with **Remove**. Past five tags, the list ends with "and 2 more". A line says who will see the service, such as "Visible to 3 members, plus editors and administrators." A restricted service needs at least one group or member.
+With **Restricted**, **Add** opens a search over the [groups](team.md#groups), with their number of members, and over the readers, by name for editors and with their address for administrators; each one shows as a tag, with **Remove**. Past five tags, the list ends with "and 2 more". A line says who will see the service, such as "Visible to 3 members, plus editors and administrators." A restricted service needs at least one group or member.
 
 Editors and administrators always see every service. For the others:
 

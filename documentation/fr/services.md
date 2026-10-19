@@ -41,7 +41,7 @@ Chaque service dit qui le voit, dans son formulaire et dans le panneau d'un [dos
 
 Quand la page est réservée aux membres, le choix est **Tous les membres** ou **Restreinte**.
 
-Avec **Restreinte**, **Ajouter** ouvre une recherche parmi les [groupes](team.md#groups), avec leur nombre de membres, et parmi les lecteurs ; chacun s'affiche en étiquette, avec **Retirer**. Au-delà de cinq étiquettes, la liste se termine par « et 2 autres ». Une ligne dit qui verra le service, comme « Visible par 3 membres, plus les éditeurs et les administrateurs. » Un service restreint demande au moins un groupe ou un membre.
+Avec **Restreinte**, **Ajouter** ouvre une recherche parmi les [groupes](team.md#groups), avec leur nombre de membres, et parmi les lecteurs, par leur nom pour les éditeurs et avec leur adresse pour les administrateurs ; chacun s'affiche en étiquette, avec **Retirer**. Au-delà de cinq étiquettes, la liste se termine par « et 2 autres ». Une ligne dit qui verra le service, comme « Visible par 3 membres, plus les éditeurs et les administrateurs. » Un service restreint demande au moins un groupe ou un membre.
 
 Les éditeurs et les administrateurs voient toujours tous les services. Pour les autres :
 

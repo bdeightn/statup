@@ -497,7 +497,8 @@ async fn render_form(
         folder.as_ref().map(|folder| folder.name.as_str()),
         placed.visibility,
     )
-    .await?;
+    .await?
+    .for_viewer(user);
     render(&ServiceFormTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
         error: placed.form,

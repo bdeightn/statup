@@ -729,3 +729,53 @@ async fn a_refused_form_that_inherits_shows_the_folders_setting() {
     );
     assert!(!body.contains(&effect("services.effect_public")));
 }
+
+#[tokio::test]
+async fn an_editor_picks_readers_by_name_and_never_sees_their_address() {
+    let app = spawn_with_publisher().await;
+    let reader = app
+        .create_user(READER_EMAIL, READER_PASSWORD, "Marie Dupont", Role::Reader)
+        .await;
+    let service = create_service(&app, "Wiki").await;
+    ServiceRepository::set_visibility(
+        &app.pool,
+        service,
+        Visibility::Groups,
+        Grants {
+            groups: &[],
+            members: &[reader],
+        },
+    )
+    .await
+    .expect("failed to open the service to the reader");
+    let folder = create_folder(&app, "Paie").await;
+
+    for page in [
+        format!("/services/{service}/edit"),
+        format!("/services/folders/{folder}"),
+    ] {
+        let (status, body) = app.get(&page).await;
+        assert_eq!(status, StatusCode::OK, "{page}");
+        assert!(body.contains("Marie Dupont"), "{page}: the reader by name");
+        assert!(
+            !body.contains(READER_EMAIL),
+            "{page}: no address for an editor"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_administrator_still_sees_the_readers_addresses() {
+    let app = TestApp::spawn().await;
+    app.create_user("admin@test.com", "admin_password_12", "Admin", Role::Admin)
+        .await;
+    app.login("admin@test.com", "admin_password_12").await;
+    app.create_user(READER_EMAIL, READER_PASSWORD, "Marie Dupont", Role::Reader)
+        .await;
+    let service = create_service(&app, "Wiki").await;
+
+    let (status, body) = app.get(&format!("/services/{service}/edit")).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains(READER_EMAIL));
+}

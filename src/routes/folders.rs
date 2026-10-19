@@ -261,7 +261,9 @@ async fn render_folder(
         None => (saved.clone(), None),
     };
     let public_mode = state.is_public_mode();
-    let access = AccessBlock::load(&state.pool, &i18n, audience, public_mode, None, error).await?;
+    let access = AccessBlock::load(&state.pool, &i18n, audience, public_mode, None, error)
+        .await?
+        .for_viewer(user);
     render(&FolderTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
         summary: summary(&saved, &access, &i18n),

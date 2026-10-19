@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::I18n;
-use crate::models::{Grants, Visibility};
+use crate::models::{Grants, User, Visibility};
 use crate::repositories::{FolderRepository, GroupRepository, ServiceRepository, UserRepository};
 
 pub const VISIBILITY_REQUIRED: &str = "validation.visibility_required";
@@ -242,6 +242,17 @@ impl AccessBlock {
             members,
             error,
         })
+    }
+
+    /// Editors pick readers by name only: the addresses stay with the
+    /// administrators, who see them on the Team page.
+    pub fn for_viewer(mut self, viewer: &User) -> Self {
+        if !viewer.role.can_admin() {
+            for member in &mut self.members {
+                member.meta.clear();
+            }
+        }
+        self
     }
 
     pub fn is(&self, mode: &str) -> bool {
