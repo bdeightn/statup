@@ -8,6 +8,7 @@ All notable changes to Statup are listed here. The project is pre-v1: until 1.0,
 - Folders of services. The Services page shows one card per folder, after the services in none; editors create a folder there, choose the order of the folders with the arrows, and manage each folder on its own page: rename it, add and remove services, delete it. A folder sets the visibility its services inherit; a service with a restriction of its own keeps it, and a service taken out of a folder, or left by a deleted one, keeps who could see it. The dashboard titles each folder for those who see one of its services, the form of an event lists the services under their folders with a box that checks a whole folder and a search past eight services, and the journal records folder changes.
 - Team and Services pages: shorter, more precise wording (Reset password, URL, Host), help sentences removed where a setting speaks for itself, a member's password reset or disabling confirmed in a panel under its button, and only the chosen role described when adding a member.
 - The journal's Edit link is underlined again on hover and while its menu is open.
+- A service name with invisible control characters is refused, as member, group and folder names already are.
 
 ## 0.6.0, 2026-10-16
 

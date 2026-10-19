@@ -914,6 +914,7 @@
   "validation.review_resolved_only": "Le bilan s'écrit une fois l'incident résolu.",
   "validation.service_name_required": "Donnez un nom au service.",
   "validation.service_name_too_long": "Le nom dépasse 100 caractères.",
+  "validation.service_name_invalid": "Le nom contient des caractères non autorisés.",
   "validation.description_max_length": "La description dépasse 500 caractères.",
   "validation.check_url_required": "Saisissez l'adresse du site à vérifier.",
   "validation.check_url_invalid": "Saisissez une adresse web complète, par exemple https://intranet.exemple.fr.",

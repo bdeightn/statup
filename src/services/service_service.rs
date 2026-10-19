@@ -169,6 +169,9 @@ pub fn service_field_error(name: &str, description: Option<&str>) -> Option<&'st
     if name.chars().count() > MAX_NAME_CHARS {
         return Some("validation.service_name_too_long");
     }
+    if name.chars().any(char::is_control) {
+        return Some("validation.service_name_invalid");
+    }
     if description.is_some_and(|d| d.trim().chars().count() > MAX_DESCRIPTION_CHARS) {
         return Some("validation.description_max_length");
     }
@@ -295,6 +298,10 @@ mod tests {
         assert!(service_field_error(&"é".repeat(100), None).is_none());
         assert!(service_field_error(&"a".repeat(101), None).is_some());
         assert!(service_field_error("  ", None).is_some());
+        assert_eq!(
+            service_field_error("Wi-Fi\u{1f}Paris", None),
+            Some("validation.service_name_invalid")
+        );
         assert!(service_field_error("API", Some(&"x".repeat(501))).is_some());
     }
 

@@ -914,6 +914,7 @@
   "validation.review_resolved_only": "Ein Bericht wird geschrieben, sobald der Vorfall behoben ist.",
   "validation.service_name_required": "Geben Sie dem Dienst einen Namen.",
   "validation.service_name_too_long": "Der Name ist länger als 100 Zeichen.",
+  "validation.service_name_invalid": "Der Name enthält unzulässige Zeichen.",
   "validation.description_max_length": "Die Beschreibung ist länger als 500 Zeichen.",
   "validation.check_url_required": "Geben Sie die zu prüfende Webadresse ein.",
   "validation.check_url_invalid": "Geben Sie eine vollständige Webadresse ein, zum Beispiel https://intranet.example.com.",

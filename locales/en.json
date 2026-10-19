@@ -914,6 +914,7 @@
   "validation.review_resolved_only": "A report is written once the incident is resolved.",
   "validation.service_name_required": "Give the service a name.",
   "validation.service_name_too_long": "The name is longer than 100 characters.",
+  "validation.service_name_invalid": "The name contains characters that are not allowed.",
   "validation.description_max_length": "The description is longer than 500 characters.",
   "validation.check_url_required": "Enter the web address to check.",
   "validation.check_url_invalid": "Enter a full web address, such as https://intranet.example.com.",
