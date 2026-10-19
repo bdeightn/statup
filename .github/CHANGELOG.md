@@ -6,7 +6,7 @@ All notable changes to Statup are listed here. The project is pre-v1: until 1.0,
 
 - The self-hosting guide is now the documentation at statup.dev/docs, in English and French, kept in the repository and published with each release. The README and the example settings say "Alerts" and "channels", as the app does.
 - Signed-in members find a "Documentation" link in the footer, and the texts that sent readers to the documentation (a forgotten password without email, the webhook format, email without a mail server) now link to the right page.
-- `ammonia` 4.2.4, after the security advisory of October 16 (RUSTSEC-2026-0373; Statup allows no inline style in what it cleans).
+- `ammonia` 4.2.4, after the security advisory of October 16 (RUSTSEC-2026-0373).
 
 ## 0.6.0, 2026-10-16
 
