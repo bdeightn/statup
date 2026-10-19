@@ -20,7 +20,8 @@
     }
 
     // A folder's box is checked when all its services are, and shows a dash
-    // while only some are. Its own listener comes first, so that the line
+    // while only some are; ticked, it takes the services the search shows,
+    // never one it hides. Its own listener comes first, so that the line
     // under the services reads the boxes it has just changed.
     function settleFolder(folder) {
         const box = folder.querySelector("[data-folder-box]");
@@ -36,7 +37,7 @@
         if (!folder) return;
         if (event.target.matches("[data-folder-box]")) {
             folder.querySelectorAll('input[name="service_ids"]').forEach((service) => {
-                service.checked = event.target.checked;
+                if (!service.closest("[data-filter-text]").hidden) service.checked = event.target.checked;
             });
         }
         settleFolder(folder);
