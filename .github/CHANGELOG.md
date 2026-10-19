@@ -9,6 +9,9 @@ All notable changes to Statup are listed here. The project is pre-v1: until 1.0,
 - Team and Services pages: shorter, more precise wording (Reset password, URL, Host), help sentences removed where a setting speaks for itself, a member's password reset or disabling confirmed in a panel under its button, and only the chosen role described when adding a member.
 - The journal's Edit link is underlined again on hover and while its menu is open.
 - A service name with invisible control characters is refused, as member, group and folder names already are.
+- The self-hosting guide is now the documentation at statup.dev/docs, in English and French, kept in the repository and published with each release. The README and the example settings say "Alerts" and "channels", as the app does.
+- Signed-in members find a "Documentation" link in the footer, and the texts that sent readers to the documentation (a forgotten password without email, the webhook format, email without a mail server) now link to the right page.
+- `ammonia` 4.2.4, after the security advisory of October 16 (RUSTSEC-2026-0373).
 
 ## 0.6.0, 2026-10-16
 

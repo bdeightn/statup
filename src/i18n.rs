@@ -22,6 +22,9 @@ pub struct Language {
     pub code: &'static str,
     /// Its own name, shown as is whatever the page's language.
     pub name: &'static str,
+    /// Where its documentation sits on statup.dev; empty for English, also
+    /// shown to the languages the documentation is not written in.
+    pub docs: &'static str,
     clock_24h: bool,
     plural: PluralRule,
     source: &'static str,
@@ -42,6 +45,7 @@ enum PluralRule {
 pub const LANGUAGES: &[Language] = &[
     Language {
         code: "fr",
+        docs: "/fr",
         name: "Français",
         clock_24h: true,
         plural: PluralRule::UpToOne,
@@ -49,6 +53,7 @@ pub const LANGUAGES: &[Language] = &[
     },
     Language {
         code: "en",
+        docs: "",
         name: "English",
         clock_24h: false,
         plural: PluralRule::One,
@@ -56,6 +61,7 @@ pub const LANGUAGES: &[Language] = &[
     },
     Language {
         code: "de",
+        docs: "",
         name: "Deutsch",
         clock_24h: true,
         plural: PluralRule::One,
@@ -63,6 +69,7 @@ pub const LANGUAGES: &[Language] = &[
     },
     Language {
         code: "es",
+        docs: "",
         name: "Español",
         clock_24h: true,
         plural: PluralRule::One,

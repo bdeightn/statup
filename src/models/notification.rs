@@ -74,6 +74,14 @@ impl ChannelKind {
         }
     }
 
+    /// The documentation the hint links to, with the link's text.
+    pub fn doc(self) -> Option<(crate::Doc, &'static str)> {
+        match self {
+            Self::Webhook => Some((crate::Doc::Webhook, "notifications.webhook_format_link")),
+            _ => None,
+        }
+    }
+
     /// What the address field asks for.
     pub fn target_label_key(self) -> &'static str {
         match self {
