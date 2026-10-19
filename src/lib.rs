@@ -73,22 +73,51 @@ pub fn asset(path: &str) -> String {
     }
 }
 
-/// Address of a documentation page on statup.dev. French readers get the
-/// French pages; the others, English, the only other language published.
-/// `part` is the English heading's address, the same in both languages.
-pub fn docs_url(locale: &str, page: &str, part: &str) -> String {
-    let language = if locale == "fr" { "/fr" } else { "" };
-    let page = if page.is_empty() {
-        String::new()
-    } else {
-        format!("{page}/")
-    };
-    let part = if part.is_empty() {
-        String::new()
-    } else {
-        format!("#{part}")
-    };
-    format!("https://statup.dev{language}/docs/{page}{part}")
+/// A page, or a part of one, of the documentation on statup.dev. The app
+/// links only to these, so `tests/documentation.rs` can check each exists.
+#[derive(Debug, Clone, Copy)]
+pub enum Doc {
+    Home,
+    ResetFromServer,
+    Webhook,
+    MailServer,
+}
+
+impl Doc {
+    pub const ALL: [Self; 4] = [
+        Self::Home,
+        Self::ResetFromServer,
+        Self::Webhook,
+        Self::MailServer,
+    ];
+
+    /// The page, and the address of its English heading, the same in every
+    /// language; empty for the home and for a whole page.
+    pub fn page_part(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Home => ("", ""),
+            Self::ResetFromServer => ("forgotten-password", "from-the-server"),
+            Self::Webhook => ("webhook", ""),
+            Self::MailServer => ("configuration", "email"),
+        }
+    }
+}
+
+/// Address of a documentation page, in the reader's language when it is
+/// published in it, in English otherwise.
+pub fn docs_url(locale: &str, doc: Doc) -> String {
+    let language = i18n::language(locale).map_or("", |language| language.docs);
+    let mut url = format!("https://statup.dev{language}/docs/");
+    let (page, part) = doc.page_part();
+    if !page.is_empty() {
+        url.push_str(page);
+        url.push('/');
+    }
+    if !part.is_empty() {
+        url.push('#');
+        url.push_str(part);
+    }
+    url
 }
 
 /// Fingerprints every file under `static/`. Call once at startup, from the
@@ -156,16 +185,16 @@ mod tests {
 
     #[test]
     fn documentation_links_follow_the_published_languages() {
-        assert_eq!(docs_url("en", "", ""), "https://statup.dev/docs/");
+        assert_eq!(docs_url("en", Doc::Home), "https://statup.dev/docs/");
         assert_eq!(
-            docs_url("fr", "webhook", ""),
+            docs_url("fr", Doc::Webhook),
             "https://statup.dev/fr/docs/webhook/"
         );
         assert_eq!(
-            docs_url("de", "configuration", "smtp_host"),
-            "https://statup.dev/docs/configuration/#smtp_host"
+            docs_url("de", Doc::MailServer),
+            "https://statup.dev/docs/configuration/#email"
         );
-        assert_eq!(docs_url("es", "", ""), "https://statup.dev/docs/");
+        assert_eq!(docs_url("es", Doc::Home), "https://statup.dev/docs/");
     }
 
     #[test]

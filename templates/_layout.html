@@ -140,7 +140,7 @@
                 <a href="https://www.gnu.org/licenses/agpl-3.0.html" rel="license">AGPL-3.0</a>
                 {% if frame.is_authenticated %}
                 <span aria-hidden="true">·</span>
-                <a href="{{ crate::docs_url(i18n.locale(), "", "") }}">{{ i18n.t("common.documentation") }}</a>
+                <a href="{{ crate::docs_url(i18n.locale(), crate::Doc::Home) }}">{{ i18n.t("common.documentation") }}</a>
                 {% endif %}
             </p>
             <a href="/subscribe">{{ i18n.t("subscribe.title") }}</a>
