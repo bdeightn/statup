@@ -13,7 +13,7 @@ Avec un serveur de courriel réglé ([`SMTP_HOST`](configuration.md#smtp_host) e
 
 ## Par un administrateur
 
-Sans serveur de courriel, la même page invite le membre à s'adresser à un administrateur, qui lui donne un mot de passe provisoire depuis la page [Équipe](team.md).
+Sans serveur de courriel, la même page invite le membre à s'adresser à un administrateur, qui lui donne un mot de passe provisoire depuis la page [Équipe](team.md). Son lien **Réinitialiser depuis le serveur** mène à la partie suivante.
 
 ## Depuis le serveur
 

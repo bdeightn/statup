@@ -14,7 +14,7 @@
             {% endfor %}
         </select>
         {% if let Some(message) = self.error_for(Field::Kind) %}
-        <p id="kind-error" class="field-error" role="alert">{{ message }}{% if !email_ready %} <a class="link" href="{{ crate::docs_url(i18n.locale(), "configuration", "email") }}">{{ i18n.t("notifications.email_server_link") }}</a>{% endif %}</p>
+        <p id="kind-error" class="field-error" role="alert">{{ message }}{% if form.kind == "email" && !email_ready %} <a class="link" href="{{ crate::docs_url(i18n.locale(), "configuration", "email") }}">{{ i18n.t("notifications.email_server_link") }}</a>{% endif %}</p>
         {% endif %}
     </div>
     <div class="field">

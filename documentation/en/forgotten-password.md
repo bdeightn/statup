@@ -13,7 +13,7 @@ With a mail server set ([`SMTP_HOST`](configuration.md#smtp_host) and the others
 
 ## Through an administrator
 
-Without a mail server, the same page asks the member to see an administrator, who gives a temporary password from the [Team](team.md) page.
+Without a mail server, the same page asks the member to see an administrator, who gives a temporary password from the [Team](team.md) page. Its **Reset from the server** link leads to the part below.
 
 ## From the server
 

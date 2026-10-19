@@ -9,7 +9,7 @@ What everyone reads, from a desk or a phone. With **Who can see the page** set t
 
 The page refreshes itself every minute while it is open, and when the reader comes back to its tab. If the connection drops, it says "Connection lost, trying again."
 
-Administrators choose its blocks and their layout: see [Settings](settings.md#arrange-the-dashboard).
+Administrators choose its blocks and their layout: see [Settings](settings.md#arrange-the-dashboard). Signed-in members find a **Documentation** link at the foot of every page, to these pages.
 
 ### The status banner
 
