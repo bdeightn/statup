@@ -7,6 +7,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use statup::Doc;
+
 const LANGUAGES: [&str; 2] = ["en", "fr"];
 const NOTE_KINDS: [&str; 5] = ["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"];
 /// Documented settings that no `env_or`, `parse_env`, `non_empty_env` or
@@ -35,19 +37,20 @@ impl Page {
         format!("documentation/{}/{}.md", self.lang, self.id)
     }
 
+    fn at(&self, number: usize) -> String {
+        format!("{}:{number}", self.place())
+    }
+
     /// The lines after the front matter, with their line number, each marked
-    /// as inside a code fence or not.
+    /// as part of a code block (its fences included) or not. Fences are read
+    /// line by line, as the site's `englishHeadings` reads them.
     fn body(&self) -> Vec<(usize, &str, bool)> {
         let start = front_matter_end(&self.text).unwrap_or(0);
         let mut fence = false;
         let mut lines = Vec::new();
         for (index, line) in self.text.lines().enumerate().skip(start) {
-            if is_fence(line) {
-                lines.push((index + 1, line, true));
-                fence = !fence;
-                continue;
-            }
-            lines.push((index + 1, line, fence));
+            lines.push((index + 1, line, fence || is_fence(line)));
+            fence ^= is_fence(line);
         }
         lines
     }
@@ -124,7 +127,9 @@ struct Heading {
 }
 
 /// A heading's address: its words in lower case, punctuation dropped, each
-/// run of white space turned into a hyphen (the site's `slugify`).
+/// run of white space turned into a hyphen (the site's `slugify`). Not the
+/// `slug` crate: it would strip accents, turn `_` into `-` and trim a final
+/// hyphen, so its addresses would differ from the site's.
 fn slugify(words: &str) -> String {
     let lower = words.to_lowercase();
     let kept = lower
@@ -147,35 +152,26 @@ fn slugify(words: &str) -> String {
     slug
 }
 
-/// The pieces between backticks, and the text with each backtick pair removed.
-fn split_code(raw: &str) -> (Vec<String>, String, String) {
+/// The pieces between backticks, and the text outside them.
+fn split_code(raw: &str) -> (Vec<String>, String) {
     let mut codes = Vec::new();
-    let mut unwrapped = String::new();
-    let mut outside = String::new();
     let mut parts = raw.split('`');
-    if let Some(first) = parts.next() {
-        unwrapped.push_str(first);
-        outside.push_str(first);
-    }
+    let mut outside = parts.next().unwrap_or_default().to_string();
     let rest: Vec<&str> = parts.collect();
     for pair in rest.chunks(2) {
         match pair {
             [code, after] => {
                 codes.push((*code).to_string());
-                unwrapped.push_str(code);
-                unwrapped.push_str(after);
                 outside.push_str(after);
             }
             [lone] => {
-                unwrapped.push('`');
-                unwrapped.push_str(lone);
                 outside.push('`');
                 outside.push_str(lone);
             }
             _ => {}
         }
     }
-    (codes, unwrapped, outside)
+    (codes, outside)
 }
 
 /// `[text](url)` becomes `text`.
@@ -207,17 +203,22 @@ fn heading_line(line: &str) -> Option<(usize, &str)> {
     (rest.starts_with(char::is_whitespace) && !words.is_empty()).then_some((depth, words))
 }
 
-fn heading_id(depth: usize, raw: &str) -> String {
-    let (codes, unwrapped, outside) = split_code(raw);
-    let only_code =
-        depth == 3 && !codes.is_empty() && outside.chars().all(|c| c.is_whitespace() || c == ',');
-    if only_code {
-        return codes[0].to_lowercase();
+/// The setting a heading names: a level three heading made only of code, as
+/// "### `PUBLIC_URL`", is addressed by its first name in lower case.
+fn code_only(depth: usize, raw: &str) -> Option<String> {
+    let (codes, outside) = split_code(raw);
+    if depth != 3 || !outside.chars().all(|c| c.is_whitespace() || c == ',') {
+        return None;
     }
-    let plain: String = unwrapped
-        .replace("**", "")
-        .replace("__", "")
-        .replace('*', "");
+    codes.into_iter().next()
+}
+
+/// The backticks go with the punctuation in `slugify`.
+fn heading_id(depth: usize, raw: &str) -> String {
+    if let Some(name) = code_only(depth, raw) {
+        return name.to_lowercase();
+    }
+    let plain: String = raw.replace("**", "").replace("__", "").replace('*', "");
     slugify(&strip_links(&plain))
 }
 
@@ -239,11 +240,29 @@ fn headings(page: &Page) -> Vec<Heading> {
     out
 }
 
-fn is_code_heading(line: &str) -> bool {
-    heading_line(line).is_some_and(|(depth, raw)| {
-        let (codes, _, outside) = split_code(raw);
-        depth == 3 && !codes.is_empty() && outside.chars().all(|c| c.is_whitespace() || c == ',')
-    })
+fn setting_name(line: &str) -> Option<String> {
+    heading_line(line).and_then(|(depth, raw)| code_only(depth, raw))
+}
+
+/// Every file under `dir` with this extension, at any depth.
+fn files_under(dir: &Path, extension: &str) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let mut folders = vec![dir.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        for path in fs::read_dir(folder)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+        {
+            if path.is_dir() {
+                folders.push(path);
+            } else if path.extension().is_some_and(|ext| ext == extension) {
+                files.push(path);
+            }
+        }
+    }
+    files
 }
 
 #[test]
@@ -406,12 +425,11 @@ fn headings_are_plain_and_follow_the_english_page() {
             continue;
         };
         let depths = |p: &Page| headings(p).iter().map(|h| h.depth).collect::<Vec<_>>();
-        if depths(page) != depths(source) {
+        let (mine, theirs) = (depths(page), depths(source));
+        if mine != theirs {
             problems.push(format!(
-                "{} does not keep the headings of the English page: levels {:?} where English has {:?}",
-                page.place(),
-                depths(page),
-                depths(source)
+                "{} does not keep the headings of the English page: levels {mine:?} where English has {theirs:?}",
+                page.place()
             ));
         }
     }
@@ -422,7 +440,7 @@ fn heading_shape_problems(page: &Page) -> Vec<String> {
     let mut problems = Vec::new();
     let mut previous = "";
     for (number, line) in page.prose() {
-        let at = format!("{}:{number}", page.place());
+        let at = page.at(number);
         let depth = line.chars().take_while(|c| *c == '#').count();
         let spaced = line[depth..].starts_with(char::is_whitespace);
         if depth > 0 && spaced && heading_line(line).is_none() {
@@ -434,11 +452,7 @@ fn heading_shape_problems(page: &Page) -> Vec<String> {
             .trim_start()
             .trim_start_matches(['-', '*', '+', '>'])
             .trim_start();
-        let nested =
-            inner.len() < line.len() && inner.starts_with('#') && heading_line(inner).is_some();
-        if nested
-            || (line.starts_with(char::is_whitespace) && heading_line(line.trim_start()).is_some())
-        {
+        if inner.len() < line.len() && heading_line(inner).is_some() {
             problems.push(format!(
                 "{at}: a heading starts its line, outside any list or quote"
             ));
@@ -461,7 +475,7 @@ fn links_lead_to_pages_and_parts_that_exist() {
     let mut problems = Vec::new();
     for page in &pages {
         for (number, line) in page.prose() {
-            let at = format!("{}:{number}", page.place());
+            let at = page.at(number);
             for target in link_targets(line) {
                 if let Some(problem) = link_problem(&target, &page.id, &anchors) {
                     problems.push(format!("{at}: {target} {problem}"));
@@ -495,7 +509,7 @@ fn english_anchors(pages: &[Page]) -> HashMap<String, BTreeSet<String>> {
 /// A reference-style link (`[text][ref]`, or its `[ref]: target` line), which
 /// the link check could not follow.
 fn is_reference_link(line: &str) -> bool {
-    let (_, _, outside) = split_code(line);
+    let (_, outside) = split_code(line);
     let definition = outside
         .trim_start()
         .strip_prefix('[')
@@ -508,59 +522,23 @@ fn is_reference_link(line: &str) -> bool {
 fn the_app_links_to_pages_and_parts_that_exist() {
     let anchors = english_anchors(&pages());
     let mut problems = Vec::new();
-    // An empty page is the documentation's home, which always exists.
-    for (place, page, part) in app_links().into_iter().filter(|link| !link.1.is_empty()) {
-        let target = if part.is_empty() {
-            format!("{page}.md")
-        } else {
-            format!("{page}.md#{part}")
+    for doc in Doc::ALL {
+        let target = match doc.page_part() {
+            // The documentation's home always exists.
+            ("", _) => continue,
+            (page, "") => format!("{page}.md"),
+            (page, part) => format!("{page}.md#{part}"),
         };
         if let Some(problem) = link_problem(&target, "", &anchors) {
-            problems.push(format!("{place}: docs_url({page:?}, {part:?}) {problem}"));
+            problems.push(format!("Doc::{doc:?}, {target}, {problem}"));
         }
     }
     assert_none(problems);
 }
 
-/// The page and part of every `docs_url(i18n.locale(), "page", "part")` in the
-/// templates.
-fn app_links() -> Vec<(String, String, String)> {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut links = Vec::new();
-    let mut folders = vec![base.join("templates")];
-    while let Some(folder) = folders.pop() {
-        for path in fs::read_dir(folder)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path())
-        {
-            if path.is_dir() {
-                folders.push(path);
-                continue;
-            }
-            let text = fs::read_to_string(&path).unwrap_or_default();
-            let place = path
-                .strip_prefix(base)
-                .unwrap_or(&path)
-                .display()
-                .to_string();
-            for (start, _) in text.match_indices("docs_url(i18n.locale(),") {
-                let call = text[start..].split(')').nth(1).unwrap_or_default();
-                let literals: Vec<&str> = call.split('"').skip(1).step_by(2).collect();
-                if let [page, part, ..] = literals[..] {
-                    links.push((place.clone(), page.to_string(), part.to_string()));
-                }
-            }
-        }
-    }
-    assert!(!links.is_empty(), "no docs_url call found in templates/");
-    links
-}
-
 /// The targets of the `[text](target)` links of a line, code spans left out.
 fn link_targets(line: &str) -> Vec<String> {
-    let (_, _, outside) = split_code(line);
+    let (_, outside) = split_code(line);
     let mut targets = Vec::new();
     let mut rest = outside.as_str();
     while let Some(start) = rest.find("](") {
@@ -616,7 +594,7 @@ fn settings_list_their_facts_in_the_page_language() {
     for page in pages() {
         let lines: Vec<(usize, &str)> = page.prose().collect();
         for (index, (number, line)) in lines.iter().enumerate() {
-            if !is_code_heading(line) {
+            if setting_name(line).is_none() {
                 continue;
             }
             let items: Vec<&str> = lines[index + 1..]
@@ -626,9 +604,8 @@ fn settings_list_their_facts_in_the_page_language() {
                 .take_while(|line| line.starts_with("- "))
                 .map(|line| &line[2..])
                 .collect();
-            let at = format!("{}:{number}", page.place());
             problems.extend(fact_problems(
-                &at,
+                &page.at(*number),
                 &page.lang,
                 &items,
                 page.id == "configuration",
@@ -686,7 +663,7 @@ fn notes_and_code_blocks_use_the_known_forms() {
     for page in pages() {
         let mut in_block = false;
         for (number, line, _) in page.body() {
-            let at = format!("{}:{number}", page.place());
+            let at = page.at(number);
             if is_fence(line) {
                 let info = line.trim_start().trim_start_matches(['`', '~']).trim();
                 if !in_block && info.is_empty() {
@@ -709,36 +686,17 @@ fn notes_and_code_blocks_use_the_known_forms() {
 
 #[test]
 fn no_dash_and_no_html_comment_anywhere_in_the_folder() {
-    let mut files = vec![root().join("README.md")];
-    for lang in LANGUAGES {
-        files.extend(
-            fs::read_dir(root().join(lang))
-                .into_iter()
-                .flatten()
-                .flatten()
-                .map(|e| e.path()),
-        );
-    }
+    let readme = fs::read_to_string(root().join("README.md")).unwrap_or_default();
+    let files = pages().into_iter().map(|page| (page.place(), page.text));
     let mut problems = Vec::new();
-    for file in files
-        .iter()
-        .filter(|file| file.extension().is_some_and(|ext| ext == "md"))
-    {
-        let text = fs::read_to_string(file).unwrap_or_default();
-        let place = file
-            .strip_prefix(root())
-            .unwrap_or(file)
-            .display()
-            .to_string();
+    for (place, text) in files.chain([("documentation/README.md".to_string(), readme)]) {
         for (index, line) in text.lines().enumerate() {
+            let at = format!("{place}:{}", index + 1);
             if line.contains(['\u{2013}', '\u{2014}']) {
-                problems.push(format!(
-                    "documentation/{place}:{}: em dash or en dash",
-                    index + 1
-                ));
+                problems.push(format!("{at}: em dash or en dash"));
             }
             if line.contains("<!--") {
-                problems.push(format!("documentation/{place}:{}: HTML comment", index + 1));
+                problems.push(format!("{at}: HTML comment"));
             }
         }
     }
@@ -752,8 +710,7 @@ fn configuration_documents_every_setting_the_code_reads() {
     for page in pages().iter().filter(|page| page.id == "configuration") {
         let documented: BTreeSet<String> = page
             .prose()
-            .filter(|(_, line)| is_code_heading(line))
-            .filter_map(|(_, line)| split_code(line).0.into_iter().next())
+            .filter_map(|(_, line)| setting_name(line))
             .collect();
         for name in read.difference(&documented) {
             problems.push(format!(
@@ -775,23 +732,16 @@ fn configuration_documents_every_setting_the_code_reads() {
 }
 
 fn settings_read_by_the_code() -> BTreeSet<String> {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut names = BTreeSet::new();
-    let mut folders = vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("src")];
-    while let Some(folder) = folders.pop() {
-        for path in fs::read_dir(folder)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path())
-        {
-            if path.is_dir() {
-                folders.push(path);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
-                let text = fs::read_to_string(&path).unwrap_or_default();
-                let code = text.split("#[cfg(test)]").next().unwrap_or_default();
-                names.extend(setting_names(code));
-            }
-        }
+    for path in files_under(&src, "rs") {
+        let text = fs::read_to_string(&path).unwrap_or_default();
+        // The test module, not a lone `#[cfg(test)]` item in the middle of a file.
+        let code = text
+            .split("#[cfg(test)]\nmod tests")
+            .next()
+            .unwrap_or_default();
+        names.extend(setting_names(code));
     }
     names
 }
