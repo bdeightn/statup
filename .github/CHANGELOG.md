@@ -2,6 +2,12 @@
 
 All notable changes to Statup are listed here. The project is pre-v1: until 1.0, a minor version may change the interface or the database, and the README asks you to back up before upgrading.
 
+## Unreleased
+
+- The self-hosting guide is now the documentation at statup.dev/docs, in English and French, kept in the repository and published with each release. The README and the example settings say "Alerts" and "channels", as the app does.
+- Signed-in members find a "Documentation" link in the footer, and the texts that sent readers to the documentation (a forgotten password without email, the webhook format, email without a mail server) now link to the right page.
+- `ammonia` 4.2.4, after the security advisory of October 16 (RUSTSEC-2026-0373).
+
 ## 0.6.0, 2026-10-16
 
 - A Journal page for administrators, in Settings: what members changed, sign-ins, outages with the address checked and the reason, alert messages that did not leave, and the app's errors, day by day, in the reader's language, with lines that repeat folded into one, filters and an export. Essential, the default, keeps the large changes and the real problems; Detailed keeps everything from the moment it is chosen. Lines are kept 90 days by default. The server output shows the same lines, in clear words.
