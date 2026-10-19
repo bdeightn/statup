@@ -354,30 +354,15 @@ fn every_page_has_a_title_and_a_quoted_description() {
             ));
             continue;
         };
-        let fields: Vec<&str> = page.text.lines().take(end - 1).skip(1).collect();
         let mut names = BTreeSet::new();
-        for field in &fields {
-            let Some((name, value)) = field.split_once(':') else {
-                problems.push(format!(
-                    "{}: front matter line `{field}` is not a field",
-                    page.place()
-                ));
-                continue;
-            };
-            let value = value.trim();
-            names.insert(name);
-            let quoted = value.len() > 2 && value.starts_with('"') && value.ends_with('"');
-            match name {
-                "title" if value.trim_matches('"').trim().is_empty() => {
-                    problems.push(format!("{} has an empty title", page.place()));
+        for field in page.text.lines().take(end - 1).skip(1) {
+            match field.split_once(':') {
+                Some((name, value)) => {
+                    names.insert(name);
+                    problems.extend(field_problem(&page, name, value.trim()));
                 }
-                "description" if !quoted => problems.push(format!(
-                    "{}: the description is written between double quotes, and is not empty",
-                    page.place()
-                )),
-                "title" | "description" => {}
-                other => problems.push(format!(
-                    "{}: front matter field {other} is unknown",
+                None => problems.push(format!(
+                    "{}: front matter line `{field}` is not a field",
                     page.place()
                 )),
             }
@@ -387,6 +372,24 @@ fn every_page_has_a_title_and_a_quoted_description() {
         }
     }
     assert_none(problems);
+}
+
+fn field_problem(page: &Page, name: &str, value: &str) -> Option<String> {
+    let quoted = value.len() > 2 && value.starts_with('"') && value.ends_with('"');
+    match name {
+        "title" if value.trim_matches('"').trim().is_empty() => {
+            Some(format!("{} has an empty title", page.place()))
+        }
+        "description" if !quoted => Some(format!(
+            "{}: the description is written between double quotes, and is not empty",
+            page.place()
+        )),
+        "title" | "description" => None,
+        other => Some(format!(
+            "{}: front matter field {other} is unknown",
+            page.place()
+        )),
+    }
 }
 
 #[test]
@@ -454,31 +457,105 @@ fn heading_shape_problems(page: &Page) -> Vec<String> {
 #[test]
 fn links_lead_to_pages_and_parts_that_exist() {
     let pages = pages();
-    let mut anchors: HashMap<String, BTreeSet<String>> = HashMap::new();
-    for page in pages.iter().filter(|page| page.lang == "en") {
-        anchors.insert(
-            page.id.clone(),
-            headings(page).into_iter().map(|h| h.id).collect(),
-        );
-    }
+    let anchors = english_anchors(&pages);
     let mut problems = Vec::new();
     for page in &pages {
         for (number, line) in page.prose() {
+            let at = format!("{}:{number}", page.place());
             for target in link_targets(line) {
-                let at = format!("{}:{number}", page.place());
                 if let Some(problem) = link_problem(&target, &page.id, &anchors) {
                     problems.push(format!("{at}: {target} {problem}"));
                 }
             }
             if line.contains("![") {
+                problems.push(format!("{at}: no image without the site's agreement"));
+            }
+            if is_reference_link(line) {
                 problems.push(format!(
-                    "{}:{number}: no image without the site's agreement",
-                    page.place()
+                    "{at}: links are written inline, [text](page.md#part)"
                 ));
             }
         }
     }
     assert_none(problems);
+}
+
+/// Each English page with the addresses of its headings.
+fn english_anchors(pages: &[Page]) -> HashMap<String, BTreeSet<String>> {
+    pages
+        .iter()
+        .filter(|page| page.lang == "en")
+        .map(|page| {
+            let ids = headings(page).into_iter().map(|h| h.id).collect();
+            (page.id.clone(), ids)
+        })
+        .collect()
+}
+
+/// A reference-style link (`[text][ref]`, or its `[ref]: target` line), which
+/// the link check could not follow.
+fn is_reference_link(line: &str) -> bool {
+    let (_, _, outside) = split_code(line);
+    let definition = outside
+        .trim_start()
+        .strip_prefix('[')
+        .and_then(|rest| rest.split_once("]:"))
+        .is_some_and(|(label, _)| !label.contains(']'));
+    definition || outside.contains("][")
+}
+
+#[test]
+fn the_app_links_to_pages_and_parts_that_exist() {
+    let anchors = english_anchors(&pages());
+    let mut problems = Vec::new();
+    // An empty page is the documentation's home, which always exists.
+    for (place, page, part) in app_links().into_iter().filter(|link| !link.1.is_empty()) {
+        let target = if part.is_empty() {
+            format!("{page}.md")
+        } else {
+            format!("{page}.md#{part}")
+        };
+        if let Some(problem) = link_problem(&target, "", &anchors) {
+            problems.push(format!("{place}: docs_url({page:?}, {part:?}) {problem}"));
+        }
+    }
+    assert_none(problems);
+}
+
+/// The page and part of every `docs_url(i18n.locale(), "page", "part")` in the
+/// templates.
+fn app_links() -> Vec<(String, String, String)> {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut links = Vec::new();
+    let mut folders = vec![base.join("templates")];
+    while let Some(folder) = folders.pop() {
+        for path in fs::read_dir(folder)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+        {
+            if path.is_dir() {
+                folders.push(path);
+                continue;
+            }
+            let text = fs::read_to_string(&path).unwrap_or_default();
+            let place = path
+                .strip_prefix(base)
+                .unwrap_or(&path)
+                .display()
+                .to_string();
+            for (start, _) in text.match_indices("docs_url(i18n.locale(),") {
+                let call = text[start..].split(')').nth(1).unwrap_or_default();
+                let literals: Vec<&str> = call.split('"').skip(1).step_by(2).collect();
+                if let [page, part, ..] = literals[..] {
+                    links.push((place.clone(), page.to_string(), part.to_string()));
+                }
+            }
+        }
+    }
+    assert!(!links.is_empty(), "no docs_url call found in templates/");
+    links
 }
 
 /// The targets of the `[text](target)` links of a line, code spans left out.
@@ -607,34 +684,27 @@ fn fact_problems(at: &str, lang: &str, items: &[&str], is_setting: bool) -> Vec<
 fn notes_and_code_blocks_use_the_known_forms() {
     let mut problems = Vec::new();
     for page in pages() {
-        for (number, line, fenced) in page.body() {
+        let mut in_block = false;
+        for (number, line, _) in page.body() {
             let at = format!("{}:{number}", page.place());
-            if is_fence(line) && fenced && opens_block(&page, number) {
+            if is_fence(line) {
                 let info = line.trim_start().trim_start_matches(['`', '~']).trim();
-                if info.is_empty() {
+                if !in_block && info.is_empty() {
                     problems.push(format!("{at}: a code block names its language"));
                 }
+                in_block = !in_block;
+                continue;
             }
             let quoted = line.trim_start().strip_prefix('>').map(str::trim_start);
             if let Some(marker) = quoted.and_then(|rest| rest.strip_prefix("[!")) {
                 let kind = marker.split(']').next().unwrap_or_default();
-                if !NOTE_KINDS.contains(&kind) {
+                if !in_block && !NOTE_KINDS.contains(&kind) {
                     problems.push(format!("{at}: notes are one of {NOTE_KINDS:?}, in English"));
                 }
             }
         }
     }
     assert_none(problems);
-}
-
-/// Whether the fence on line `number` opens a block rather than closing one.
-fn opens_block(page: &Page, number: usize) -> bool {
-    let fences_before = page
-        .body()
-        .into_iter()
-        .filter(|(at, line, _)| *at < number && is_fence(line))
-        .count();
-    fences_before % 2 == 0
 }
 
 #[test]
