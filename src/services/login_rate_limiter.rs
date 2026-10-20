@@ -4,9 +4,9 @@
 //! A ceiling per address alone slows a walk through many accounts.
 //! Checks of the current password from a signed-in session are counted per
 //! account alone: only whoever holds that session can make them.
-//! Requests for a password reset link are counted per address, apart from
-//! sign-in failures, so asking for links in someone's name never locks them
-//! out.
+//! Requests for a password reset link, and requests to subscribe by email,
+//! are counted per address, each apart from the other and from sign-in
+//! failures, so asking for links in someone's name never locks them out.
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -21,6 +21,8 @@ const MAX_ATTEMPTS: u32 = 5;
 const MAX_ATTEMPTS_PER_ADDRESS: u32 = 30;
 /// Password reset link requests allowed per address, all accounts together.
 const MAX_RESET_REQUESTS_PER_ADDRESS: u32 = 10;
+/// Subscription requests allowed per address, all email addresses together.
+const MAX_SUBSCRIBE_REQUESTS_PER_ADDRESS: u32 = 10;
 /// Window duration for rate limiting.
 const WINDOW: Duration = Duration::from_secs(15 * 60);
 
@@ -51,18 +53,19 @@ impl Entry {
 }
 
 /// In-memory failed sign-in counter, keyed by client address and account,
-/// failed current password checks, keyed by account, and reset link
-/// requests, keyed by client address.
+/// failed current password checks, keyed by account, and reset link and
+/// subscription requests, keyed by client address.
 #[derive(Default)]
 pub struct LoginRateLimiter {
     attempts: Mutex<HashMap<Key, Entry>>,
     password_checks: Mutex<HashMap<i64, Entry>>,
     reset_requests: Mutex<HashMap<IpAddr, Entry>>,
+    subscribe_requests: Mutex<HashMap<IpAddr, Entry>>,
 }
 
-/// What a request for a reset link meets.
+/// What a request for a reset link or a subscription meets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResetRequest {
+pub enum RequestCheck {
     Allowed,
     /// This request is the first one refused in the window.
     JustBlocked,
@@ -84,29 +87,45 @@ fn address_failures(map: &HashMap<Key, Entry>, ip: &IpAddr) -> u32 {
         .sum()
 }
 
+/// Counts a request from this address against `ceiling`. Only the first
+/// refusal of a window says so, so that a burst of requests is journaled
+/// once.
+fn count_request(map: &Mutex<HashMap<IpAddr, Entry>>, ip: &IpAddr, ceiling: u32) -> RequestCheck {
+    let mut map = lock(map);
+    map.retain(|_, entry| !entry.expired());
+    let entry = map.entry(limit_key(*ip)).or_insert(Entry {
+        count: 0,
+        first_attempt: Instant::now(),
+    });
+    if entry.count > ceiling {
+        return RequestCheck::Blocked;
+    }
+    entry.count += 1;
+    if entry.count > ceiling {
+        return RequestCheck::JustBlocked;
+    }
+    RequestCheck::Allowed
+}
+
 impl LoginRateLimiter {
     fn attempts(&self) -> MutexGuard<'_, HashMap<Key, Entry>> {
         lock(&self.attempts)
     }
 
     /// Counts a password reset link request from this address, and tells
-    /// whether it may go ahead. Only the first refusal of a window says so,
-    /// so that a burst of requests is journaled once.
-    pub fn count_reset_request(&self, ip: &IpAddr) -> ResetRequest {
-        let mut map = lock(&self.reset_requests);
-        map.retain(|_, entry| !entry.expired());
-        let entry = map.entry(limit_key(*ip)).or_insert(Entry {
-            count: 0,
-            first_attempt: Instant::now(),
-        });
-        if entry.count > MAX_RESET_REQUESTS_PER_ADDRESS {
-            return ResetRequest::Blocked;
-        }
-        entry.count += 1;
-        if entry.count > MAX_RESET_REQUESTS_PER_ADDRESS {
-            return ResetRequest::JustBlocked;
-        }
-        ResetRequest::Allowed
+    /// whether it may go ahead.
+    pub fn count_reset_request(&self, ip: &IpAddr) -> RequestCheck {
+        count_request(&self.reset_requests, ip, MAX_RESET_REQUESTS_PER_ADDRESS)
+    }
+
+    /// Counts a subscription request from this address, apart from reset
+    /// link requests, and tells whether it may go ahead.
+    pub fn count_subscribe_request(&self, ip: &IpAddr) -> RequestCheck {
+        count_request(
+            &self.subscribe_requests,
+            ip,
+            MAX_SUBSCRIBE_REQUESTS_PER_ADDRESS,
+        )
     }
 
     /// Whether this account has had too many wrong current passwords.
@@ -185,22 +204,53 @@ mod tests {
         for _ in 0..MAX_RESET_REQUESTS_PER_ADDRESS {
             assert_eq!(
                 limiter.count_reset_request(&ip("127.0.0.1")),
-                ResetRequest::Allowed
+                RequestCheck::Allowed
             );
         }
         assert_eq!(
             limiter.count_reset_request(&ip("127.0.0.1")),
-            ResetRequest::JustBlocked
+            RequestCheck::JustBlocked
         );
         assert_eq!(
             limiter.count_reset_request(&ip("127.0.0.1")),
-            ResetRequest::Blocked
+            RequestCheck::Blocked
         );
         assert_eq!(
             limiter.count_reset_request(&ip("192.0.2.1")),
-            ResetRequest::Allowed
+            RequestCheck::Allowed
         );
         assert!(!limiter.is_blocked(&ip("127.0.0.1"), ALICE));
+    }
+
+    #[test]
+    fn reset_and_subscription_requests_have_their_own_ceilings() {
+        let limiter = LoginRateLimiter::default();
+        let address = ip("127.0.0.1");
+        for _ in 0..MAX_SUBSCRIBE_REQUESTS_PER_ADDRESS {
+            assert_eq!(
+                limiter.count_subscribe_request(&address),
+                RequestCheck::Allowed
+            );
+        }
+        assert_eq!(
+            limiter.count_subscribe_request(&address),
+            RequestCheck::JustBlocked
+        );
+        assert_eq!(
+            limiter.count_subscribe_request(&address),
+            RequestCheck::Blocked
+        );
+        assert_eq!(limiter.count_reset_request(&address), RequestCheck::Allowed);
+
+        let other = ip("192.0.2.1");
+        for _ in 0..=MAX_RESET_REQUESTS_PER_ADDRESS {
+            limiter.count_reset_request(&other);
+        }
+        assert_eq!(limiter.count_reset_request(&other), RequestCheck::Blocked);
+        assert_eq!(
+            limiter.count_subscribe_request(&other),
+            RequestCheck::Allowed
+        );
     }
 
     #[test]

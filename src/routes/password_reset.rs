@@ -27,7 +27,7 @@ use crate::middleware::{FormCsrfToken, HtmlForm, OptionalUser};
 use crate::models::{JournalKind, User};
 use crate::repositories::NewJournalEntry;
 use crate::services::{
-    LinkRequest, Notifier, PasswordResetService, ResetEmail, ResetRequest, page_address,
+    LinkRequest, Notifier, PasswordResetService, RequestCheck, ResetEmail, page_address,
 };
 use crate::state::AppState;
 
@@ -140,11 +140,11 @@ pub async fn forgot(
     }
     let ip = request_ip(&state, &headers, connect_info);
     match state.login_limiter.count_reset_request(&ip) {
-        ResetRequest::Allowed => {
+        RequestCheck::Allowed => {
             send_link_later(&state, ip, email.to_string(), base, i18n.locale());
         }
-        ResetRequest::JustBlocked => record_requests_blocked_later(&state, ip),
-        ResetRequest::Blocked => {}
+        RequestCheck::JustBlocked => record_requests_blocked_later(&state, ip),
+        RequestCheck::Blocked => {}
     }
     render_forgot(csrf_token, i18n, true, true)
 }

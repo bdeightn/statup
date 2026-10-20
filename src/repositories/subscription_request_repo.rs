@@ -57,6 +57,27 @@ impl SubscriptionRequestRepository {
         .await
     }
 
+    /// Whether a request for this address would pass `limits` right now.
+    /// A cheap look before the costly hashing, not a reservation:
+    /// `insert_within_limits` has the last word.
+    pub async fn within_limits(
+        pool: &DbPool,
+        email: &str,
+        limits: RequestLimits,
+    ) -> Result<bool, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT (SELECT COUNT(*) FROM subscription_requests \
+                     WHERE email = ? AND created_at > datetime('now', '-1 hour')) < ? \
+                AND (SELECT COUNT(*) FROM subscription_requests \
+                     WHERE created_at > datetime('now', '-1 hour')) < ?",
+        )
+        .bind(email)
+        .bind(limits.per_address)
+        .bind(limits.per_instance)
+        .fetch_one(pool)
+        .await
+    }
+
     /// The request with this id, if its link still confirms it. A newer
     /// request for the same address replaces it.
     pub async fn find_live(
@@ -241,6 +262,29 @@ mod tests {
         assert!(
             within("cleo@example.com").await.is_none(),
             "three for the page"
+        );
+    }
+
+    #[tokio::test]
+    async fn within_limits_looks_at_the_same_counts_without_storing() {
+        let pool = test_pool().await;
+        let limits = RequestLimits {
+            per_address: 1,
+            per_instance: 2,
+        };
+        let within = |email| SubscriptionRequestRepository::within_limits(&pool, email, limits);
+
+        assert!(within("ana@example.com").await.unwrap());
+        assert_eq!(requests(&pool).await.len(), 0);
+
+        insert(&pool, "ana@example.com").await;
+        assert!(!within("ANA@example.com").await.unwrap(), "one for Ana");
+        assert!(within("ben@example.com").await.unwrap());
+
+        insert(&pool, "ben@example.com").await;
+        assert!(
+            !within("cleo@example.com").await.unwrap(),
+            "two for the page"
         );
     }
 
