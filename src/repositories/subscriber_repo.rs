@@ -1,7 +1,10 @@
 //! The members and visitors told by email about what the page publishes.
 
+use chrono::{DateTime, Utc};
+
+use crate::clock;
 use crate::db::DbPool;
-use crate::models::{Choices, Subscriber, SubscriptionRequest};
+use crate::models::{Audience, Choices, Notification, Subscriber, SubscriptionRequest};
 
 const SUBSCRIBER_COLUMNS: &str = "id, user_id, email, locale, on_incidents, on_maintenances, \
      on_publications, unsubscribe_secret, confirmed_at, created_at";
@@ -112,6 +115,54 @@ impl SubscriberRepository {
         }
         tx.commit().await?;
         Ok(created)
+    }
+
+    /// Queues `notification` for every subscriber who ticked its kind of
+    /// event; the message leaves no sooner than `send_at`. Detected outages
+    /// and tests are never sent to subscribers. A disabled member is left
+    /// out, and so are visitors while the page is closed to them. A visitor
+    /// whose address is the account address of an active member who receives
+    /// the same kind of event is left out too, so that person gets one email.
+    /// Returns how many messages were queued.
+    pub async fn enqueue(
+        pool: &DbPool,
+        notification: &Notification,
+        now: DateTime<Utc>,
+        send_at: DateTime<Utc>,
+    ) -> Result<u64, sqlx::Error> {
+        let column = match notification.audience {
+            Audience::Incidents => "on_incidents",
+            Audience::Maintenances => "on_maintenances",
+            Audience::Publications => "on_publications",
+            Audience::DetectedOutages => return Ok(0),
+        };
+        let Some(event_id) = notification.event_id else {
+            return Ok(0);
+        };
+        let sql = format!(
+            "INSERT INTO subscriber_deliveries (subscriber_id, happening, event_id, update_id, \
+             lifecycle, next_attempt_at, created_at) \
+             SELECT s.id, ?, ?, ?, ?, ?, ? FROM subscribers s \
+             LEFT JOIN users u ON u.id = s.user_id \
+             WHERE s.{column} = 1 AND (\
+               (s.user_id IS NOT NULL AND u.is_active = 1) \
+               OR (s.user_id IS NULL \
+                   AND (SELECT value FROM settings WHERE key = 'visitor_subscriptions') = '1' \
+                   AND NOT EXISTS (SELECT 1 FROM subscribers m \
+                                   JOIN users mu ON mu.id = m.user_id \
+                                   WHERE mu.is_active = 1 AND m.{column} = 1 \
+                                   AND s.email = mu.email)))"
+        );
+        let queued = sqlx::query(&sql)
+            .bind(notification.happening)
+            .bind(event_id)
+            .bind(notification.update_id)
+            .bind(notification.lifecycle)
+            .bind(clock::db(send_at))
+            .bind(clock::db(now))
+            .execute(pool)
+            .await?;
+        Ok(queued.rows_affected())
     }
 
     /// Ends a subscription, and with it the emails it still had to receive.
