@@ -16,6 +16,15 @@ const LATEST_OUTCOMES: &str = "SELECT MAX(id) FROM subscriber_deliveries \
 pub struct SubscriberDeliveryRepository;
 
 impl SubscriberDeliveryRepository {
+    /// Whether any email waits, due or not: most rounds find none.
+    pub async fn any_waiting(pool: &DbPool) -> Result<bool, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM subscriber_deliveries WHERE status = 'pending')",
+        )
+        .fetch_one(pool)
+        .await
+    }
+
     /// The first waiting email of each subscriber whose time has come,
     /// oldest first, at most `limit`. The ones behind it wait their turn, so
     /// each subscriber receives the news in order.
@@ -141,17 +150,19 @@ impl SubscriberDeliveryRepository {
         Ok(result.rows_affected())
     }
 
-    /// Gives up on the emails still waiting since before `before`: news that
-    /// late would mislead more than it informs.
+    /// Gives up on the emails still waiting since before `before`, for
+    /// `failure`: news that late would mislead more than it informs.
     pub async fn expire(
         pool: &DbPool,
         before: DateTime<Utc>,
+        failure: &str,
         now: DateTime<Utc>,
     ) -> Result<u64, sqlx::Error> {
         let result = sqlx::query(
-            "UPDATE subscriber_deliveries SET status = 'failed', failure = 'expired', \
+            "UPDATE subscriber_deliveries SET status = 'failed', failure = ?, \
              next_attempt_at = ? WHERE status = 'pending' AND created_at < ?",
         )
+        .bind(failure)
         .bind(clock::db(now))
         .bind(clock::db(before))
         .execute(pool)
@@ -355,8 +366,9 @@ mod tests {
         let old = queue(&pool, ana, event, Duration::hours(49)).await;
         let recent = queue(&pool, ben, event, Duration::hours(1)).await;
         let now = Utc::now();
+        assert!(Repo::any_waiting(&pool).await.unwrap());
 
-        let expired = Repo::expire(&pool, now - Duration::hours(48), now)
+        let expired = Repo::expire(&pool, now - Duration::hours(48), "expired", now)
             .await
             .unwrap();
         assert_eq!(expired, 1);
@@ -378,6 +390,7 @@ mod tests {
                 (recent, Some("no_mail_server".to_string())),
             ]
         );
+        assert!(!Repo::any_waiting(&pool).await.unwrap());
     }
 
     #[tokio::test]

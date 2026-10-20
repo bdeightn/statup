@@ -25,4 +25,4 @@ pub use reminders::remind_overdue;
 pub use reset_mail::ResetEmail;
 pub use sender::{Failure, Notifier, SEND_TIMEOUT, Sender, SubscriberEmail, SubscriberSender};
 pub use subscribe_mail::ConfirmEmail;
-pub use subscribers::{Round, deliver_to_subscribers, spawn_subscriber_mail};
+pub use subscribers::{Round, deliver_to_subscribers, given_up_key, spawn_subscriber_mail};

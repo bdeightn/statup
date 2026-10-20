@@ -116,48 +116,47 @@ pub struct PageQuery {
     done: String,
 }
 
+/// The three boxes of both forms: a box left unticked is not sent.
+#[derive(Deserialize)]
+pub struct Boxes {
+    #[serde(rename = "on_incidents")]
+    incidents: Option<String>,
+    #[serde(rename = "on_maintenances")]
+    maintenances: Option<String>,
+    #[serde(rename = "on_publications")]
+    publications: Option<String>,
+}
+
+impl Boxes {
+    fn choices(&self) -> Choices {
+        Choices {
+            incidents: self.incidents.is_some(),
+            maintenances: self.maintenances.is_some(),
+            publications: self.publications.is_some(),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub struct VisitorForm {
     #[serde(default)]
     email: String,
-    on_incidents: Option<String>,
-    on_maintenances: Option<String>,
-    on_publications: Option<String>,
+    #[serde(flatten)]
+    boxes: Boxes,
 }
 
 #[derive(Deserialize)]
 pub struct MemberForm {
     #[serde(default)]
     action: String,
-    on_incidents: Option<String>,
-    on_maintenances: Option<String>,
-    on_publications: Option<String>,
+    #[serde(flatten)]
+    boxes: Boxes,
 }
 
 #[derive(Deserialize)]
 pub struct TokenQuery {
     #[serde(default)]
     token: String,
-}
-
-impl VisitorForm {
-    fn choices(&self) -> Choices {
-        Choices {
-            incidents: self.on_incidents.is_some(),
-            maintenances: self.on_maintenances.is_some(),
-            publications: self.on_publications.is_some(),
-        }
-    }
-}
-
-impl MemberForm {
-    fn choices(&self) -> Choices {
-        Choices {
-            incidents: self.on_incidents.is_some(),
-            maintenances: self.on_maintenances.is_some(),
-            publications: self.on_publications.is_some(),
-        }
-    }
 }
 
 /// Visitors may subscribe: the page is open to everyone and an
@@ -261,7 +260,7 @@ pub async fn ask(
     let (Some(base), true, None) = (base, visitors_welcome(&state).await?, &user) else {
         return Ok(Redirect::to("/subscribe").into_response());
     };
-    let choices = input.choices();
+    let choices = input.boxes.choices();
     let card = match checked_address(&input.email, choices) {
         Err((spot, key)) => {
             let error = Some((spot, i18n.t(key).to_string()));
@@ -345,7 +344,7 @@ pub async fn save_mine(
     if link_base(&state).await?.is_none() {
         return Ok(Redirect::to("/subscribe").into_response());
     }
-    let choices = input.choices();
+    let choices = input.boxes.choices();
     let done = if input.action == "stop" || !choices.any() {
         if SubscriptionService::stop_member(&state.pool, user.id).await? {
             record_member(&state.pool, JournalKind::SubscriptionEnded, &user).await;

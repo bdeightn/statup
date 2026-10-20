@@ -821,6 +821,8 @@
   "notifications.failure_mail_busy": "le serveur de courriel demande d'attendre",
   "notifications.failure_mail_unreachable": "serveur de courriel injoignable",
   "notifications.failure_no_mail_server": "aucun serveur de courriel réglé",
+  "notifications.failure_expired": "en attente depuis plus de deux jours",
+  "notifications.failure_no_page_address": "lien dans les messages non réglé",
   "notifications.page_address_label": "Lien dans les messages",
   "notifications.page_address_help": "Chaque message renvoie vers cette adresse : celle où l'on ouvre la page.",
   "notifications.page_address_fixed": "Réglée sur le serveur (PUBLIC_URL) : chaque message renvoie vers elle.",

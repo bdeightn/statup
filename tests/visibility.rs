@@ -1223,7 +1223,8 @@ async fn every_email_carries_a_way_out_that_belongs_to_its_recipient() {
 
     for address in [VISITOR, OUTSIDE, INSIDE, GRANTED, PUBLISHER] {
         let subscriber = fixture.subscriber_of(address).await;
-        let token = SubscriptionService::unsubscribe_token(&subscriber);
+        let token =
+            SubscriptionService::unsubscribe_token(subscriber.id, &subscriber.unsubscribe_secret);
         let theirs = sent_to(&mails, address);
         assert!(!theirs.is_empty(), "{address} got no email");
         for mail in theirs {

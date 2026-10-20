@@ -29,7 +29,6 @@ use crate::models::{Happening, JournalKind, Lifecycle, Scope, SubscriberMessage}
 use crate::repositories::{
     NewJournalEntry, SubscriberDeliveryRepository, SubscriptionRequestRepository, UserRepository,
 };
-use crate::services::link_token::token;
 use crate::services::{SubscriptionService, scope_of};
 
 const ROUND_INTERVAL: Duration = Duration::from_secs(10);
@@ -55,6 +54,18 @@ const INACTIVE: &str = "inactive";
 const HIDDEN: &str = "hidden";
 /// Why every waiting email was given up: no address to link back to.
 const NO_PAGE_ADDRESS: &str = "no_page_address";
+/// Why an email was given up: it waited too long.
+const EXPIRED: &str = "expired";
+
+/// The words for why an email to a subscriber was given up, when the reason
+/// is not one the mail server gave.
+pub fn given_up_key(code: &str) -> Option<&'static str> {
+    match code {
+        EXPIRED => Some("notifications.failure_expired"),
+        NO_PAGE_ADDRESS => Some("notifications.failure_no_page_address"),
+        _ => None,
+    }
+}
 
 /// What a round did.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -64,6 +75,14 @@ pub struct Round {
     pub given_up: BTreeMap<String, usize>,
     /// The mail server failed as a whole, and the round stopped there.
     pub server_failure: Option<Failure>,
+}
+
+impl Round {
+    fn give_up(&mut self, code: &str, count: u64) {
+        if let Ok(count @ 1..) = usize::try_from(count) {
+            *self.given_up.entry(code.to_string()).or_default() += count;
+        }
+    }
 }
 
 /// One email ready to leave.
@@ -101,11 +120,29 @@ pub async fn deliver_to_subscribers<S: SubscriberSender + Send + Sync + 'static>
     now: DateTime<Utc>,
 ) -> Result<Round, AppError> {
     let mut round = Round::default();
-    let Some(mut readers) =
-        Readers::ready(pool, sender.as_ref(), public_url, public_page, now).await?
-    else {
+    if !SubscriberDeliveryRepository::any_waiting(pool).await? {
         return Ok(round);
-    };
+    }
+    let ready = Readers::ready(pool, sender.as_ref(), public_url, public_page);
+    if let Some(mut readers) = ready.await? {
+        expire(pool, now, &mut round).await?;
+        send_due(pool, sender, &mut readers, now, &mut round).await?;
+    } else {
+        give_up_all(pool, sender.as_ref(), now, &mut round).await?;
+    }
+    record_given_up(pool, &round).await;
+    Ok(round)
+}
+
+/// Sends batch after batch until nothing is due, the round's share is sent,
+/// or the mail server fails as a whole.
+async fn send_due<S: SubscriberSender + Send + Sync + 'static>(
+    pool: &DbPool,
+    sender: &Arc<S>,
+    readers: &mut Readers,
+    now: DateTime<Utc>,
+    round: &mut Round,
+) -> Result<(), AppError> {
     let mut previous = Vec::new();
     while round.sent < SENDS_PER_ROUND && round.server_failure.is_none() {
         let heads = SubscriberDeliveryRepository::due(pool, now, BATCH).await?;
@@ -116,10 +153,36 @@ pub async fn deliver_to_subscribers<S: SubscriberSender + Send + Sync + 'static>
         }
         previous = ids;
         let emails = readers.prepare(pool, heads, now).await?;
-        send_batch(pool, sender, emails, now, &mut round).await?;
+        send_batch(pool, sender, emails, now, round).await?;
     }
-    record_given_up(pool, &round).await;
-    Ok(round)
+    Ok(())
+}
+
+/// Gives up the news that waited too long: that late, it would mislead more
+/// than it informs.
+async fn expire(pool: &DbPool, now: DateTime<Utc>, round: &mut Round) -> Result<(), AppError> {
+    let expired =
+        SubscriberDeliveryRepository::expire(pool, now - KEEP_WAITING, EXPIRED, now).await?;
+    round.give_up(EXPIRED, expired);
+    Ok(())
+}
+
+/// Nothing can be sent without a mail server, nor without the page's
+/// address to link back to: every waiting email is given up then.
+async fn give_up_all<S: SubscriberSender>(
+    pool: &DbPool,
+    sender: &S,
+    now: DateTime<Utc>,
+    round: &mut Round,
+) -> Result<(), AppError> {
+    let code = if sender.mail_ready() {
+        NO_PAGE_ADDRESS.to_string()
+    } else {
+        Failure::NoMailServer.code()
+    };
+    let given_up = SubscriberDeliveryRepository::fail_all_waiting(pool, &code, now).await?;
+    round.give_up(&code, given_up);
+    Ok(())
 }
 
 /// What the emails of a round are written from: the page, and each reader
@@ -141,14 +204,14 @@ struct Member {
 }
 
 /// Who reads an email: every visitor sees the same page.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy)]
 enum Viewer {
     Visitor,
     Member(i64),
 }
 
 /// The emails of one piece of news read alike by readers who see the same
-/// page in the same language.
+/// services in the same language, members and visitors together.
 #[derive(PartialEq, Eq, Hash)]
 struct NoticeKey {
     event_id: i64,
@@ -156,34 +219,27 @@ struct NoticeKey {
     happening: Happening,
     lifecycle: Option<Lifecycle>,
     at: DateTime<Utc>,
-    viewer: Viewer,
+    scope: Scope,
     locale: String,
 }
 
 impl Readers {
-    /// Nothing can be sent without a mail server, nor without the page's
-    /// address to link back to: every waiting email is given up then, and
-    /// `None` returned. The news that waited too long is given up too.
+    /// The page and who may read it, or `None` when nothing can be sent: no
+    /// mail server, or no page address to link back to.
     async fn ready<S: SubscriberSender>(
         pool: &DbPool,
         sender: &S,
         public_url: Option<&str>,
         public_page: bool,
-        now: DateTime<Utc>,
     ) -> Result<Option<Self>, AppError> {
-        let page = page_address(pool, public_url).await?;
-        let blocked = match (sender.mail_ready(), &page) {
-            (false, _) => Some(Failure::NoMailServer.code()),
-            (true, None) => Some(NO_PAGE_ADDRESS.to_string()),
-            (true, Some(_)) => None,
-        };
-        if let Some(code) = blocked {
-            SubscriberDeliveryRepository::fail_all_waiting(pool, &code, now).await?;
+        if !sender.mail_ready() {
             return Ok(None);
         }
-        SubscriberDeliveryRepository::expire(pool, now - KEEP_WAITING, now).await?;
+        let Some(page) = page_address(pool, public_url).await? else {
+            return Ok(None);
+        };
         let visitors_welcome = public_page && SubscriptionService::visitors_open(pool).await?;
-        Ok(page.map(|page| Self {
+        Ok(Some(Self {
             origin: Origin {
                 instance: crate::brand_name(),
                 page: Some(page.clone()),
@@ -242,7 +298,10 @@ impl Readers {
             return Ok(Err(HIDDEN));
         };
         let i18n = I18n::new(&locale);
-        let unsubscribe_token = token(message.subscriber_id, &message.unsubscribe_secret);
+        let unsubscribe_token = SubscriptionService::unsubscribe_token(
+            message.subscriber_id,
+            &message.unsubscribe_secret,
+        );
         let unsubscribe =
             Unsubscribe::new(&self.page, &unsubscribe_token, &self.origin.instance, &i18n);
         Ok(Ok(Outgoing {
@@ -283,23 +342,23 @@ impl Readers {
         viewer: Viewer,
         locale: &str,
     ) -> Result<Option<(Notice, Facts)>, AppError> {
+        let scope = self.scope(pool, viewer).await?;
         let key = NoticeKey {
             event_id: message.event_id,
             update_id: message.update_id,
             happening: message.happening,
             lifecycle: message.lifecycle,
             at: message.created_at,
-            viewer,
+            scope,
             locale: locale.to_string(),
         };
         if let Some(written) = self.notices.get(&key) {
             return Ok(written.clone());
         }
-        let scope = self.scope(pool, viewer).await?;
         let reading = Reading {
             happening: message.happening,
             update_id: message.update_id,
-            scope: &scope,
+            scope: &key.scope,
         };
         let written = load_event(pool, message.event_id, &reading)
             .await?
@@ -904,9 +963,13 @@ mod tests {
             ready: false,
             ..Arc::into_inner(Script::new()).unwrap()
         });
-        round(&pool, &no_server, true).await;
+        let done = round(&pool, &no_server, true).await;
 
         assert_eq!(script.sent_to(), Vec::<String>::new());
+        assert_eq!(
+            done.given_up,
+            BTreeMap::from([("no_mail_server".to_string(), 1)])
+        );
         assert_eq!(
             rows(&pool).await,
             [
@@ -927,13 +990,15 @@ mod tests {
             .unwrap();
         let script = Script::new();
 
-        round(&pool, &script, true).await;
+        let done = round(&pool, &script, true).await;
 
         assert_eq!(script.sent_to(), Vec::<String>::new());
         assert_eq!(
             rows(&pool).await,
-            [row("ana@example.com", "failed", 0, Some("expired"))]
+            [row("ana@example.com", "failed", 0, Some(EXPIRED))]
         );
+        assert_eq!(done.given_up, BTreeMap::from([(EXPIRED.to_string(), 1)]));
+        assert_eq!(given_up_key(EXPIRED), Some("notifications.failure_expired"));
     }
 
     #[tokio::test]

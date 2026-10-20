@@ -32,8 +32,6 @@ const VISITORS_SETTING: &str = "visitor_subscriptions";
 /// A confirmation link to send to a visitor.
 pub struct ConfirmLink {
     pub email: String,
-    pub locale: String,
-    pub choices: Choices,
     pub token: String,
 }
 
@@ -87,8 +85,6 @@ impl SubscriptionService {
         };
         Ok(SubscribeRequest::Issued(ConfirmLink {
             email: email.to_owned(),
-            locale: locale.to_owned(),
-            choices,
             token: token(id, &secret),
         }))
     }
@@ -145,8 +141,8 @@ impl SubscriptionService {
     }
 
     /// The unsubscribe link token of every email sent to this subscriber.
-    pub fn unsubscribe_token(subscriber: &Subscriber) -> String {
-        token(subscriber.id, &subscriber.unsubscribe_secret)
+    pub fn unsubscribe_token(subscriber_id: i64, unsubscribe_secret: &str) -> String {
+        token(subscriber_id, unsubscribe_secret)
     }
 
     /// Subscribes a member, or replaces their choices. True when new.
@@ -311,7 +307,8 @@ mod tests {
     async fn subscribing_again_replaces_the_choices_and_keeps_the_unsubscribe_link() {
         let pool = test_pool().await;
         let first = subscribed(&pool, "ana@example.com", EVERYTHING).await;
-        let unsubscribe = SubscriptionService::unsubscribe_token(&first);
+        let unsubscribe =
+            SubscriptionService::unsubscribe_token(first.id, &first.unsubscribe_secret);
 
         let second = subscribed(&pool, "ana@example.com", ONLY_INCIDENTS).await;
         let linked = SubscriptionService::linked(&pool, &unsubscribe)
@@ -322,7 +319,10 @@ mod tests {
         assert_eq!(first.id, second.id);
         assert_eq!(second.choices, ONLY_INCIDENTS);
         assert_eq!(linked.choices, ONLY_INCIDENTS);
-        assert_eq!(SubscriptionService::unsubscribe_token(&second), unsubscribe);
+        assert_eq!(
+            SubscriptionService::unsubscribe_token(second.id, &second.unsubscribe_secret),
+            unsubscribe
+        );
     }
 
     #[tokio::test]
@@ -330,7 +330,7 @@ mod tests {
         let pool = test_pool().await;
         let ana = subscribed(&pool, "ana@example.com", EVERYTHING).await;
 
-        let token = SubscriptionService::unsubscribe_token(&ana);
+        let token = SubscriptionService::unsubscribe_token(ana.id, &ana.unsubscribe_secret);
         let removed = SubscriptionService::unsubscribe(&pool, &token)
             .await
             .unwrap();

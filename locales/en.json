@@ -821,6 +821,8 @@
   "notifications.failure_mail_busy": "the mail server asks to wait",
   "notifications.failure_mail_unreachable": "mail server unreachable",
   "notifications.failure_no_mail_server": "no mail server set",
+  "notifications.failure_expired": "waited more than two days",
+  "notifications.failure_no_page_address": "link in the messages not set",
   "notifications.page_address_label": "Link in the messages",
   "notifications.page_address_help": "Every message links to this address: where people open the page.",
   "notifications.page_address_fixed": "Set on the server (PUBLIC_URL): every message links to it.",

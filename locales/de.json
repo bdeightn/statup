@@ -821,6 +821,8 @@
   "notifications.failure_mail_busy": "der Mailserver bittet zu warten",
   "notifications.failure_mail_unreachable": "Mailserver nicht erreichbar",
   "notifications.failure_no_mail_server": "kein Mailserver eingestellt",
+  "notifications.failure_expired": "wartete mehr als zwei Tage",
+  "notifications.failure_no_page_address": "Link in den Nachrichten nicht eingestellt",
   "notifications.page_address_label": "Link in den Nachrichten",
   "notifications.page_address_help": "Jede Nachricht verweist auf diese Adresse: die, unter der man die Seite öffnet.",
   "notifications.page_address_fixed": "Auf dem Server eingestellt (PUBLIC_URL): Jede Nachricht verweist darauf.",

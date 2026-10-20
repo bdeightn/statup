@@ -821,6 +821,8 @@
   "notifications.failure_mail_busy": "el servidor de correo pide esperar",
   "notifications.failure_mail_unreachable": "servidor de correo inaccesible",
   "notifications.failure_no_mail_server": "ningún servidor de correo configurado",
+  "notifications.failure_expired": "en espera más de dos días",
+  "notifications.failure_no_page_address": "enlace en los mensajes sin configurar",
   "notifications.page_address_label": "Enlace en los mensajes",
   "notifications.page_address_help": "Cada mensaje enlaza con esta dirección: aquella en la que se abre la página.",
   "notifications.page_address_fixed": "Configurada en el servidor (PUBLIC_URL): cada mensaje enlaza con ella.",

@@ -27,8 +27,7 @@ pub(super) struct SubscribersCard {
 }
 
 pub(super) async fn card(state: &AppState, i18n: &I18n) -> Result<SubscribersCard, AppError> {
-    let (members, visitors) = SubscriberRepository::counts(&state.pool).await?;
-    let total = usize::try_from(members + visitors).unwrap_or(0);
+    let total = usize::try_from(SubscriberRepository::count(&state.pool).await?).unwrap_or(0);
     let label = if total == 0 {
         i18n.t("notifications.subscribers_none").to_string()
     } else {

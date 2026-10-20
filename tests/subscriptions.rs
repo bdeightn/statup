@@ -327,7 +327,7 @@ async fn the_first_news_reaches_the_new_subscriber_with_a_way_out() {
     assert!(message.contains(EMAIL));
     let way_out = format!(
         "{PUBLIC_URL}/unsubscribe?token={}",
-        SubscriptionService::unsubscribe_token(&subscriber)
+        SubscriptionService::unsubscribe_token(subscriber.id, &subscriber.unsubscribe_secret)
     );
     assert!(message.contains(&format!("List-Unsubscribe: <{way_out}>")));
     assert!(!message.contains("List-Unsubscribe-Post"));
@@ -405,7 +405,7 @@ async fn opening_a_link_changes_nothing() {
     let subscriber = subscribe_visitor(&app, "ben@example.com").await;
     let leave = format!(
         "/unsubscribe?token={}",
-        SubscriptionService::unsubscribe_token(&subscriber)
+        SubscriptionService::unsubscribe_token(subscriber.id, &subscriber.unsubscribe_secret)
     );
     let (status, page, _) = browser.get(&leave).await;
     assert_eq!(status, StatusCode::OK);
@@ -422,7 +422,7 @@ async fn a_mail_client_unsubscribes_in_one_click_without_a_session() {
     let leave = |subscriber: &Subscriber| {
         format!(
             "/unsubscribe?token={}",
-            SubscriptionService::unsubscribe_token(subscriber)
+            SubscriptionService::unsubscribe_token(subscriber.id, &subscriber.unsubscribe_secret)
         )
     };
     let client = Browser::without_cookies(&app);
@@ -469,7 +469,7 @@ async fn a_members_only_page_keeps_visitors_out_but_lets_them_leave() {
 
     let leave = format!(
         "/unsubscribe?token={}",
-        SubscriptionService::unsubscribe_token(&ana)
+        SubscriptionService::unsubscribe_token(ana.id, &ana.unsubscribe_secret)
     );
     let (status, _, _) = Browser::without_cookies(&app).post_link(&leave).await;
     assert_eq!(status, StatusCode::OK);

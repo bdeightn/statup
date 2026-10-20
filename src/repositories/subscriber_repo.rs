@@ -167,14 +167,11 @@ impl SubscriberRepository {
         Ok(queued.rows_affected())
     }
 
-    /// How many members and how many visitors are subscribed.
-    pub async fn counts(pool: &DbPool) -> Result<(i64, i64), sqlx::Error> {
-        sqlx::query_as(
-            "SELECT COALESCE(SUM(user_id IS NOT NULL), 0), COALESCE(SUM(user_id IS NULL), 0) \
-             FROM subscribers",
-        )
-        .fetch_one(pool)
-        .await
+    /// How many members and visitors are subscribed.
+    pub async fn count(pool: &DbPool) -> Result<i64, sqlx::Error> {
+        sqlx::query_scalar("SELECT COUNT(*) FROM subscribers")
+            .fetch_one(pool)
+            .await
     }
 
     /// Every subscriber, members first, each group by address, with how
@@ -469,9 +466,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn subscribers_are_counted_by_kind() {
+    async fn members_and_visitors_are_counted_together() {
         let pool = test_pool().await;
-        assert_eq!(SubscriberRepository::counts(&pool).await.unwrap(), (0, 0));
+        assert_eq!(SubscriberRepository::count(&pool).await.unwrap(), 0);
         let ana = member(&pool, "ana@example.com").await;
         SubscriberRepository::save_member(&pool, ana, "fr", EVERYTHING, "s")
             .await
@@ -479,7 +476,7 @@ mod tests {
         confirmed(&pool, "ben@example.com", EVERYTHING, "s").await;
         confirmed(&pool, "cat@example.com", ONLY_INCIDENTS, "s").await;
 
-        assert_eq!(SubscriberRepository::counts(&pool).await.unwrap(), (1, 2));
+        assert_eq!(SubscriberRepository::count(&pool).await.unwrap(), 3);
     }
 
     #[tokio::test]
