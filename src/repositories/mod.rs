@@ -14,6 +14,8 @@ mod outage_repo;
 mod password_reset_repo;
 mod service_repo;
 mod settings_repo;
+mod subscriber_repo;
+mod subscription_request_repo;
 mod user_repo;
 
 pub use dashboard_layout_repo::*;
@@ -30,6 +32,8 @@ pub use outage_repo::*;
 pub use password_reset_repo::*;
 pub use service_repo::*;
 pub use settings_repo::*;
+pub use subscriber_repo::*;
+pub use subscription_request_repo::*;
 pub use user_repo::*;
 
 use crate::models::{Grants, Visibility};
