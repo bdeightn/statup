@@ -70,4 +70,4 @@ GitHub's alerts, one per need, kept short. The marker stays in English in every 
 
 ## Code
 
-Every block names its language: `bash`, `env`, `yaml`, `json`, `nginx`, `caddy`, `text`. The site shows the name and a Copy button. A block holds what the reader types or pastes, without a prompt, and is the same in every language; only a comment line may be translated.
+Every block names its language: `bash`, `env`, `yaml`, `json`, `nginx`, `caddy`, `nix`, `text`. The site shows the name and a Copy button. A block holds what the reader types or pastes, without a prompt, and is the same in every language; only a comment line may be translated.

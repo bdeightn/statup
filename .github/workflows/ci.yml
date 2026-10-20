@@ -147,3 +147,27 @@ jobs:
           tags: statup:ci
           cache-from: type=gha,scope=${{ matrix.runner }}
           cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope={0}', matrix.runner) || '' }}
+
+  # Builds the Nix package and boots the NixOS machine of flake.nix, which
+  # starts the service and runs the commands of the NixOS page. Only when what
+  # the flake builds from has changed; if the comparison fails, it runs.
+  nix:
+    name: Nix package and NixOS service
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: changes
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if git diff --quiet "$BASE" HEAD -- flake.nix Cargo.toml Cargo.lock static templates; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changes.outputs.skip != 'true'
+        uses: cachix/install-nix-action@v31
+      - if: steps.changes.outputs.skip != 'true'
+        run: nix flake check --print-build-logs
