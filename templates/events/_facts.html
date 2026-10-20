@@ -4,7 +4,7 @@
 <dl class="event-facts">
     {% if let Some(state) = view.state %}
     <div class="fact">
-        <dt>{{ i18n.t("events.fact_state") }}</dt>
+        <dt>{{ i18n.t("events.state") }}</dt>
         <dd class="fact-state" data-tone="{{ state.tone }}">
             <span class="dot" aria-hidden="true"></span><strong>{{ state.label }}</strong>
             {% if let Some(detail) = state.detail %}<span class="fact-note">{{ detail }}</span>{% endif %}

@@ -10,8 +10,9 @@ use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, RETRY_AFTER};
 
 use super::mail::{email, recipients};
+use super::reminder_mail::reminder_email;
 use super::reset_mail::reset_email;
-use super::{Facts, Notice, ResetEmail, post};
+use super::{Facts, Notice, ReminderEmail, ResetEmail, post};
 use crate::config::{SmtpConfig, SmtpSecurity};
 use crate::models::{Channel, ChannelKind};
 use crate::services::Finding;
@@ -183,6 +184,13 @@ impl Notifier {
     pub async fn send_password_reset(&self, mail: &ResetEmail<'_>) -> Result<(), Failure> {
         let mailer = self.mailer.as_ref().ok_or(Failure::NoMailServer)?;
         let message = reset_email(&mailer.from, mail).ok_or(Failure::MailRefused(None))?;
+        mailer.deliver(message).await
+    }
+
+    /// Tells the member who announced an incident update that it is overdue.
+    pub async fn send_update_reminder(&self, mail: &ReminderEmail<'_>) -> Result<(), Failure> {
+        let mailer = self.mailer.as_ref().ok_or(Failure::NoMailServer)?;
+        let message = reminder_email(&mailer.from, mail).ok_or(Failure::MailRefused(None))?;
         mailer.deliver(message).await
     }
 

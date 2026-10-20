@@ -1103,7 +1103,12 @@ async fn security_headers_are_sent() {
         Some("same-origin")
     );
     assert!(header("permissions-policy").is_some());
-    assert!(header("content-security-policy").is_some());
+    let csp = header("content-security-policy").unwrap_or_default();
+    assert!(
+        csp.contains("img-src 'self' blob:;"),
+        "a logo picked at first launch shows before upload: {csp}"
+    );
+    assert!(!csp.contains("unsafe"), "{csp}");
     assert!(header("x-xss-protection").is_none());
     assert!(
         header("strict-transport-security").is_none(),

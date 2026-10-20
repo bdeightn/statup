@@ -5,15 +5,21 @@
 //! health check skip them.
 
 mod admin;
+mod audience;
 mod auth;
 mod checks;
 mod dashboard;
 mod dashboard_layout;
 mod events;
 mod feed;
+mod folders;
+mod group_access;
+mod groups;
 mod health;
 mod icons;
+mod journal;
 mod locale;
+mod notices;
 mod notifications;
 mod page;
 mod password;
@@ -68,8 +74,9 @@ const UPLOAD_BODY_LIMIT: usize = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// No inline script, handler or style anywhere: behavior lives in
-/// `static/js`, presentation in the stylesheet.
-const APP_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'self'; frame-ancestors 'none'";
+/// `static/js`, presentation in the stylesheet. `blob:` images let a logo
+/// picked at first launch show before it is uploaded.
+const APP_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; font-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'self'; frame-ancestors 'none'";
 
 const PERMISSIONS_POLICY: &str = "camera=(), microphone=(), geolocation=(), interest-cohort=()";
 
@@ -178,6 +185,8 @@ fn publisher_routes() -> Router<AppState> {
             "/events/{id}/updates/{update_id}/delete",
             post(events::delete_update),
         )
+        .route("/events/{id}/review", post(events::publish_review))
+        .route("/events/{id}/review/delete", post(events::remove_review))
         .route("/events/templates/search", get(events::template_search))
         .route("/events/templates/{id}", get(events::template_detail))
         .route(
@@ -192,6 +201,29 @@ fn publisher_routes() -> Router<AppState> {
         .route(
             "/services/{id}/edit",
             get(services::edit_form).post(services::update),
+        )
+        .route("/services/folders/new", post(folders::create_folder))
+        .route("/services/folders/order", post(folders::save_order))
+        .route("/services/folders/{id}", get(folders::folder_page))
+        .route(
+            "/services/folders/{id}/rename",
+            post(folders::rename_folder),
+        )
+        .route(
+            "/services/folders/{id}/visibility",
+            post(folders::save_visibility),
+        )
+        .route(
+            "/services/folders/{id}/services",
+            post(folders::add_services),
+        )
+        .route(
+            "/services/folders/{id}/services/{service_id}/remove",
+            post(folders::remove_service),
+        )
+        .route(
+            "/services/folders/{id}/delete",
+            post(folders::delete_folder),
         )
         .route("/services/order", post(services::save_order))
         .route(
@@ -211,7 +243,7 @@ fn upload_routes() -> Router<AppState> {
     Router::new()
         .route("/icons/upload", post(icons::upload))
         .route("/icons/upload-picker", post(icons::upload_picker))
-        .route("/admin/settings/logo", post(admin::update_logo))
+        .route("/admin/settings/general", post(admin::save_settings))
         .route("/setup/page", get(setup::page_form).post(setup::save_page))
 }
 
@@ -223,16 +255,10 @@ fn admin_routes() -> Router<AppState> {
         )
         .route("/setup/done", get(setup::done))
         .route("/admin/settings", get(admin::settings_page))
-        .route(
-            "/admin/settings/public-mode",
-            post(admin::set_public_access),
-        )
-        .route(
-            "/admin/settings/instance-name",
-            post(admin::update_instance_name),
-        )
-        .route("/admin/settings/time-zone", post(admin::update_time_zone))
         .route("/admin/settings/logo/remove", post(admin::remove_logo))
+        .route("/admin/journal", get(journal::page))
+        .route("/admin/journal/export", get(journal::export))
+        .route("/admin/journal/settings", post(journal::save_settings))
         .route("/admin/users", get(admin::users_list))
         .route("/admin/users/new", post(admin::add_member))
         .route("/admin/users/{id}/role", post(admin::update_role))
@@ -240,6 +266,24 @@ fn admin_routes() -> Router<AppState> {
         .route(
             "/admin/users/{id}/reset-password",
             post(admin::reset_member_password),
+        )
+        .route("/admin/groups/new", post(groups::create_group))
+        .route("/admin/groups/{id}", get(groups::group_page))
+        .route("/admin/groups/{id}/rename", post(groups::rename_group))
+        .route("/admin/groups/{id}/members", post(groups::add_members))
+        .route(
+            "/admin/groups/{id}/members/{user_id}/remove",
+            post(groups::remove_member),
+        )
+        .route("/admin/groups/{id}/delete", post(groups::delete_group))
+        .route("/admin/groups/{id}/access", post(group_access::open))
+        .route(
+            "/admin/groups/{id}/folders/{folder_id}/remove",
+            post(group_access::close_folder),
+        )
+        .route(
+            "/admin/groups/{id}/services/{service_id}/remove",
+            post(group_access::close_service),
         )
         .route(
             "/admin/dashboard/layout/order",
@@ -289,6 +333,8 @@ fn account_routes() -> Router<AppState> {
             get(profile::edit_form).post(profile::update_profile),
         )
         .route("/profile/password", post(profile::update_password))
+        .route("/notices", get(notices::index))
+        .route("/notices/seen", post(notices::seen))
         .route("/password/new", get(password::form).post(password::update))
 }
 

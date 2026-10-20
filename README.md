@@ -11,7 +11,7 @@
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![Status: pre-v1](https://img.shields.io/badge/status-pre--v1-yellow.svg)](#status)
 
-[Live demo](https://demo.statup.dev) · [Website](https://statup.dev) · [Quick start](#quick-start) · [Self-hosting guide](.github/SELF-HOSTING.md)
+[Live demo](https://demo.statup.dev) · [Website](https://statup.dev) · [Quick start](#quick-start) · [Documentation](https://statup.dev/docs/)
 
 </div>
 
@@ -41,12 +41,13 @@ It is a status page you host yourself. Whoever runs a service posts, once, what 
 
 ## Features
 
-- **The answer first**: a banner says what is wrong, what is affected and since when, above every service and its last 30 days.
+- **The answer first**: a banner says what is wrong, what is affected and since when, above every service and its last 90 days.
 - **Runs on its own**: a service follows the incident that names it, and planned work starts and ends at the times announced.
-- **Notices first**: every minute, Statup checks that a site or a server answers, and shows an outage after three failed checks.
-- **Quick to publish**: dated updates and reusable templates; an outage spotted by the checks is declared in one click.
-- **Tells people where they are**: each incident, maintenance and announcement posted to Microsoft Teams, Slack, Google Chat, Discord or Mattermost, to phones through ntfy, by email, or to any tool through a webhook, in the language of each destination.
+- **Notices first**: every minute, Statup checks that a site or a server answers, and shows an outage after three minutes without an answer, or the delay set for that service.
+- **Quick to publish**: dated updates, reusable templates and a short report once an incident is resolved; an outage spotted by the checks is declared in one click.
+- **Tells people where they are**: each incident, maintenance and announcement posted to Microsoft Teams, Slack, Google Chat, Discord or Mattermost, to phones through ntfy, by email, or to any tool through a webhook, in the language of each channel.
 - **Easy to follow**: search and filters, a side panel to read without leaving the list, and an Atom feed for feed readers.
+- **A record of everything**: a Journal for administrators shows who changed what, sign-ins, outages with their reason and messages that did not leave, kept 90 days and exported as a CSV file.
 - **Your page, your way**: public or members only, your name and logo, blocks you arrange on the page; French, English, German and Spanish, light and dark, accessible.
 
 **Light, private, safe by default.**
@@ -58,7 +59,7 @@ It is a status page you host yourself. Whoever runs a service posts, once, what 
 ## How it works
 
 - **Services** are the tools people rely on: mail, the VPN, the ERP, the phones. Each shows one state: operational, degraded, outage or maintenance. Statup can also check on its own that a service answers.
-- **Events** are what gets published. An **incident** when something breaks, a **maintenance** when work is planned, an **announcement** for news. An incident or a maintenance sets the state of the services it names until it ends.
+- **Events** are what gets published. An **incident** when something breaks, a **maintenance** when work is planned, an **announcement** for news. An incident sets the state of the services it names until it reaches Monitoring, and a maintenance while it is under way, unless it announces no downtime.
 - **People** read the page, with or without an account. **Editors** publish events and set service states; **administrators** also run the settings, the team and the layout of the page.
 
 ## Quick start
@@ -84,27 +85,26 @@ At http://localhost:3000, or your server's address on port 3000, an empty instan
 Add them from the **Team** page: they open the same address. For HTTPS and a name of your own, such as `status.example.com`, put Statup behind a reverse proxy.
 
 > [!TIP]
-> The [self-hosting guide](.github/SELF-HOSTING.md) has the rest: every setting, a reverse proxy with nginx or Caddy, backups, upgrades and a forgotten password.
+> The [documentation](https://statup.dev/docs/) has the rest: every setting, a reverse proxy with nginx or Caddy, backups, upgrades and a forgotten password.
 
 ## Roadmap
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/assets/roadmap-dark.png">
-  <img src=".github/assets/roadmap.png" alt="Roadmap: shipped are automatic monitoring, notifications, four languages, the age of the last update and password reset; coming next, in order, the ten steps listed below, then the stable 1.0 release" width="1296">
+  <img src=".github/assets/roadmap.png" alt="Roadmap: shipped are automatic monitoring, notifications, four languages, password reset and clearer incident updates; step 1, the activity log, shipped in 0.6.0; step 2, groups and visibility, shipped in 0.7.0; coming next, in order, steps 3 to 9 listed below, then the stable 1.0 release" width="1296">
 </picture>
 
 Planned, in this order, without dates:
 
-1. **Clearer incident updates**: next update time with a reminder, and a short report once it is over.
-2. **Activity log**: every action, check and sign-in, for administrators to look back on.
-3. **Groups and visibility**: choose which services and events each group of colleagues sees.
-4. **Email subscriptions**: visitors get each update in their inbox.
-5. **API and monitoring tools**: Zabbix, Grafana or a script open and close incidents by themselves.
-6. **Recurring maintenance**: announce a slot once, and see every maintenance in your calendar.
-7. **Themes** and an accent colour.
-8. **Backup and restore**, one command each, without stopping Statup.
-9. **Status widget** for your intranet or wiki.
-10. **Hardening**: full testing, a security review and safe upgrades from every version, before 1.0.
+1. ~~**Activity log**: every action, check and sign-in, for administrators to look back on.~~ Shipped in 0.6.0.
+2. ~~**Groups and visibility**: choose which services and events each group of users sees.~~ Shipped in 0.7.0, with folders of services.
+3. **Email subscriptions**: visitors get each update in their inbox.
+4. **API and monitoring tools**: Zabbix, Grafana or a script open and close incidents by themselves.
+5. **Recurring maintenance**: announce a slot once, and see every maintenance in your calendar.
+6. **Themes** and an accent colour.
+7. **Backup and restore**, one command each, without stopping Statup.
+8. **Status widget** for your intranet or wiki.
+9. **Hardening**: full testing, a security review and safe upgrades from every version, before 1.0.
 
 Ideas and requests are welcome in the [issues](https://github.com/karl-cta/statup/issues).
 

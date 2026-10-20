@@ -1,9 +1,18 @@
 name: CI
 
+# Every commit already passes the same checks locally before it is made, so
+# a draft pull request runs nothing: the checks start once it is marked ready.
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
+
+# A newer push to the same pull request replaces the run still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -12,6 +21,7 @@ env:
 jobs:
   checks:
     name: Format, lint and test
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +35,7 @@ jobs:
 
   msrv:
     name: Minimum Rust version
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +47,7 @@ jobs:
 
   audit:
     name: Dependency advisories
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     # The action publishes its report as a check on the commit.
     permissions:
@@ -52,6 +64,7 @@ jobs:
 
   stylesheet:
     name: Stylesheet builds
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +77,7 @@ jobs:
 
   browser:
     name: Browser tests
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -93,16 +107,43 @@ jobs:
             tests/browser/test-results/
           retention-days: 14
 
+  # Built on each platform the release publishes, on a runner of its kind,
+  # with the same cache as the release: once this has run on main, the
+  # release build finds every layer ready.
   docker:
-    name: Docker image builds
-    runs-on: ubuntu-latest
+    name: Docker image builds (${{ matrix.platform }})
+    if: ${{ !github.event.pull_request.draft }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+        with:
+          fetch-depth: 0
+      # On main, only when what the image is made from has changed: the pull
+      # request built it already. If the comparison fails, it builds.
+      - id: changes
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if git diff --quiet "$BEFORE" HEAD -- Dockerfile .dockerignore docker-compose.yml Cargo.toml Cargo.lock; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changes.outputs.skip != 'true'
+        uses: docker/setup-buildx-action@v3
+      # Pull requests read the cache of main without writing their own.
+      - if: steps.changes.outputs.skip != 'true'
+        uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: ${{ matrix.platform }}
           push: false
           tags: statup:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.runner }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope={0}', matrix.runner) || '' }}

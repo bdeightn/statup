@@ -9,7 +9,7 @@ use super::{
 };
 use crate::clock;
 use crate::i18n::I18n;
-use crate::models::Service;
+use crate::models::{Scope, Service};
 
 /// Hue of an event's current state: the severity while an incident is being
 /// worked on, calm once the service is back, blue for maintenance work.
@@ -123,6 +123,37 @@ fn open_elapsed(
         .map(|start| split_duration(Utc::now() - start))
 }
 
+fn takes_next_update(kind: Kind, lifecycle: Option<Lifecycle>) -> bool {
+    kind == Kind::Incident && lifecycle.is_some_and(Lifecycle::is_active)
+}
+
+/// A resolved incident, the one event a review is written for: an incident
+/// called off was a false alarm, and maintenance announces what is new.
+fn takes_review(kind: Kind, lifecycle: Option<Lifecycle>) -> bool {
+    kind == Kind::Incident && lifecycle == Some(Lifecycle::Resolved)
+}
+
+/// When the next update is due, else how long it has been awaited, in the
+/// words of `keys` and with their other `args`.
+fn next_update_note(
+    due: Option<DateTime<Utc>>,
+    (ahead_key, overdue_key): (&str, &str),
+    args: &[(&str, &str)],
+    i18n: &I18n,
+) -> Option<String> {
+    let due = due?;
+    let now = Utc::now();
+    let (key, name, value) = if due > now {
+        (ahead_key, "when", i18n.format_due(&due))
+    } else {
+        let parts = split_duration(now - due);
+        (overdue_key, "duration", i18n.format_duration(&parts))
+    };
+    let mut all = args.to_vec();
+    all.push((name, &value));
+    Some(i18n.tf(key, &all))
+}
+
 /// Days, hours and minutes of a span, as `I18n::format_duration` reads them.
 pub fn split_duration(diff: chrono::TimeDelta) -> (i64, i64, i64) {
     (
@@ -154,6 +185,10 @@ pub struct Event {
     pub follows_event_id: Option<i64>,
     /// Maintenance its services stay up through.
     pub keeps_services_up: bool,
+    /// When the team said its next update is due.
+    pub next_update_at: Option<DateTime<Utc>>,
+    /// The delay that time was given as, offered again with the next update.
+    pub update_every_minutes: Option<i64>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -228,6 +263,36 @@ impl Event {
         qualifier_key(self.kind, self.severity, self.category).map(|key| i18n.t(key).to_string())
     }
 
+    /// An open incident, which may say when its next update is due.
+    pub fn takes_next_update(&self) -> bool {
+        takes_next_update(self.kind, self.lifecycle)
+    }
+
+    /// A resolved incident, which may carry its review.
+    pub fn takes_review(&self) -> bool {
+        takes_review(self.kind, self.lifecycle)
+    }
+
+    /// When the next update is due, or how long it is overdue, said after
+    /// the age of the last one when there is one.
+    pub fn next_update_text(&self, last_ago: Option<&str>, i18n: &I18n) -> Option<String> {
+        let due = self.next_update_at.filter(|_| self.takes_next_update());
+        match last_ago {
+            Some(ago) => next_update_note(
+                due,
+                ("events.last_news_next", "events.last_news_overdue"),
+                &[("ago", ago)],
+                i18n,
+            ),
+            None => next_update_note(
+                due,
+                ("events.next_update", "events.update_overdue"),
+                &[],
+                i18n,
+            ),
+        }
+    }
+
     pub fn previous_lifecycle_key(&self) -> Option<&'static str> {
         self.previous_lifecycle.map(|l| l.label_key(self.kind))
     }
@@ -256,9 +321,12 @@ pub struct EventSummary {
     pub started_at: Option<DateTime<Utc>>,
     pub ended_at: Option<DateTime<Utc>>,
     pub keeps_services_up: bool,
+    pub next_update_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub author_id: i64,
+    /// A review was published for it.
+    pub has_review: bool,
     /// Linked service names, joined with [`NAME_SEPARATOR`].
     #[sqlx(default)]
     pub service_names: String,
@@ -266,10 +334,16 @@ pub struct EventSummary {
     /// split by [`ICON_SEPARATOR`].
     #[sqlx(default)]
     pub service_icons: String,
+    /// Their ids, joined with commas, in the same order as the names.
+    #[sqlx(default)]
+    pub service_ids: String,
     /// Latest of the event's own update time and its last posted update.
     /// Only filled by the feed query.
     #[sqlx(default)]
     pub last_activity_at: Option<DateTime<Utc>>,
+    /// Its review as written. Only filled by the feed query.
+    #[sqlx(default)]
+    pub review_body: Option<String>,
     /// Latest posted update, sanitized HTML. Only filled by the banner query.
     #[sqlx(default)]
     pub latest_update: Option<String>,
@@ -278,6 +352,39 @@ pub struct EventSummary {
 }
 
 impl EventSummary {
+    /// Drops the services the viewer may not see from the names, icons and
+    /// ids, keeping the three lists aligned. Matches by id: names are not
+    /// unique.
+    pub fn restrict_to(&mut self, scope: &Scope) {
+        if matches!(scope, Scope::All) || self.service_ids.is_empty() {
+            return;
+        }
+        let ids: Vec<&str> = self.service_ids.split(',').collect();
+        let names: Vec<&str> = self.service_names.split(NAME_SEPARATOR).collect();
+        let icons: Vec<&str> = self.service_icons.split(NAME_SEPARATOR).collect();
+        let kept: Vec<usize> = (0..ids.len())
+            .filter(|&i| ids[i].parse().is_ok_and(|id| scope.sees_service(id)))
+            .collect();
+        let pick = |parts: &[&str], separator: &str| {
+            kept.iter()
+                .filter_map(|&i| parts.get(i).copied())
+                .collect::<Vec<_>>()
+                .join(separator)
+        };
+        let name_separator = NAME_SEPARATOR.to_string();
+        self.service_names = pick(&names, &name_separator);
+        self.service_icons = pick(&icons, &name_separator);
+        self.service_ids = pick(&ids, ",");
+    }
+
+    /// Whether the event names this service. By id: two services may share
+    /// a name.
+    pub fn names_service(&self, id: i64) -> bool {
+        self.service_ids
+            .split(',')
+            .any(|part| part.parse::<i64>().is_ok_and(|named| named == id))
+    }
+
     pub fn services(&self) -> Vec<&str> {
         self.service_names
             .split(NAME_SEPARATOR)
@@ -330,6 +437,20 @@ impl EventSummary {
         self.lifecycle.is_some_and(Lifecycle::is_active)
     }
 
+    /// "mise à jour prévue à 14:30" for the status banner, or how long it
+    /// is overdue.
+    pub fn next_update_text(&self, i18n: &I18n) -> Option<String> {
+        let due = self
+            .next_update_at
+            .filter(|_| takes_next_update(self.kind, self.lifecycle));
+        next_update_note(
+            due,
+            ("banner.next_update", "banner.update_overdue"),
+            &[],
+            i18n,
+        )
+    }
+
     /// Still worth the reader's eye: work open or to come, and every
     /// announcement, which never closes.
     pub fn is_current(&self) -> bool {
@@ -344,9 +465,22 @@ impl EventSummary {
         self.lifecycle.map(|l| l.label_key(self.kind))
     }
 
-    /// The word at the end of a row: the progress. An announcement has none.
+    /// A resolved incident whose review was published: rows and the feed name it.
+    pub fn shows_review(&self) -> bool {
+        self.has_review && takes_review(self.kind, self.lifecycle)
+    }
+
+    /// The word at the end of a row: the progress, followed by the review
+    /// when a resolved incident has one. An announcement has none.
     pub fn row_state(&self, i18n: &I18n) -> Option<String> {
-        self.lifecycle_key().map(|key| i18n.t(key).to_string())
+        let state = i18n.t(self.lifecycle_key()?);
+        if self.shows_review() {
+            return Some(format!(
+                "{state}{SEPARATOR}{}",
+                i18n.t("events.review_flag")
+            ));
+        }
+        Some(state.to_string())
     }
 
     pub fn kind_label(&self, i18n: &I18n) -> String {
@@ -437,27 +571,31 @@ pub struct Countdown {
     pub minutes: i64,
 }
 
-/// Events of one day, in the instance time zone.
-pub struct DayGroup {
+/// The items of one day, in the instance time zone.
+pub struct DayGroup<T> {
     pub label: String,
-    pub events: Vec<EventSummary>,
+    pub items: Vec<T>,
 }
 
-/// Groups events by day, keeping their order. Expects newest first.
-pub fn group_by_day(events: Vec<EventSummary>, i18n: &I18n) -> Vec<DayGroup> {
-    let mut groups: Vec<DayGroup> = Vec::new();
+/// Groups items by day of `at`, keeping their order. Expects newest first.
+pub fn group_by_day<T>(
+    items: Vec<T>,
+    i18n: &I18n,
+    at: impl Fn(&T) -> &DateTime<Utc>,
+) -> Vec<DayGroup<T>> {
+    let mut groups: Vec<DayGroup<T>> = Vec::new();
     let mut current = None;
-    for event in events {
-        let date = clock::local_date(&event.created_at);
+    for item in items {
+        let date = clock::local_date(at(&item));
         if current != Some(date) {
             groups.push(DayGroup {
                 label: i18n.date_label(&date),
-                events: Vec::new(),
+                items: Vec::new(),
             });
             current = Some(date);
         }
         if let Some(last) = groups.last_mut() {
-            last.events.push(event);
+            last.items.push(item);
         }
     }
     groups

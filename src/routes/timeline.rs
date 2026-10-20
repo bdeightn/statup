@@ -242,6 +242,8 @@ mod tests {
             follows_event_id: None,
             created_at: now - Duration::hours(3),
             updated_at: now,
+            next_update_at: None,
+            update_every_minutes: None,
         }
     }
 

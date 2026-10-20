@@ -166,6 +166,34 @@
     // For the page scripts, loaded after this one.
     window.statup = { announce, csrfToken };
 
+    // Opening the bell, or its page, marks the notices seen: the count goes
+    // from both copies of the bell, the list keeps showing what was new.
+    function markNoticesSeen() {
+        const counts = document.querySelectorAll("[data-bell-count]");
+        if (counts.length === 0) return;
+        fetch("/notices/seen", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "X-CSRF-Token": csrfToken() },
+        })
+            .then((response) => {
+                if (!response.ok) return;
+                counts.forEach((count) => count.remove());
+                document.querySelectorAll("[data-bell]").forEach((bell) => {
+                    const label = bell.querySelector("[data-bell-label]");
+                    if (label) label.textContent = bell.dataset.seenLabel;
+                });
+            })
+            .catch(() => {});
+    }
+
+    document.querySelectorAll("details[data-bell]").forEach((bell) => {
+        bell.addEventListener("toggle", () => {
+            if (bell.open) markNoticesSeen();
+        });
+    });
+    if (document.querySelector("[data-notices-seen]")) markNoticesSeen();
+
     // Theme.
     function syncThemeButtons() {
         const dark = root.classList.contains("dark");
@@ -467,10 +495,11 @@
         return false;
     }
 
-    // The folded actions of an event close on any click outside them.
+    // The folded actions of an event close on any click outside them; a
+    // menu opened inside another keeps the one around it open.
     function closeMoreActions(except) {
         document.querySelectorAll("details[data-more-actions][open]").forEach((menu) => {
-            if (menu !== except) menu.open = false;
+            if (menu !== except && !menu.contains(except)) menu.open = false;
         });
     }
 
@@ -512,12 +541,15 @@
         count.hidden = set === 0;
     }
 
-    // The composer opens by its anchor; the cursor goes straight to it.
+    // A form folded under its anchor, the composer or the review, opens by
+    // it; the cursor goes straight to its text.
     function onComposerOpen(target) {
-        if (!target.closest("[data-composer-open]")) return false;
+        const link = target.closest("[data-composer-open]");
+        if (!link) return false;
         window.setTimeout(() => {
-            const message = document.getElementById("message");
-            if (message) message.focus();
+            const form = document.querySelector(link.getAttribute("href"));
+            const text = form && form.querySelector("textarea");
+            if (text) text.focus();
         }, 0);
         return true;
     }
@@ -596,7 +628,8 @@
                 if (button) button.focus();
                 return;
             }
-            const more = document.querySelector("details[data-more-actions][open]");
+            // The innermost open menu closes first, then the one around it.
+            const more = [...document.querySelectorAll("details[data-more-actions][open]")].pop();
             if (more && !(event.target instanceof Element && event.target.closest(".confirm"))) {
                 more.open = false;
                 more.querySelector("summary").focus();
@@ -607,8 +640,6 @@
         }
         if (event.key === "Tab" && drawerIsOpen()) trapDrawerFocus(event);
 
-        const form = event.target instanceof Element ? event.target.closest("form[data-autosubmit]") : null;
-        if (form) delete form.dataset.pointer;
     });
 
     // Safari scrolls the page to its top when a menu of the sticky masthead
@@ -621,26 +652,11 @@
         summary.focus({ preventScroll: true });
     });
 
-    // A choice that applies itself under the pointer; from the keyboard the
-    // arrows only move the choice and a button applies it.
-    document.addEventListener("pointerdown", (event) => {
-        const form = event.target instanceof Element ? event.target.closest("form[data-autosubmit]") : null;
-        if (form) form.dataset.pointer = "1";
-    });
-
     document.addEventListener("change", (event) => {
         const target = event.target;
         if (!(target instanceof Element)) return;
-        const auto = target.closest("form[data-autosubmit]");
-        if (auto) {
-            const apply = auto.querySelector("[data-apply]");
-            if (auto.dataset.pointer === "1") {
-                auto.requestSubmit();
-            } else if (apply) {
-                apply.hidden = false;
-            }
-            return;
-        }
+        const picked = target.matches("input[type=file]") && target.closest("label")?.querySelector("[data-file-name]");
+        if (picked && target.files[0]) picked.textContent = target.files[0].name;
         const upload = target.closest("form[data-submit-on-change]");
         if (upload && target.matches('input[type="file"]') && target.files.length > 0) {
             upload.requestSubmit();
@@ -648,6 +664,36 @@
         }
         const filters = target.closest("form.filters");
         if (filters) countFilters(filters);
+    });
+
+    // A form whose changes wait for its button: leaving before it is sent
+    // asks first, in the browser's own words.
+    function markUnsaved(event) {
+        const form = event.target instanceof Element ? event.target.closest("form[data-warn-unsaved]") : null;
+        if (form) form.dataset.unsaved = "1";
+    }
+
+    document.addEventListener("input", markUnsaved);
+    document.addEventListener("change", markUnsaved);
+    document.addEventListener("submit", (event) => {
+        if (event.target instanceof HTMLFormElement) delete event.target.dataset.unsaved;
+    });
+    // A menu closed without saving forgets what was changed in its forms.
+    document.addEventListener(
+        "toggle",
+        (event) => {
+            const menu = event.target;
+            if (!(menu instanceof HTMLDetailsElement) || menu.open) return;
+            if (!menu.hasAttribute("data-more-actions")) return;
+            menu.querySelectorAll("form[data-warn-unsaved]").forEach((form) => {
+                form.reset();
+                delete form.dataset.unsaved;
+            });
+        },
+        true,
+    );
+    window.addEventListener("beforeunload", (event) => {
+        if (document.querySelector("form[data-warn-unsaved][data-unsaved]")) event.preventDefault();
     });
 
     document.addEventListener("focusin", (event) => {
@@ -777,9 +823,6 @@
         startLiveRefresh();
         hideBrokenImages(document);
         document.fonts.ready.then(() => fitFieldsToText(document));
-        document.querySelectorAll("form[data-autosubmit] [data-apply]").forEach((button) => {
-            button.hidden = true;
-        });
         const saved = document.querySelector("[data-scroll-into-view]");
         if (saved) saved.scrollIntoView({ block: "center" });
         lightPublished();

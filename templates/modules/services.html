@@ -4,24 +4,30 @@
         <h2 id="services-title" class="card-title">
             {{ i18n.t("dashboard.services") }}
         </h2>
-        {% if can_publish && !rows.is_empty() %}
+        {% if can_publish && !sections.is_empty() %}
         <a href="/services" class="card-action">{{ i18n.t("dashboard.manage_services") }}</a>
         {% endif %}
     </header>
 
-    {% if rows.is_empty() %}
+    {% if sections.is_empty() %}
     <div class="empty-state">
         <p class="empty-state-text">{{ i18n.t("dashboard.no_services") }}</p>
     </div>
     {% else %}
+    {# One list per folder under its name, as the activity card lists its
+       days; the services without a folder come first, without a title. #}
+    {% for section in sections %}
+    {% if let Some(title) = section.title %}
+    <h3 class="log-day svc-folder">{{ title }}</h3>
+    {% endif %}
     <ul class="log-list">
-        {% for row in rows %}
+        {% for row in section.rows %}
         <li class="svc" id="{{ row.service.anchor() }}">
             <a class="svc-link" href="/events?service_id={{ row.service.id }}" data-drawer="/services/{{ row.service.id }}/drawer">
                 <div class="svc-top">
                     <div class="svc-ident">
                         <span class="svc-icon">{% call ui::service_icon(row.service) %}{% endcall %}</span>
-                        <h3 class="svc-name">{{ row.service.name }}</h3>
+                        {% if section.title.is_some() %}<h4 class="svc-name">{{ row.service.name }}</h4>{% else %}<h3 class="svc-name">{{ row.service.name }}</h3>{% endif %}
                     </div>
                     <p class="svc-state" data-tone="{{ row.service.status.tone().as_str() }}">
                         <span class="ring-dot" aria-hidden="true"></span>
@@ -41,5 +47,6 @@
         </li>
         {% endfor %}
     </ul>
+    {% endfor %}
     {% endif %}
 </section>

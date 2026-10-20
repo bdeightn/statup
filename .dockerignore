@@ -14,6 +14,7 @@ tests/browser/
 .idea/
 .impeccable/
 docs/
+documentation/
 CLAUDE.md
 PRODUCT.md
 DESIGN.md

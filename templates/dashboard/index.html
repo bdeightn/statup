@@ -15,29 +15,30 @@
 {% endblock %}
 
 {% block content %}
-<div class="page"{% if live.arrangeable %} data-arrange{% if arranging %} data-arrange-start{% endif %} data-saved="{{ i18n.t("dashboard.layout_saved") }}" data-moved="{{ i18n.t("dashboard.block_moved") }}"{% endif %}>
-    {% if frame.can_publish && has_services %}
+<div class="page"{% if live.arrangeable %} data-arrange{% if arranging %} data-arrange-start{% endif %} data-saved="{{ i18n.t("dashboard.layout_saved") }}" data-moved="{{ i18n.t("dashboard.block_moved") }}" data-opened="{{ i18n.t("dashboard.arrange_opened") }}"{% endif %}>
+    {% if (frame.can_publish && has_services) || live.arrangeable %}
+    {# Arranging opens and closes from the same place: the title says the
+       mode, Done takes the place of the buttons that left. #}
     <header class="page-head">
-        <h1 class="page-title">{{ i18n.t("dashboard.heading") }}</h1>
+        <h1 class="page-title"{% if live.arrangeable %} data-arrange-title data-label-arranging="{{ i18n.t("dashboard.arrange") }}"{% endif %}>{{ i18n.t("dashboard.heading") }}</h1>
         <div class="page-actions">
-            <a href="/events/new" class="btn btn-primary">{% call ui::plus() %}{% endcall %}{{ i18n.t("events.new") }}</a>
+            {% if live.arrangeable %}
+            <button type="button" class="btn btn-ghost arrange-open" data-arrange-toggle data-arrange-off>{{ i18n.t("dashboard.arrange_open") }}</button>
+            {% endif %}
+            {% if has_services %}
+            <a href="/events/new" class="btn btn-primary" data-arrange-off>{% call ui::plus() %}{% endcall %}{{ i18n.t("events.new") }}</a>
+            {% endif %}
+            {% if live.arrangeable %}
+            <button type="button" class="btn btn-primary" data-arrange-done data-arrange-only hidden>{{ i18n.t("dashboard.arrange_done") }}</button>
+            {% endif %}
         </div>
     </header>
     {% else %}
     <h1 class="sr-only">{{ i18n.t("dashboard.heading") }}</h1>
     {% endif %}
 
-    {% if frame.can_publish %}
-    {# Arranging is reached from the settings; its bar only shows meanwhile. #}
     {% if live.arrangeable %}
-    <div class="dash-tools" data-arrange-only hidden>
-        <div class="arrange-bar">
-            <button type="button" class="text-action" data-arrange-toggle aria-pressed="false"
-                    data-label-open="{{ i18n.t("dashboard.arrange") }}" data-label-close="{{ i18n.t("dashboard.arrange_done") }}">{{ i18n.t("dashboard.arrange") }}</button>
-        </div>
-    </div>
     <p id="arrange-hint" class="sr-only">{{ i18n.t("dashboard.move_hint") }}</p>
-    {% endif %}
     {% endif %}
 
     {# Refreshed every minute while the tab is visible. #}

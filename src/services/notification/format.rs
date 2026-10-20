@@ -29,7 +29,12 @@ pub struct Facts {
     pub occurred_at: String,
     pub instance: String,
     pub event: Option<EventFacts>,
+    /// The service, when the message is about one alone.
     pub service: Option<ServiceFacts>,
+    /// Every service of the message, one or a wave that fell together;
+    /// left out of an event's payload, which stays as it was.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub services: Vec<ServiceFacts>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -64,21 +69,28 @@ impl Facts {
         origin: &Origin,
         at: DateTime<Utc>,
     ) -> Self {
-        let (event, service) = match subject {
+        let (event, services) = match subject {
             Subject::Event {
                 event, services, ..
             } => (
                 Some(EventFacts::of(event, services, lifecycle, origin)),
-                None,
+                Vec::new(),
             ),
-            Subject::Service { name, down_since } => {
-                let service = ServiceFacts {
-                    name: name.clone(),
-                    down_since: down_since.map(rfc3339),
-                };
-                (None, Some(service))
+            Subject::Service(states) => {
+                let services = states
+                    .iter()
+                    .map(|state| ServiceFacts {
+                        name: state.name.clone(),
+                        down_since: state.down_since.map(rfc3339),
+                    })
+                    .collect();
+                (None, services)
             }
-            Subject::Test => (None, None),
+            Subject::Test => (None, Vec::new()),
+        };
+        let service = match services.as_slice() {
+            [one] => Some(one.clone()),
+            _ => None,
         };
         Self {
             version: 1,
@@ -87,6 +99,7 @@ impl Facts {
             instance: origin.instance.clone(),
             event,
             service,
+            services,
         }
     }
 }
@@ -373,7 +386,7 @@ mod tests {
 
     use super::*;
     use crate::models::{Event, Kind};
-    use crate::services::notification::Link;
+    use crate::services::notification::{Link, ServiceState};
 
     fn fixture() -> Notice {
         Notice {
@@ -432,14 +445,16 @@ mod tests {
             keeps_services_up: false,
             created_at: at(),
             updated_at: at(),
+            next_update_at: None,
+            update_every_minutes: None,
         }
     }
 
     fn event_subject() -> Subject {
         Subject::Event {
-            event: event(),
+            event: Box::new(event()),
             services: vec!["Réseau".to_string(), "VPN".to_string()],
-            update: None,
+            message: None,
         }
     }
 
@@ -678,6 +693,43 @@ mod tests {
     }
 
     #[test]
+    fn a_review_reaches_a_webhook_with_its_happening_and_its_text() {
+        let mut resolved = event();
+        resolved.lifecycle = Some(Lifecycle::Resolved);
+        let subject = Subject::Event {
+            event: Box::new(resolved),
+            services: vec!["Réseau".to_string()],
+            message: Some("<p>Un câble a été coupé.</p>".to_string()),
+        };
+        let reviewed = Some(Lifecycle::Resolved);
+        let i18n = crate::i18n::I18n::new("fr");
+        let notice = Notice::write(
+            Happening::Reviewed,
+            reviewed,
+            &subject,
+            &origin(),
+            &i18n,
+            at(),
+        );
+        let facts = Facts::of(Happening::Reviewed, reviewed, &subject, &origin(), at());
+
+        let body = post(
+            ChannelKind::Webhook,
+            "https://hooks.example/any",
+            &notice,
+            &facts,
+        )
+        .map(|posted| posted.body);
+
+        let body = body.unwrap_or_default();
+        assert_eq!(body["happening"], "reviewed");
+        assert_eq!(body["event"]["state"], "resolved");
+        assert_eq!(body["message"]["mark"], "restored");
+        assert_eq!(body["message"]["summary"], "Bilan publié\u{a0}· Réseau");
+        assert_eq!(body["message"]["text"], "Un câble a été coupé.");
+    }
+
+    #[test]
     fn email_is_sent_another_way() {
         assert_eq!(
             post_for(ChannelKind::Email, "a@example.com", &fixture()),
@@ -743,21 +795,35 @@ mod tests {
 
     #[test]
     fn facts_of_a_service_tell_since_when_it_is_down() {
-        let subject = Subject::Service {
+        let subject = Subject::Service(vec![ServiceState {
             name: "Messagerie".to_string(),
             down_since: Some(at()),
-        };
+        }]);
 
         let facts = Facts::of(Happening::ServiceDown, None, &subject, &origin(), at());
 
         assert_eq!(facts.event, None);
-        assert_eq!(
-            facts.service,
-            Some(ServiceFacts {
-                name: "Messagerie".to_string(),
-                down_since: Some("2026-10-07T09:00:00Z".to_string()),
-            })
-        );
+        let mail = ServiceFacts {
+            name: "Messagerie".to_string(),
+            down_since: Some("2026-10-07T09:00:00Z".to_string()),
+        };
+        assert_eq!(facts.service, Some(mail.clone()));
+        assert_eq!(facts.services, [mail]);
+    }
+
+    #[test]
+    fn facts_of_a_wave_list_its_services_and_name_none_alone() {
+        let state = |name: &str| ServiceState {
+            name: name.to_string(),
+            down_since: Some(at()),
+        };
+        let subject = Subject::Service(vec![state("Messagerie"), state("VPN")]);
+
+        let facts = Facts::of(Happening::ServiceDown, None, &subject, &origin(), at());
+
+        assert_eq!(facts.service, None);
+        let names: Vec<&str> = facts.services.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["Messagerie", "VPN"]);
     }
 
     #[test]

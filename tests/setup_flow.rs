@@ -266,6 +266,10 @@ async fn a_refused_address_names_its_service_and_creates_nothing() {
     assert!(body.contains(r#"value="NAS""#), "the typed name stays");
     assert!(body.contains(r#"value="nas.local""#), "its host stays");
     assert!(
+        !body.contains("check_outage_after"),
+        "the first launch keeps the default delay, even after a refusal"
+    );
+    assert!(
         ServiceRepository::list_all(&app.pool)
             .await
             .expect("db error")

@@ -7,20 +7,25 @@ use chrono::{DateTime, Utc};
 use tokio::task::{AbortHandle, JoinSet};
 use tokio::time::{MissedTickBehavior, interval};
 
-use super::{Facts, Failure, Notice, Notifier, Origin, Sender, Subject};
+use super::{
+    Facts, Failure, Notice, Notifier, Origin, Sender, ServiceState, Subject, remind_overdue,
+};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::I18n;
-use crate::models::{Channel, Delivery};
+use crate::journal;
+use crate::models::{Channel, ChannelKind, Delivery, Happening, JournalKind, Scope};
 use crate::repositories::{
-    EventRepository, NotificationRepository, OutageRepository, ServiceRepository,
-    SettingsRepository,
+    EventRepository, EventReviewRepository, MemberNoticeRepository, NewJournalEntry,
+    NotificationRepository, OutageRepository, ServiceRepository, SettingsRepository,
 };
+use crate::services::{sanitize_markdown, tell_delivery_failed};
 
 pub(crate) const PAGE_ADDRESS_SETTING: &str = "page_address";
 
 const DELIVERY_INTERVAL: Duration = Duration::from_secs(5);
 const PURGE_INTERVAL: Duration = Duration::from_secs(3600);
+const REMINDER_INTERVAL: Duration = Duration::from_secs(60);
 const KEEP_HISTORY: chrono::Duration = chrono::Duration::days(30);
 /// The wait before each new attempt, after a failure that waiting may fix.
 const RETRY_DELAYS: [Duration; 4] = [
@@ -50,6 +55,8 @@ pub async fn page_address(
 /// A message ready to leave, with everything it is written from.
 struct Outgoing {
     delivery: Delivery,
+    /// The message and the ones of its wave, sent as one.
+    ids: Vec<i64>,
     channel: Channel,
     notice: Notice,
     facts: Facts,
@@ -68,6 +75,7 @@ pub async fn deliver_due<S: Sender + Send + Sync + 'static>(
         instance: crate::brand_name(),
         page: page_address(pool, public_url).await?,
     };
+    let detailed = journal::captures_details(pool).await;
     let mut sent = 0;
     let mut previous = Vec::new();
     loop {
@@ -78,7 +86,7 @@ pub async fn deliver_due<S: Sender + Send + Sync + 'static>(
             return Ok(sent);
         }
         previous = ids;
-        sent += deliver_batch(pool, sender, &origin, heads, now).await?;
+        sent += deliver_batch(pool, sender, &origin, heads, now, detailed).await?;
     }
 }
 
@@ -90,9 +98,10 @@ async fn deliver_batch<S: Sender + Send + Sync + 'static>(
     origin: &Origin,
     heads: Vec<Delivery>,
     now: DateTime<Utc>,
+    detailed: bool,
 ) -> Result<usize, AppError> {
     let mut sends = JoinSet::new();
-    for message in prepare(pool, origin, heads, now).await? {
+    for message in prepare(pool, origin, heads, now, detailed).await? {
         let sender = Arc::clone(sender);
         sends.spawn(async move {
             let result = sender
@@ -105,7 +114,16 @@ async fn deliver_batch<S: Sender + Send + Sync + 'static>(
     while let Some(done) = sends.join_next().await {
         match done {
             Ok((message, result)) => {
-                settle(pool, &message.delivery, &message.channel, result, now).await?;
+                settle(
+                    pool,
+                    &message.delivery,
+                    &message.ids,
+                    &message.channel,
+                    result,
+                    now,
+                    detailed,
+                )
+                .await?;
                 sent += usize::from(result.is_ok());
             }
             Err(e) => tracing::warn!(error = %e, "A notification send stopped before its result"),
@@ -121,6 +139,7 @@ async fn prepare(
     origin: &Origin,
     heads: Vec<Delivery>,
     now: DateTime<Utc>,
+    detailed: bool,
 ) -> Result<Vec<Outgoing>, AppError> {
     let mut outgoing = Vec::with_capacity(heads.len());
     for delivery in heads {
@@ -128,8 +147,22 @@ async fn prepare(
         else {
             continue;
         };
-        let Some(subject) = load_subject(pool, &delivery).await? else {
-            settle(pool, &delivery, &channel, Err(Failure::Gone), now).await?;
+        let wave = NotificationRepository::wave_of(pool, &delivery).await?;
+        let ids: Vec<i64> = std::iter::once(&delivery)
+            .chain(&wave)
+            .map(|d| d.id)
+            .collect();
+        let Some(subject) = load_subject(pool, &delivery, &wave).await? else {
+            settle(
+                pool,
+                &delivery,
+                &ids,
+                &channel,
+                Err(Failure::Gone),
+                now,
+                detailed,
+            )
+            .await?;
             continue;
         };
         let i18n = I18n::new(&channel.locale);
@@ -145,6 +178,7 @@ async fn prepare(
         let facts = Facts::of(delivery.happening, delivery.lifecycle, &subject, origin, at);
         outgoing.push(Outgoing {
             delivery,
+            ids,
             channel,
             notice,
             facts,
@@ -154,60 +188,94 @@ async fn prepare(
 }
 
 /// What the message is about as it stands now, or `None` when it is gone.
-async fn load_subject(pool: &DbPool, delivery: &Delivery) -> Result<Option<Subject>, AppError> {
+async fn load_subject(
+    pool: &DbPool,
+    delivery: &Delivery,
+    wave: &[Delivery],
+) -> Result<Option<Subject>, AppError> {
     if let Some(event_id) = delivery.event_id {
-        return load_event(pool, event_id, delivery.update_id).await;
+        return load_event(pool, event_id, delivery).await;
     }
-    let Some(service_id) = delivery.service_id else {
+    if delivery.service_id.is_none() {
         return Ok(Some(Subject::Test));
-    };
-    let Some(service) = ServiceRepository::find_by_id(pool, service_id).await? else {
-        return Ok(None);
-    };
-    Ok(Some(Subject::Service {
-        name: service.name,
-        down_since: OutageRepository::latest_start(pool, service_id).await?,
-    }))
+    }
+    let ids = std::iter::once(delivery)
+        .chain(wave)
+        .filter_map(|d| d.service_id);
+    let mut states = Vec::new();
+    // A service deleted since is left out of its wave.
+    for service_id in ids {
+        if let Some(service) = ServiceRepository::find_by_id(pool, service_id).await? {
+            let down_since = OutageRepository::latest_start(pool, service_id).await?;
+            states.push(ServiceState {
+                name: service.name,
+                down_since,
+            });
+        }
+    }
+    Ok((!states.is_empty()).then_some(Subject::Service(states)))
 }
 
+/// The event as it stands, with the text that goes with the message: the
+/// update posted, or the review published. A review removed before its
+/// message left, or an incident opened again since, sends nothing.
 async fn load_event(
     pool: &DbPool,
     event_id: i64,
-    update_id: Option<i64>,
+    delivery: &Delivery,
 ) -> Result<Option<Subject>, AppError> {
-    let Some(found) = EventRepository::find_with_services(pool, event_id).await? else {
+    let Some(found) = EventRepository::find_with_services(pool, event_id, &Scope::All).await?
+    else {
         return Ok(None);
     };
-    let update = match update_id {
-        Some(update_id) => EventRepository::find_update(pool, event_id, update_id)
+    let message = match (delivery.happening, delivery.update_id) {
+        (Happening::Reviewed, _) => match EventReviewRepository::find(pool, event_id).await? {
+            Some(review) if found.event.takes_review() => Some(sanitize_markdown(&review.body)),
+            _ => return Ok(None),
+        },
+        (_, Some(update_id)) => EventRepository::find_update(pool, event_id, update_id)
             .await?
             .map(|update| update.message),
-        None => None,
+        (_, None) => None,
     };
     Ok(Some(Subject::Event {
-        event: found.event,
+        event: Box::new(found.event),
         services: found.services.into_iter().map(|s| s.name).collect(),
-        update,
+        message,
     }))
 }
 
-/// Records how sending went, and logs it without the address.
+/// Records how sending went for the message and its wave, `ids`, and keeps
+/// it in the journal without the address.
 async fn settle(
     pool: &DbPool,
     delivery: &Delivery,
+    ids: &[i64],
     channel: &Channel,
     result: Result<(), Failure>,
     now: DateTime<Utc>,
+    detailed: bool,
 ) -> Result<(), AppError> {
     let Err(failure) = result else {
-        NotificationRepository::mark_sent(pool, delivery.id, now).await?;
-        tracing::debug!(channel_id = channel.id, kind = ?channel.kind, "Notification delivered");
+        for id in ids {
+            NotificationRepository::mark_sent(pool, *id, now).await?;
+        }
+        record_delivery(
+            pool,
+            JournalKind::AlertSent,
+            channel,
+            channel.kind.as_str(),
+            detailed,
+        )
+        .await;
         return Ok(());
     };
     let code = failure.code();
-    tracing::warn!(channel_id = channel.id, kind = ?channel.kind, failure = %code, "Notification not delivered");
     if failure == Failure::Gone {
-        NotificationRepository::fail(pool, delivery.id, &code, now).await?;
+        for id in ids {
+            NotificationRepository::fail(pool, *id, &code, now).await?;
+        }
+        record_delivery(pool, JournalKind::AlertAbandoned, channel, &code, detailed).await;
         return Ok(());
     }
     let retry = if failure.is_permanent() {
@@ -215,13 +283,40 @@ async fn settle(
     } else {
         retry_at(delivery.attempts, failure, now)
     };
-    match retry {
-        Some(at) => NotificationRepository::retry_later(pool, delivery.id, &code, at).await?,
-        None => {
-            NotificationRepository::fail_waiting(pool, channel.id, &code, now).await?;
+    if let Some(at) = retry {
+        for id in ids {
+            NotificationRepository::retry_later(pool, *id, &code, at).await?;
         }
+        record_delivery(pool, JournalKind::AlertRetrying, channel, &code, detailed).await;
+    } else {
+        NotificationRepository::fail_waiting(pool, channel.id, &code, now).await?;
+        record_delivery(pool, JournalKind::AlertAbandoned, channel, &code, detailed).await;
+        tell_delivery_failed(pool, channel.id).await;
     }
     Ok(())
+}
+
+/// A line naming the channel and the tool, with the outcome; never the
+/// address it posts to.
+async fn record_delivery(
+    pool: &DbPool,
+    kind: JournalKind,
+    channel: &Channel,
+    outcome: &str,
+    detailed: bool,
+) {
+    if !journal::kept(kind, detailed) {
+        return;
+    }
+    let entry = NewJournalEntry::new(kind)
+        .about(&channel.name)
+        .with_detail(channel_detail(channel.kind, outcome));
+    journal::record_with(pool, entry, detailed).await;
+}
+
+/// The tool of a channel and what happened, as the journal keeps it.
+pub(crate) fn channel_detail(kind: ChannelKind, outcome: &str) -> String {
+    format!("{} · {outcome}", kind.as_str())
 }
 
 /// When to try again after `attempts` attempts, or `None` once they are used.
@@ -234,8 +329,9 @@ fn retry_at(attempts: i64, failure: Failure, now: DateTime<Utc>) -> Option<DateT
     Some(now + chrono::Duration::from_std(delay.max(asked)).ok()?)
 }
 
-/// Sends what is due every few seconds for the life of the server, and
-/// forgets the old finished messages once an hour.
+/// Sends what is due every few seconds for the life of the server, reminds
+/// overdue updates every minute, and forgets the old finished messages and
+/// member notices once an hour.
 pub fn spawn_notifications(
     pool: DbPool,
     notifier: Arc<Notifier>,
@@ -246,6 +342,8 @@ pub fn spawn_notifications(
         deliveries.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut purges = interval(PURGE_INTERVAL);
         purges.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let mut reminders = interval(REMINDER_INTERVAL);
+        reminders.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
             tokio::select! {
                 _ = deliveries.tick() => {
@@ -254,15 +352,26 @@ pub fn spawn_notifications(
                         tracing::warn!(error = %e, "Notifications round failed");
                     }
                 }
-                _ = purges.tick() => {
-                    if let Err(e) = NotificationRepository::purge(&pool, Utc::now() - KEEP_HISTORY).await {
-                        tracing::warn!(error = %e, "Old notifications not purged");
+                _ = reminders.tick() => {
+                    if let Err(e) = remind_overdue(&pool, &notifier, public_url.as_deref(), Utc::now()).await {
+                        tracing::warn!(error = %e, "Update reminders round failed");
                     }
                 }
+                _ = purges.tick() => purge(&pool).await,
             }
         }
     });
     task.abort_handle()
+}
+
+async fn purge(pool: &DbPool) {
+    let before = Utc::now() - KEEP_HISTORY;
+    if let Err(e) = NotificationRepository::purge(pool, before).await {
+        tracing::warn!(error = %e, "Old notifications not purged");
+    }
+    if let Err(e) = MemberNoticeRepository::purge(pool, before).await {
+        tracing::warn!(error = %e, "Old member notices not purged");
+    }
 }
 
 #[cfg(test)]
@@ -376,6 +485,7 @@ mod tests {
             service_ids: Vec::new(),
             follows_event_id: None,
             author_id: author.id,
+            next_update: None,
         };
         EventRepository::create(pool, &input).await.unwrap().id
     }
@@ -493,6 +603,40 @@ mod tests {
                 .iter()
                 .all(|d| d.failure.as_deref() == Some("status_404"))
         );
+        let admin = UserRepository::find_by_email(&pool, "ops@example.com")
+            .await
+            .unwrap()
+            .unwrap();
+        let notices = MemberNoticeRepository::list_for(&pool, admin.id, 10)
+            .await
+            .unwrap();
+        assert_eq!(notices.len(), 1, "the administrator hears of it once");
+        assert_eq!(notices[0].channel_name.as_deref(), Some("team"));
+    }
+
+    #[tokio::test]
+    async fn a_message_given_up_is_kept_in_the_journal_without_its_address() {
+        let pool = test_pool().await;
+        let team = channel(&pool, "team", "en").await;
+        let event = incident(&pool, "Outage").await;
+        announce(&pool, event, 0).await;
+        let script = Arc::new(Script::answering(team, &[Err(Failure::Status(404))]));
+
+        deliver_due(&pool, &script, None, at(5)).await.unwrap();
+
+        let lines: Vec<(String, String, String)> =
+            sqlx::query_as("SELECT kind, subject, detail FROM journal_entries")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            lines,
+            [(
+                "alert_abandoned".to_string(),
+                "team".to_string(),
+                "slack · status_404".to_string()
+            )]
+        );
     }
 
     #[tokio::test]
@@ -591,5 +735,117 @@ mod tests {
         assert_eq!(outcomes[0].status, DeliveryStatus::Failed);
         assert_eq!(outcomes[0].failure.as_deref(), Some("gone"));
         assert_eq!(outcomes[1].status, DeliveryStatus::Sent);
+    }
+
+    /// A resolved incident with its review, and the review's message queued.
+    async fn reviewed_incident(pool: &DbPool) -> (i64, i64) {
+        let team = channel(pool, "team", "en").await;
+        let id = incident(pool, "Outage").await;
+        sqlx::query("UPDATE events SET lifecycle = 'resolved' WHERE id = ?")
+            .bind(id)
+            .execute(pool)
+            .await
+            .unwrap();
+        let author = UserRepository::find_by_email(pool, "ops@example.com")
+            .await
+            .unwrap()
+            .unwrap();
+        EventReviewRepository::save(pool, id, "A cable was cut.", author.id)
+            .await
+            .unwrap();
+        let reviewed = Notification::event(
+            Happening::Reviewed,
+            Kind::Incident,
+            id,
+            Some(Lifecycle::Resolved),
+        );
+        NotificationRepository::enqueue(pool, &reviewed, at(0))
+            .await
+            .unwrap();
+        (team, id)
+    }
+
+    async fn sends_nothing(pool: &DbPool, team: i64) {
+        let script = Arc::new(Script::default());
+        deliver_due(pool, &script, None, at(1)).await.unwrap();
+        assert_eq!(script.sent(), Vec::new());
+        let outcomes = rows(pool, team).await;
+        assert_eq!(outcomes[0].status, DeliveryStatus::Failed);
+        assert_eq!(outcomes[0].failure.as_deref(), Some("gone"));
+    }
+
+    #[tokio::test]
+    async fn a_review_goes_out_while_its_incident_stays_resolved() {
+        let pool = test_pool().await;
+        let (team, _) = reviewed_incident(&pool).await;
+        let script = Arc::new(Script::default());
+
+        deliver_due(&pool, &script, None, at(1)).await.unwrap();
+
+        assert_eq!(script.sent().len(), 1);
+        assert_eq!(rows(&pool, team).await[0].status, DeliveryStatus::Sent);
+    }
+
+    #[tokio::test]
+    async fn a_review_removed_before_its_message_leaves_sends_nothing() {
+        let pool = test_pool().await;
+        let (team, id) = reviewed_incident(&pool).await;
+        EventReviewRepository::delete(&pool, id).await.unwrap();
+
+        sends_nothing(&pool, team).await;
+    }
+
+    #[tokio::test]
+    async fn a_review_of_an_incident_opened_again_sends_nothing() {
+        let pool = test_pool().await;
+        let (team, id) = reviewed_incident(&pool).await;
+        sqlx::query("UPDATE events SET lifecycle = 'monitoring' WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sends_nothing(&pool, team).await;
+    }
+
+    #[tokio::test]
+    async fn a_wave_of_outages_leaves_as_one_message() {
+        let pool = test_pool().await;
+        let team = channel(&pool, "team", "en").await;
+        let mut wave = Vec::new();
+        for name in ["Mail", "Wiki", "VPN"] {
+            let service =
+                ServiceRepository::create(&pool, name, &name.to_lowercase(), None, None, None)
+                    .await
+                    .unwrap();
+            wave.push(service.id);
+        }
+        for (minute, service_id) in [(0, wave[0]), (0, wave[1]), (0, wave[2]), (1, wave[0])] {
+            let happening = if minute == 0 {
+                Happening::ServiceDown
+            } else {
+                Happening::ServiceUp
+            };
+            NotificationRepository::enqueue(
+                &pool,
+                &Notification::service(happening, service_id),
+                at(minute),
+            )
+            .await
+            .unwrap();
+        }
+        let script = Arc::new(Script::default());
+
+        let sent = deliver_due(&pool, &script, None, at(2)).await.unwrap();
+
+        assert_eq!(sent, 2, "the wave, then the return of one service");
+        let headlines: Vec<String> = script.sent().into_iter().map(|(_, h)| h).collect();
+        assert_eq!(headlines[0], "3 services are not answering");
+        assert!(
+            rows(&pool, team)
+                .await
+                .iter()
+                .all(|d| d.status == DeliveryStatus::Sent)
+        );
     }
 }

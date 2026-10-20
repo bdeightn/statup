@@ -1,19 +1,25 @@
 //! Profile routes: a person's own name, email and password.
 
+use std::net::{IpAddr, SocketAddr};
+
 use askama::Template;
-use axum::extract::State;
+use axum::Extension;
+use axum::extract::{ConnectInfo, State};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use serde::Deserialize;
 use tower_sessions::Session;
 
+use super::auth::request_ip;
 use super::password::reopen_session;
 use super::{Frame, render};
+use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::no_store;
 use crate::middleware::{AuthUser, CsrfToken, HtmlForm};
-use crate::models::{User, check_display_name};
-use crate::repositories::UserRepository;
+use crate::models::{JournalKind, User, check_display_name};
+use crate::repositories::{NewJournalEntry, UserRepository};
 use crate::services::AuthService;
 use crate::state::AppState;
 
@@ -134,22 +140,32 @@ async fn save_profile(
             }
             _ => AppError::Database(e),
         })?;
-    tracing::info!(user_id = user.id, "Profile updated");
+    NewJournalEntry::new(JournalKind::ProfileUpdated)
+        .by(user)
+        .record(&state.pool)
+        .await;
 
     UserRepository::find_by_id(&state.pool, user.id)
         .await?
         .ok_or(AppError::NotFound)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each one is an extractor; the address needs two"
+)]
 pub async fn update_password(
     AuthUser(user): AuthUser,
     State(state): State<AppState>,
     session: Session,
     CsrfToken(mut csrf_token): CsrfToken,
+    headers: HeaderMap,
+    connect_info: Option<Extension<ConnectInfo<SocketAddr>>>,
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<PasswordInput>,
 ) -> Result<Response, AppError> {
-    let messages = match change_own_password(&state, &user, &input).await? {
+    let ip = request_ip(&state, &headers, connect_info);
+    let messages = match change_own_password(&state, &user, &input, &ip).await? {
         Ok(hash) => {
             csrf_token = reopen_session(&session, &hash).await?;
             ProfileMessages {
@@ -172,6 +188,7 @@ async fn change_own_password(
     state: &AppState,
     user: &User,
     input: &PasswordInput,
+    ip: &IpAddr,
 ) -> Result<Result<String, String>, AppError> {
     if input.current_password.is_empty() {
         return Ok(Err("validation.current_password_required".to_string()));
@@ -181,7 +198,9 @@ async fn change_own_password(
         return Ok(Err("validation.rate_limited".to_string()));
     }
     if !AuthService::verify_password(&input.current_password, &user.password_hash).await? {
-        limiter.record_password_check_failure(user.id);
+        if limiter.record_password_check_failure(user.id) {
+            record_password_check_blocked(&state.pool, user, ip).await;
+        }
         return Ok(Err("validation.wrong_password".to_string()));
     }
     limiter.clear_password_checks(user.id);
@@ -192,8 +211,23 @@ async fn change_own_password(
         &input.new_password_confirm,
     );
     match changed.await {
-        Ok(hash) => Ok(Ok(hash)),
+        Ok(hash) => {
+            NewJournalEntry::new(JournalKind::OwnPasswordChanged)
+                .by(user)
+                .record(&state.pool)
+                .await;
+            Ok(Ok(hash))
+        }
         Err(AppError::Validation(key)) => Ok(Err(key)),
         Err(e) => Err(e),
     }
+}
+
+async fn record_password_check_blocked(pool: &DbPool, user: &User, ip: &IpAddr) {
+    NewJournalEntry::new(JournalKind::PasswordCheckBlocked)
+        .on_member(user)
+        .with_detail("too many attempts")
+        .from_ip(ip)
+        .record(pool)
+        .await;
 }

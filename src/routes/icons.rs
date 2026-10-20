@@ -12,8 +12,8 @@ use super::{Frame, render};
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, RequirePublisher};
-use crate::models::{Icon, MAX_ICON_SIZE, User};
-use crate::repositories::IconRepository;
+use crate::models::{Icon, JournalKind, MAX_ICON_SIZE, User};
+use crate::repositories::{IconRepository, NewJournalEntry};
 use crate::services::{IconService, file_exists, icon_path};
 use crate::state::AppState;
 
@@ -177,14 +177,20 @@ async fn store_upload(
     multipart: &mut Multipart,
 ) -> Result<Icon, AppError> {
     let (original_name, data) = extract_upload(multipart).await?;
-    IconService::upload(
+    let icon = IconService::upload(
         &state.pool,
         &state.upload_dir,
         data,
         &original_name,
         user.id,
     )
-    .await
+    .await?;
+    NewJournalEntry::new(JournalKind::IconUploaded)
+        .by(user)
+        .about(&icon.original_name)
+        .record(&state.pool)
+        .await;
+    Ok(icon)
 }
 
 pub async fn upload(
@@ -237,6 +243,11 @@ pub async fn delete(
 ) -> Result<Response, AppError> {
     match IconService::delete(&state.pool, &state.upload_dir, id).await {
         Ok(icon) => {
+            NewJournalEntry::new(JournalKind::IconDeleted)
+                .by(&user)
+                .about(&icon.original_name)
+                .record(&state.pool)
+                .await;
             let removed = utf8_percent_encode(&icon.original_name, NON_ALPHANUMERIC);
             Ok(Redirect::to(&format!("/icons?removed={removed}")).into_response())
         }

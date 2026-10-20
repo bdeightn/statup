@@ -10,6 +10,7 @@ use std::time::Duration;
 use axum::http::HeaderName;
 use tracing::level_filters::LevelFilter;
 
+use crate::journal::{JournalInbox, journal_layer};
 use crate::middleware::client_ip::{ClientIpSource, X_FORWARDED_FOR};
 
 /// Errors that can occur when loading or validating configuration.
@@ -269,19 +270,27 @@ where
 
 /// Installs the global subscriber. `RUST_LOG`, when it holds a valid filter,
 /// replaces `LOG_LEVEL`, which otherwise applies to every target. Colors
-/// are only written to a terminal, never to a container log.
-pub fn init_logging(level: LevelFilter) {
-    use tracing_subscriber::EnvFilter;
-    use tracing_subscriber::fmt;
+/// are only written to a terminal, never to a container log. The app's
+/// warnings and errors are also caught for the journal, whatever the level;
+/// the returned inbox is handed to the journal writer once the database
+/// is open.
+pub fn init_logging(level: LevelFilter) -> JournalInbox {
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::{EnvFilter, Layer, fmt};
 
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level.to_string()));
-
-    fmt()
-        .with_env_filter(env_filter)
+    let output = fmt::layer()
         .with_target(true)
         .with_ansi(std::io::stdout().is_terminal())
+        .with_filter(env_filter);
+    let (journal, inbox) = journal_layer();
+    tracing_subscriber::registry()
+        .with(output)
+        .with(journal)
         .init();
+    inbox
 }
 
 /// Parse a log level string into a `LevelFilter`.

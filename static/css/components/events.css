@@ -359,6 +359,47 @@
         margin-bottom: 12px;
     }
 
+    /* A resolved incident opens on its review: the first card of the
+       reading column, the details beside it and the timeline under it.
+       Without a review the card waits for its form to be opened. */
+    .review-card:not(:has(.review, .review-form:target, .review-form.is-open)) {
+        display: none;
+    }
+
+    @media (min-width: 1024px) {
+        .review-card {
+            grid-column: 1;
+            grid-row: 1;
+        }
+
+        .event-layout:has(.review, .review-form:target, .review-form.is-open) .event-story {
+            grid-row: 2;
+        }
+
+        .event-layout:has(.review, .review-form:target, .review-form.is-open) .event-details {
+            grid-row: 1 / span 2;
+        }
+    }
+
+    /* The review fills its card, as the timeline under it does. */
+    .review-card .article-text {
+        max-width: none;
+    }
+
+    /* Corrected in place: while its form is open, the form holds the text. */
+    .review-card:has(.review-form:target, .review-form.is-open) .review {
+        display: none;
+    }
+
+    /* Its date beside the way to remove it. */
+    .review-dateline {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 16px;
+    }
+
+
     .rich-text > * + * {
         margin-top: 10px;
     }
@@ -498,25 +539,32 @@
         margin-top: 4px;
     }
 
-    .moment-delete {
+    .moment-delete,
+    .review-remove {
         margin-left: auto;
     }
 
-    /* Deleting a message is rare: under a pointer the action shows only
-       over its message; a touch screen, without hover, keeps it in sight. */
+    /* Deleting a message, or a review, is rare: under a pointer the action
+       shows only over what it removes; a touch screen, without hover, keeps
+       it in sight. */
     @media (hover: hover) {
-        .moment-delete {
+        .moment-delete,
+        .review-remove {
             opacity: 0;
             transition: opacity 150ms var(--ease-out);
         }
 
         .moment:hover .moment-delete,
-        .moment:focus-within .moment-delete {
+        .moment:focus-within .moment-delete,
+        .review:hover .review-remove,
+        .review:focus-within .review-remove {
             opacity: 1;
         }
     }
 
-    .composer:not(.is-open, :target) {
+    /* The composer and the review form, folded until asked for. */
+    .composer:not(.is-open, :target),
+    .review-form:not(.is-open, :target) {
         display: none;
     }
 
@@ -577,7 +625,14 @@
         max-width: 320px;
     }
 
-    .composer .form-error {
+    .composer-next,
+    .next-update-field {
+        flex: 0 1 180px;
+        max-width: 180px;
+    }
+
+    .composer .form-error,
+    .review-form .form-error {
         margin-bottom: 12px;
     }
 
@@ -794,6 +849,32 @@
     .template-menu .more-actions-item {
         display: grid;
         gap: 2px;
+    }
+
+    /* A template and its removal share a row; the question takes the
+       row's full width under it. */
+    .template-menu-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .template-menu-row > .more-actions-item {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .template-menu-delete {
+        display: contents;
+    }
+
+    .template-menu-row .text-action {
+        padding: 0 10px;
+    }
+
+    .template-menu-row .confirm {
+        flex-basis: 100%;
+        padding: 2px 10px 8px;
     }
 
     .template-menu-title {
@@ -1241,6 +1322,32 @@
         color: var(--ink);
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    /* A folder's row heads its services, which sit under its name; its
+       count follows the name rather than the statuses' column. */
+    .svc-pick.svc-pick-folder {
+        display: flex;
+    }
+
+    .svc-pick-folder .svc-pick-name {
+        flex: 0 1 auto;
+        font-weight: 600;
+    }
+
+    .svc-pick-section[data-folder-pick] > .svc-pick:not(.svc-pick-folder) {
+        padding-left: 32px;
+    }
+
+    /* Rows are ruled between them, never under the last one shown: the
+       list's own edge closes it, while a search hides rows too. */
+    .svc-pick-section:not(:last-child) > .svc-pick:last-child {
+        border-bottom: 1px solid var(--hairline);
+    }
+
+    .svc-pick-section:not(:has(~ .svc-pick-section:not([hidden])))
+        > .svc-pick:not(:has(~ .svc-pick:not([hidden]))) {
+        border-bottom: 0;
     }
 
     .suggest {

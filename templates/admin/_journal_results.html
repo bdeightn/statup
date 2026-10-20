@@ -1,0 +1,57 @@
+{% import "components/macros.html" as ui %}
+{% if results.total == 0 && !results.has_filters %}
+<div class="card empty-state">
+    <p class="empty-state-title">{{ i18n.t("journal.empty_title") }}</p>
+    <p class="empty-state-text">{{ i18n.t("journal.empty_text") }}</p>
+</div>
+{% else if results.total == 0 %}
+<div class="card empty-state">
+    <p class="empty-state-title" data-results-count>{{ i18n.t("journal.no_match_title") }}</p>
+    <p class="empty-state-text">{{ i18n.t("events.no_match_text") }}</p>
+    <a href="/admin/journal" class="btn btn-ghost">{{ i18n.t("events.clear_filters") }}</a>
+</div>
+{% else %}
+<div class="results-bar">
+    <p class="results-count" data-results-count>{{ results.count_label }}</p>
+    <a class="results-export" href="{{ results.export_url }}" download>{{ i18n.t("journal.export") }}</a>
+</div>
+<div class="card">
+    {% for day in results.days %}
+    <h2 class="log-day">{{ day.label }}</h2>
+    <ul class="log-list">
+        {% for row in day.items %}
+        <li>
+            <div class="log-row">
+            <span class="log-time">{{ i18n.format_time(row.entry.created_at) }}</span>
+            <span class="log-body">
+                <span class="log-head">
+                    {% call ui::kind_chip(i18n.t(row.entry.kind.category().label_key()), row.entry.kind.tone().as_str()) %}{% endcall %}
+                    <span class="log-title">{{ row.entry.sentence(i18n) }}</span>
+                </span>
+                {% if !row.facts.is_empty() %}
+                <span class="log-sub journal-facts">{% for fact in row.facts %}{% if !loop.first %}&nbsp;<span aria-hidden="true">·</span> {% endif %}{{ fact }}{% endfor %}</span>
+                {% endif %}
+            </span>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endfor %}
+</div>
+
+{% if results.page > 1 || results.has_next %}
+<nav class="pager" aria-label="{{ i18n.t("common.pagination_aria") }}">
+    {% if results.page > 1 %}
+    <a class="btn btn-ghost" rel="prev" href="{{ results.page_link_base }}page={{ results.page - 1 }}">{{ i18n.t("common.previous") }}</a>
+    {% else %}
+    <span></span>
+    {% endif %}
+    <span class="pager-page">{{ results.page_label }}</span>
+    {% if results.has_next %}
+    <a class="btn btn-ghost" rel="next" href="{{ results.page_link_base }}page={{ results.page + 1 }}">{{ i18n.t("common.next") }}</a>
+    {% else %}
+    <span></span>
+    {% endif %}
+</nav>
+{% endif %}
+{% endif %}

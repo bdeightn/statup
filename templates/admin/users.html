@@ -7,6 +7,7 @@
 {% block scripts %}
 <script src="{{ crate::asset("js/custom-select.js") }}" defer></script>
 <script src="{{ crate::asset("js/team.js") }}" defer></script>
+<script src="{{ crate::asset("js/list-filter.js") }}" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -25,6 +26,7 @@
             {% when NoticeKind::RoleUpdated with (role) %}<q>{{ n.name }}</q> {{ i18n.t("admin.notice_role") }} <strong>{{ i18n.t(role.i18n_key()) }}</strong>.
             {% when NoticeKind::Disabled %}<q>{{ n.name }}</q> {{ i18n.t("admin.notice_disabled") }}
             {% when NoticeKind::Enabled %}<q>{{ n.name }}</q> {{ i18n.t("admin.notice_enabled") }}
+            {% when NoticeKind::GroupDeleted %}{{ i18n.t("admin.notice_group_deleted") }}
             {% endmatch %}
         </p>
     </div>
@@ -68,13 +70,13 @@
                     <label class="choice"><input type="radio" name="role" value="{{ r.as_str() }}" class="sr-only" required{% if add_form.role == r.as_str() || (add_form.role.is_empty() && r.as_str() == "reader") %} checked{% endif %}><span>{{ i18n.t(r.i18n_key()) }}</span></label>
                     {% endfor %}
                 </div>
-                <ul class="field-hint mt-2">
-                    <li>{{ i18n.t("role.reader_desc") }}</li>
-                    <li>{{ i18n.t("role.publisher_desc") }}</li>
-                    <li>{{ i18n.t("role.admin_desc") }}</li>
-                </ul>
+                {# Only the chosen role says what it allows. #}
+                <div class="role-descs">
+                    <p class="field-hint" data-role-hint="reader">{{ i18n.t("role.reader_desc") }}</p>
+                    <p class="field-hint" data-role-hint="publisher">{{ i18n.t("role.publisher_desc") }}</p>
+                    <p class="field-hint" data-role-hint="admin">{{ i18n.t("role.admin_desc") }}</p>
+                </div>
             </fieldset>
-            <p class="field-hint">{{ i18n.t("admin.add_member_hint") }}</p>
             <button type="submit" class="btn btn-ghost">{{ i18n.t("admin.add_member_submit") }}</button>
         </form>
     </details>
@@ -118,38 +120,76 @@
                 {% endif %}
             </div>
 
+            {# Each action asks first, in a panel under its own button. #}
             <div class="admin-row-actions">
                 {% if u.id != current_user_id && u.is_active %}
-                <form method="post" action="/admin/users/{{ u.id }}/reset-password" data-confirm>
-                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                    <button type="button" class="btn btn-ghost" data-confirm-open aria-label="{{ i18n.t("admin.reset_password") }} {{ u.display_name }}">{{ i18n.t("admin.reset_password") }}</button>
-                    <div class="confirm" role="group" aria-label="{{ i18n.t("admin.confirm_reset_aria") }}" aria-describedby="reset-q-{{ u.id }} reset-d-{{ u.id }}" data-confirm-box hidden>
-                        <span id="reset-q-{{ u.id }}" class="confirm-text">{{ i18n.t("common.question_open") }}{{ i18n.t("admin.reset_question") }} <q>{{ u.display_name }}</q>{{ i18n.t("common.question_mark") }}</span>
-                        <span id="reset-d-{{ u.id }}" class="confirm-desc">{{ i18n.t("admin.reset_consequence") }}</span>
-                        <button type="button" class="confirm-cancel" data-confirm-cancel>{{ i18n.t("common.cancel") }}</button>
-                        <button type="submit" class="confirm-go">{{ i18n.t("admin.reset_go") }}</button>
-                    </div>
-                </form>
+                <details class="more-actions member-confirm" data-more-actions>
+                    <summary class="btn btn-ghost" aria-label="{{ i18n.t("admin.reset_password") }} {{ u.display_name }}">{{ i18n.t("admin.reset_password") }}</summary>
+                    <form class="more-actions-menu confirm-panel" method="post" action="/admin/users/{{ u.id }}/reset-password" aria-label="{{ i18n.t("admin.confirm_reset_aria") }}">
+                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                        <p class="confirm-panel-text">{{ i18n.t("common.question_open") }}{{ i18n.t("admin.reset_question") }} <q>{{ u.display_name }}</q>{{ i18n.t("common.question_mark") }}</p>
+                        <p class="confirm-panel-desc">{{ i18n.t("admin.reset_consequence") }}</p>
+                        <button type="submit" class="btn btn-primary confirm-panel-go">{{ i18n.t("admin.reset_go") }}</button>
+                    </form>
+                </details>
                 {% endif %}
                 {% if u.id != current_user_id %}
-                <form method="post" action="/admin/users/{{ u.id }}/disable"{% if u.is_active %} data-confirm{% endif %}>
+                {% if u.is_active %}
+                <details class="more-actions member-confirm" data-more-actions>
+                    <summary class="btn btn-danger" aria-label="{{ i18n.t("admin.disable") }} {{ u.display_name }}">{{ i18n.t("admin.disable") }}</summary>
+                    <form class="more-actions-menu confirm-panel" method="post" action="/admin/users/{{ u.id }}/disable" aria-label="{{ i18n.t("admin.confirm_disable_aria") }}">
+                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                        <p class="confirm-panel-text">{{ i18n.t("common.question_open") }}{{ i18n.t("admin.disable") }} <q>{{ u.display_name }}</q>{{ i18n.t("common.question_mark") }}</p>
+                        <p class="confirm-panel-desc">{{ i18n.t("admin.disable_consequence") }}</p>
+                        <button type="submit" class="btn btn-danger confirm-panel-go">{{ i18n.t("admin.disable") }}</button>
+                    </form>
+                </details>
+                {% else %}
+                <form method="post" action="/admin/users/{{ u.id }}/disable">
                     <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                    {% if u.is_active %}
-                    <button type="button" class="btn btn-danger" data-confirm-open aria-label="{{ i18n.t("admin.disable") }} {{ u.display_name }}">{{ i18n.t("admin.disable") }}</button>
-                    <div class="confirm" role="group" aria-label="{{ i18n.t("admin.confirm_disable_aria") }}" aria-describedby="disable-q-{{ u.id }} disable-d-{{ u.id }}" data-confirm-box hidden>
-                        <span id="disable-q-{{ u.id }}" class="confirm-text">{{ i18n.t("common.question_open") }}{{ i18n.t("admin.disable") }} <q>{{ u.display_name }}</q>{{ i18n.t("common.question_mark") }}</span>
-                        <span id="disable-d-{{ u.id }}" class="confirm-desc">{{ i18n.t("admin.disable_consequence") }}</span>
-                        <button type="button" class="confirm-cancel" data-confirm-cancel>{{ i18n.t("common.cancel") }}</button>
-                        <button type="submit" class="confirm-go" data-danger>{{ i18n.t("admin.disable") }}</button>
-                    </div>
-                    {% else %}
                     <button type="submit" class="btn btn-ghost" aria-label="{{ i18n.t("admin.enable") }} {{ u.display_name }}">{{ i18n.t("admin.enable") }}</button>
-                    {% endif %}
                 </form>
+                {% endif %}
                 {% endif %}
             </div>
         </li>
         {% endfor %}
     </ul>
+
+    {# The groups: a link to each group's page, where its members are
+       added and removed. A new group starts from its name. #}
+    <section id="groups" class="card groups-card" data-filter-scope aria-labelledby="groups-title">
+        <header class="card-head">
+            <h2 id="groups-title" class="card-title">{{ i18n.t("admin.groups_heading") }}{% if !groups.is_empty() %} <span class="count">{{ groups.len() }}</span>{% endif %}</h2>
+            <details class="more-actions group-new" data-more-actions{% if new_group.error.is_some() %} open{% endif %}>
+                <summary class="card-action card-follow">{% call ui::plus() %}{% endcall %}{{ i18n.t("admin.new_group") }}</summary>
+                <form class="more-actions-menu group-panel" method="post" action="/admin/groups/new">
+                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                    <label for="new-group" class="field-label">{{ i18n.t("admin.group_name") }}</label>
+                    <input id="new-group" name="name" type="text" class="input" required maxlength="{{ crate::models::GROUP_NAME_MAX_CHARS }}" autocomplete="off" value="{{ new_group.value }}" placeholder="{{ i18n.t("admin.new_group_placeholder") }}"
+                           {% if new_group.error.is_some() %}aria-invalid="true" aria-describedby="new-group-error" autofocus{% endif %}>
+                    {% if let Some(message) = new_group.error %}
+                    <p id="new-group-error" class="field-error" role="alert">{{ message }}</p>
+                    {% endif %}
+                    <button type="submit" class="btn btn-primary group-panel-submit">{{ i18n.t("admin.create_group") }}</button>
+                </form>
+            </details>
+        </header>
+        {% if groups.is_empty() %}
+        <p class="groups-empty">{{ i18n.t("admin.groups_empty") }}</p>
+        {% else %}
+        {% if groups.len() > crate::models::SEARCH_FROM %}
+        <div class="groups-search">
+            <input type="search" class="input" autocomplete="off" placeholder="{{ i18n.t("admin.search_group") }}" data-filter-input aria-label="{{ i18n.t("admin.search_group") }}">
+        </div>
+        {% endif %}
+        <ul class="group-links">
+            {% for g in groups %}
+            <li data-filter-text="{{ g.name }}"><a class="group-link" href="/admin/groups/{{ g.id }}"><span class="group-link-name">{{ g.name }}</span><span class="group-link-meta">{{ g.members }}</span>{% call ui::chevron_right() %}{% endcall %}</a></li>
+            {% endfor %}
+        </ul>
+        <p class="groups-empty" data-filter-none hidden>{{ i18n.t("admin.no_group_found") }}</p>
+        {% endif %}
+    </section>
 </div>
 {% endblock %}

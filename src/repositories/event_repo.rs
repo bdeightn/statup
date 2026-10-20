@@ -11,17 +11,22 @@ use sqlx::{QueryBuilder, Sqlite};
 use crate::clock;
 use crate::db::DbPool;
 use crate::models::{
-    ActivityKind, CreateEventInput, Event, EventFilters, EventSummary, EventUpdateWithAuthor,
-    EventWithServices, Kind, Lifecycle, Service, Severity, UpdateEventInput,
+    ActivityKind, CreateEventInput, DueReminder, Event, EventFilters, EventSummary,
+    EventUpdateWithAuthor, EventWithServices, Kind, Lifecycle, NextUpdate, Scope, Service,
+    Severity, UpdateEventInput,
 };
 use crate::repositories::service_repo::CHOSEN_ORDER;
 
 const SUMMARY_COLUMNS: &str = "e.id, e.kind, e.severity, e.planned, e.lifecycle, e.category, \
      e.title, e.description, e.planned_start, e.planned_end, e.started_at, e.ended_at, \
-     e.keeps_services_up, e.created_at, e.updated_at, e.author_id, \
+     e.keeps_services_up, e.next_update_at, e.created_at, e.updated_at, e.author_id, \
+     EXISTS (SELECT 1 FROM event_reviews r WHERE r.event_id = e.id) AS has_review, \
      COALESCE((SELECT GROUP_CONCAT(s.name, char(31) ORDER BY s.position, s.name COLLATE NOCASE, s.id) \
                FROM event_services es JOIN services s ON s.id = es.service_id \
                WHERE es.event_id = e.id), '') AS service_names, \
+     COALESCE((SELECT GROUP_CONCAT(s.id, ',' ORDER BY s.position, s.name COLLATE NOCASE, s.id) \
+               FROM event_services es JOIN services s ON s.id = es.service_id \
+               WHERE es.event_id = e.id), '') AS service_ids, \
      COALESCE((SELECT GROUP_CONCAT(COALESCE(s.icon_name, '') || char(30) || COALESCE(i.filename, ''), \
                                    char(31) ORDER BY s.position, s.name COLLATE NOCASE, s.id) \
                FROM event_services es JOIN services s ON s.id = es.service_id \
@@ -64,8 +69,8 @@ impl EventRepository {
         let event = sqlx::query_as::<_, Event>(
             "INSERT INTO events (kind, severity, planned, lifecycle, category, title, \
              description, planned_start, planned_end, started_at, follows_event_id, author_id, \
-             keeps_services_up) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+             keeps_services_up, next_update_at, update_every_minutes, next_update_by) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
         )
         .bind(input.kind)
         .bind(input.severity)
@@ -80,6 +85,9 @@ impl EventRepository {
         .bind(input.follows_event_id)
         .bind(input.author_id)
         .bind(input.kind == Kind::Maintenance && input.keeps_services_up)
+        .bind(input.next_update.map(|next| clock::db(next.at)))
+        .bind(input.next_update.and_then(|next| next.every_minutes))
+        .bind(input.next_update.map(|_| input.author_id))
         .fetch_one(&mut *tx)
         .await?;
         link_services(&mut tx, event.id, &input.service_ids).await?;
@@ -134,11 +142,12 @@ impl EventRepository {
     pub async fn find_with_services(
         pool: &DbPool,
         id: i64,
+        scope: &Scope,
     ) -> Result<Option<EventWithServices>, sqlx::Error> {
         let Some(event) = Self::find_by_id(pool, id).await? else {
             return Ok(None);
         };
-        let services = sqlx::query_as::<_, Service>(&format!(
+        let mut services = sqlx::query_as::<_, Service>(&format!(
             "SELECT s.* FROM services s \
              INNER JOIN event_services es ON es.service_id = s.id \
              WHERE es.event_id = ? ORDER BY {CHOSEN_ORDER}"
@@ -146,6 +155,11 @@ impl EventRepository {
         .bind(id)
         .fetch_all(pool)
         .await?;
+        let ids: Vec<i64> = services.iter().map(|service| service.id).collect();
+        if !scope.sees_event(&ids) {
+            return Ok(None);
+        }
+        services.retain(|service| scope.sees_service(service.id));
         Ok(Some(EventWithServices { event, services }))
     }
 
@@ -160,23 +174,28 @@ impl EventRepository {
     pub async fn list_page(
         pool: &DbPool,
         filters: &EventFilters,
+        scope: &Scope,
     ) -> Result<Vec<EventSummary>, sqlx::Error> {
         let mut qb = QueryBuilder::<Sqlite>::new(format!(
             "SELECT {SUMMARY_COLUMNS} FROM events e WHERE e.id IN (SELECT f.id FROM events f"
         ));
-        push_filters(&mut qb, filters);
+        push_filters(&mut qb, filters, scope);
         qb.push(" ORDER BY f.created_at DESC, f.id DESC LIMIT ")
             .push_bind(filters.limit)
             .push(" OFFSET ")
             .push_bind(filters.offset)
             .push(") ORDER BY e.created_at DESC, e.id DESC");
-        qb.build_query_as::<EventSummary>().fetch_all(pool).await
+        fetch_scoped(qb, pool, scope).await
     }
 
     /// Number of events matching the filters, across every page.
-    pub async fn count_filtered(pool: &DbPool, filters: &EventFilters) -> Result<i64, sqlx::Error> {
+    pub async fn count_filtered(
+        pool: &DbPool,
+        filters: &EventFilters,
+        scope: &Scope,
+    ) -> Result<i64, sqlx::Error> {
         let mut qb = QueryBuilder::<Sqlite>::new("SELECT COUNT(*) FROM events f");
-        push_filters(&mut qb, filters);
+        push_filters(&mut qb, filters, scope);
         qb.build_query_scalar::<i64>().fetch_one(pool).await
     }
 
@@ -186,6 +205,7 @@ impl EventRepository {
         pool: &DbPool,
         limit: i64,
         kinds: &[ActivityKind],
+        scope: &Scope,
     ) -> Result<Vec<EventSummary>, sqlx::Error> {
         if kinds.is_empty() {
             return Ok(Vec::new());
@@ -195,78 +215,94 @@ impl EventRepository {
             .map(|kind| activity_condition(*kind))
             .collect::<Vec<_>>()
             .join(" OR ");
-        sqlx::query_as::<_, EventSummary>(&format!(
+        let mut qb = QueryBuilder::<Sqlite>::new(format!(
             "SELECT {SUMMARY_COLUMNS} FROM events e WHERE e.id IN ( \
-               SELECT id FROM events WHERE {wanted} \
-               ORDER BY created_at DESC, id DESC LIMIT ?) \
-             ORDER BY e.created_at DESC, e.id DESC"
-        ))
-        .bind(limit)
-        .fetch_all(pool)
-        .await
+               SELECT x.id FROM events x WHERE ({wanted})"
+        ));
+        push_scope(&mut qb, scope, "x");
+        qb.push(" ORDER BY x.created_at DESC, x.id DESC LIMIT ")
+            .push_bind(limit)
+            .push(") ORDER BY e.created_at DESC, e.id DESC");
+        fetch_scoped(qb, pool, scope).await
     }
 
-    /// Newest events with their last activity time, for the Atom feed. A
-    /// posted update does not touch `events.updated_at`, so it is folded in.
+    /// Newest events with their last activity time and their review, for the
+    /// Atom feed. A posted update does not touch `events.updated_at`, so it
+    /// is folded in.
     pub async fn list_for_feed(
         pool: &DbPool,
         limit: i64,
+        scope: &Scope,
     ) -> Result<Vec<EventSummary>, sqlx::Error> {
-        sqlx::query_as::<_, EventSummary>(&format!(
+        let mut qb = QueryBuilder::<Sqlite>::new(format!(
             "SELECT {SUMMARY_COLUMNS}, \
                MAX(e.updated_at, COALESCE((SELECT MAX(u.created_at) FROM event_updates u \
-                   WHERE u.event_id = e.id), e.updated_at)) AS last_activity_at \
+                   WHERE u.event_id = e.id), e.updated_at)) AS last_activity_at, \
+               (SELECT r.body FROM event_reviews r WHERE r.event_id = e.id) AS review_body \
              FROM events e WHERE e.id IN ( \
-               SELECT id FROM events ORDER BY created_at DESC, id DESC LIMIT ?) \
-             ORDER BY e.created_at DESC, e.id DESC"
-        ))
-        .bind(limit)
-        .fetch_all(pool)
-        .await
+               SELECT x.id FROM events x WHERE 1 = 1"
+        ));
+        push_scope(&mut qb, scope, "x");
+        qb.push(" ORDER BY x.created_at DESC, x.id DESC LIMIT ")
+            .push_bind(limit)
+            .push(") ORDER BY e.created_at DESC, e.id DESC");
+        fetch_scoped(qb, pool, scope).await
     }
 
     /// The events that hold services in their state, the same ones as
     /// `status_drivers`, worst first: what the status banner cites.
-    pub async fn list_open_for_banner(pool: &DbPool) -> Result<Vec<EventSummary>, sqlx::Error> {
-        sqlx::query_as::<_, EventSummary>(&format!(
+    pub async fn list_open_for_banner(
+        pool: &DbPool,
+        scope: &Scope,
+    ) -> Result<Vec<EventSummary>, sqlx::Error> {
+        let mut qb = QueryBuilder::<Sqlite>::new(format!(
             "SELECT {SUMMARY_COLUMNS}, {LATEST_UPDATE_COLUMNS} FROM events e \
-             WHERE {DRIVES_SERVICES} ORDER BY {WORST_FIRST}"
-        ))
-        .fetch_all(pool)
-        .await
+             WHERE {DRIVES_SERVICES}"
+        ));
+        push_scope(&mut qb, scope, "e");
+        qb.push(format!(" ORDER BY {WORST_FIRST}"));
+        fetch_scoped(qb, pool, scope).await
     }
 
     /// Maintenances under way, then those still to come, soonest first.
-    pub async fn list_open_maintenance(pool: &DbPool) -> Result<Vec<EventSummary>, sqlx::Error> {
-        sqlx::query_as::<_, EventSummary>(&format!(
+    pub async fn list_open_maintenance(
+        pool: &DbPool,
+        scope: &Scope,
+    ) -> Result<Vec<EventSummary>, sqlx::Error> {
+        let mut qb = QueryBuilder::<Sqlite>::new(format!(
             "SELECT {SUMMARY_COLUMNS} FROM events e \
-             WHERE e.kind = 'maintenance' AND e.lifecycle IN ('in_progress', 'scheduled') \
-             ORDER BY CASE e.lifecycle WHEN 'in_progress' THEN 0 ELSE 1 END, \
-                      COALESCE(e.planned_start, e.started_at, e.created_at) ASC"
-        ))
-        .fetch_all(pool)
-        .await
+             WHERE e.kind = 'maintenance' AND e.lifecycle IN ('in_progress', 'scheduled')"
+        ));
+        push_scope(&mut qb, scope, "e");
+        qb.push(
+            " ORDER BY CASE e.lifecycle WHEN 'in_progress' THEN 0 ELSE 1 END, \
+             COALESCE(e.planned_start, e.started_at, e.created_at) ASC",
+        );
+        fetch_scoped(qb, pool, scope).await
     }
 
     /// Maintenances that ended or were called off, latest first.
     pub async fn list_finished_maintenance(
         pool: &DbPool,
         limit: i64,
+        scope: &Scope,
     ) -> Result<Vec<EventSummary>, sqlx::Error> {
-        sqlx::query_as::<_, EventSummary>(&format!(
+        let mut qb = QueryBuilder::<Sqlite>::new(format!(
             "SELECT {SUMMARY_COLUMNS} FROM events e WHERE e.id IN ( \
-               SELECT id FROM events \
-               WHERE kind = 'maintenance' AND lifecycle IN ('completed', 'cancelled') \
-               ORDER BY updated_at DESC LIMIT ?) \
-             ORDER BY COALESCE(e.ended_at, e.updated_at) DESC"
-        ))
-        .bind(limit)
-        .fetch_all(pool)
-        .await
+               SELECT x.id FROM events x \
+               WHERE x.kind = 'maintenance' AND x.lifecycle IN ('completed', 'cancelled')"
+        ));
+        push_scope(&mut qb, scope, "x");
+        qb.push(" ORDER BY x.updated_at DESC LIMIT ")
+            .push_bind(limit)
+            .push(") ORDER BY COALESCE(e.ended_at, e.updated_at) DESC");
+        fetch_scoped(qb, pool, scope).await
     }
 
     /// For each service held in its state by open work, the event that sets
     /// it, the worst first when several do: what the services page names.
+    /// Takes no scope: the event names the service, so it is visible
+    /// whenever the service is.
     pub async fn state_drivers(
         pool: &DbPool,
         service_id: Option<i64>,
@@ -418,6 +454,66 @@ impl EventRepository {
         Ok(service_ids)
     }
 
+    /// Replaces when the next update is due and who said so, ready to be
+    /// reminded again. Leaves the row alone when nothing changes, so its
+    /// last change time stays.
+    pub async fn set_next_update(
+        pool: &DbPool,
+        id: i64,
+        next: Option<NextUpdate>,
+        by: i64,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE events SET next_update_at = ?1, update_every_minutes = ?2, \
+             next_update_by = ?3, next_update_reminded = 0 \
+             WHERE id = ?4 AND (next_update_at IS NOT ?1 OR update_every_minutes IS NOT ?2 \
+             OR next_update_by IS NOT ?3)",
+        )
+        .bind(next.map(|next| clock::db(next.at)))
+        .bind(next.and_then(|next| next.every_minutes))
+        .bind(next.map(|_| by))
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Open incidents whose announced update was due by `cutoff` and whose
+    /// announcer has not been reminded yet.
+    pub async fn due_reminders(
+        pool: &DbPool,
+        cutoff: DateTime<Utc>,
+    ) -> Result<Vec<DueReminder>, sqlx::Error> {
+        sqlx::query_as::<_, DueReminder>(
+            "SELECT e.id AS event_id, e.title, e.next_update_at, u.id AS user_id, u.email, \
+             u.preferred_locale FROM events e JOIN users u ON u.id = e.next_update_by \
+             WHERE e.kind = 'incident' AND e.lifecycle NOT IN ('resolved', 'cancelled') \
+             AND e.next_update_at <= ? AND e.next_update_reminded = 0 AND u.is_active = 1 \
+             AND u.role IN ('publisher', 'admin')",
+        )
+        .bind(clock::db(cutoff))
+        .fetch_all(pool)
+        .await
+    }
+
+    /// Notes the reminder of the update due at `due_at`. False when a new
+    /// time was announced meanwhile, or another round got there first.
+    pub async fn mark_reminded(
+        pool: &DbPool,
+        id: i64,
+        due_at: DateTime<Utc>,
+    ) -> Result<bool, sqlx::Error> {
+        let done = sqlx::query(
+            "UPDATE events SET next_update_reminded = 1 \
+             WHERE id = ? AND next_update_at = ? AND next_update_reminded = 0",
+        )
+        .bind(id)
+        .bind(clock::db(due_at))
+        .execute(pool)
+        .await?;
+        Ok(done.rows_affected() == 1)
+    }
+
     /// Returns the id of the update.
     pub async fn add_update(
         pool: &DbPool,
@@ -492,13 +588,17 @@ impl EventRepository {
 
     /// Incidents and maintenances created since `since`, for the unread
     /// badge. Announcements are not interventions.
-    pub async fn count_since(pool: &DbPool, since: DateTime<Utc>) -> Result<i64, sqlx::Error> {
-        sqlx::query_scalar(
-            "SELECT COUNT(*) FROM events WHERE created_at >= ? AND kind != 'publication'",
-        )
-        .bind(clock::db(since))
-        .fetch_one(pool)
-        .await
+    pub async fn count_since(
+        pool: &DbPool,
+        since: DateTime<Utc>,
+        scope: &Scope,
+    ) -> Result<i64, sqlx::Error> {
+        let mut qb = QueryBuilder::<Sqlite>::new(
+            "SELECT COUNT(*) FROM events e WHERE e.kind != 'publication' AND e.created_at >= ",
+        );
+        qb.push_bind(clock::db(since));
+        push_scope(&mut qb, scope, "e");
+        qb.build_query_scalar::<i64>().fetch_one(pool).await
     }
 
     /// Incidents that were open at some point after `since`, per service,
@@ -579,7 +679,49 @@ async fn service_ids_in(
         .await
 }
 
-fn push_filters(qb: &mut QueryBuilder<'_, Sqlite>, filters: &EventFilters) {
+/// Runs a summary query and drops, from each row, the services the viewer
+/// may not see.
+async fn fetch_scoped(
+    mut qb: QueryBuilder<'_, Sqlite>,
+    pool: &DbPool,
+    scope: &Scope,
+) -> Result<Vec<EventSummary>, sqlx::Error> {
+    let mut rows = qb.build_query_as::<EventSummary>().fetch_all(pool).await?;
+    for row in &mut rows {
+        row.restrict_to(scope);
+    }
+    Ok(rows)
+}
+
+/// Keeps the events the viewer may see, on the events table aliased
+/// `alias`: those naming no service, or at least one visible service. Adds
+/// nothing when nothing is hidden.
+fn push_scope(qb: &mut QueryBuilder<'_, Sqlite>, scope: &Scope, alias: &str) {
+    let Some(visible) = scope.json() else {
+        return;
+    };
+    qb.push(format!(
+        " AND (NOT EXISTS (SELECT 1 FROM event_services v WHERE v.event_id = {alias}.id) \
+         OR EXISTS (SELECT 1 FROM event_services v WHERE v.event_id = {alias}.id \
+                    AND v.service_id IN (SELECT value FROM json_each("
+    ))
+    .push_bind(visible)
+    .push("))))");
+}
+
+/// Narrows to one service. Asking for a hidden one matches nothing, or an
+/// event naming both would reveal that it concerns the hidden service.
+fn push_service_filter(qb: &mut QueryBuilder<'_, Sqlite>, service_id: i64, scope: &Scope) {
+    if !scope.sees_service(service_id) {
+        qb.push(" AND 0");
+        return;
+    }
+    qb.push(" AND EXISTS (SELECT 1 FROM event_services es WHERE es.event_id = f.id AND es.service_id = ")
+        .push_bind(service_id)
+        .push(")");
+}
+
+fn push_filters(qb: &mut QueryBuilder<'_, Sqlite>, filters: &EventFilters, scope: &Scope) {
     qb.push(" WHERE 1 = 1");
     if let Some(kind) = filters.kind {
         qb.push(" AND f.kind = ").push_bind(kind);
@@ -593,9 +735,7 @@ fn push_filters(qb: &mut QueryBuilder<'_, Sqlite>, filters: &EventFilters) {
         qb.push(")");
     }
     if let Some(service_id) = filters.service_id {
-        qb.push(" AND EXISTS (SELECT 1 FROM event_services es WHERE es.event_id = f.id AND es.service_id = ")
-            .push_bind(service_id)
-            .push(")");
+        push_service_filter(qb, service_id, scope);
     }
     if let Some(from) = filters.from {
         qb.push(" AND f.created_at >= ").push_bind(clock::db(from));
@@ -613,6 +753,7 @@ fn push_filters(qb: &mut QueryBuilder<'_, Sqlite>, filters: &EventFilters) {
             .push_bind(query)
             .push(")");
     }
+    push_scope(qb, scope, "f");
 }
 
 /// Turns what a reader typed into a literal FTS5 query: punctuation
@@ -635,7 +776,7 @@ pub fn fts_query(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Category, Role, Severity};
+    use crate::models::{Category, ICON_SEPARATOR, NAME_SEPARATOR, Role, Severity};
     use crate::repositories::{ServiceRepository, UserRepository};
     use crate::test_helpers::test_pool;
 
@@ -665,6 +806,7 @@ mod tests {
             service_ids,
             follows_event_id: None,
             author_id,
+            next_update: None,
         }
     }
 
@@ -688,6 +830,7 @@ mod tests {
             service_ids,
             follows_event_id: None,
             author_id,
+            next_update: None,
         }
     }
 
@@ -764,7 +907,7 @@ mod tests {
             .unwrap();
         assert_eq!(event.lifecycle, Some(Lifecycle::Investigating));
 
-        let found = EventRepository::find_with_services(&pool, event.id)
+        let found = EventRepository::find_with_services(&pool, event.id, &Scope::All)
             .await
             .unwrap()
             .unwrap();
@@ -781,11 +924,13 @@ mod tests {
                 .await
                 .unwrap();
         }
-        let rows = EventRepository::list_page(&pool, &page(3)).await.unwrap();
+        let rows = EventRepository::list_page(&pool, &page(3), &Scope::All)
+            .await
+            .unwrap();
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].services(), vec!["API"]);
         assert_eq!(
-            EventRepository::count_filtered(&pool, &page(3))
+            EventRepository::count_filtered(&pool, &page(3), &Scope::All)
                 .await
                 .unwrap(),
             5
@@ -807,7 +952,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            EventRepository::list_page(&pool, &filters)
+            EventRepository::list_page(&pool, &filters, &Scope::All)
                 .await
                 .unwrap()
                 .len(),
@@ -831,7 +976,9 @@ mod tests {
             limit: 10,
             ..Default::default()
         };
-        let rows = EventRepository::list_page(&pool, &filters).await.unwrap();
+        let rows = EventRepository::list_page(&pool, &filters, &Scope::All)
+            .await
+            .unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].title, "Network issue");
     }
@@ -996,7 +1143,9 @@ mod tests {
         assert_eq!(updates[0].message, "<p>second</p>");
         assert_eq!(updates[0].author_name, "Tester");
 
-        let banner = EventRepository::list_open_for_banner(&pool).await.unwrap();
+        let banner = EventRepository::list_open_for_banner(&pool, &Scope::All)
+            .await
+            .unwrap();
         assert_eq!(banner[0].latest_update.as_deref(), Some("<p>second</p>"));
     }
 
@@ -1015,9 +1164,273 @@ mod tests {
         EventRepository::create(&pool, &note).await.unwrap();
 
         assert_eq!(
-            EventRepository::count_since(&pool, before).await.unwrap(),
+            EventRepository::count_since(&pool, before, &Scope::All)
+                .await
+                .unwrap(),
             1
         );
+    }
+
+    async fn named_service(pool: &DbPool, name: &str) -> i64 {
+        let icon = name.to_lowercase();
+        ServiceRepository::create(pool, name, &icon, None, None, Some(&icon))
+            .await
+            .unwrap()
+            .id
+    }
+
+    async fn create_event(pool: &DbPool, title: &str, author: i64, services: Vec<i64>) -> i64 {
+        EventRepository::create(pool, &incident(title, author, services))
+            .await
+            .unwrap()
+            .id
+    }
+
+    fn titles(rows: &[EventSummary]) -> Vec<&str> {
+        rows.iter().map(|row| row.title.as_str()).collect()
+    }
+
+    #[tokio::test]
+    async fn a_page_stays_full_past_hidden_rows() {
+        let pool = test_pool().await;
+        let (author, shown) = seed_user_and_service(&pool).await;
+        let hidden = named_service(&pool, "Vault").await;
+        for i in 0..35 {
+            let service = if i % 7 >= 5 { hidden } else { shown };
+            create_event(&pool, &format!("Event {i}"), author, vec![service]).await;
+        }
+        let scope = Scope::visible(vec![shown]);
+
+        let first = EventRepository::list_page(&pool, &page(20), &scope)
+            .await
+            .unwrap();
+        assert_eq!(first.len(), 20);
+        assert!(first.iter().all(|row| row.services() == vec!["API"]));
+        let filters = EventFilters {
+            offset: 20,
+            ..page(20)
+        };
+        let second = EventRepository::list_page(&pool, &filters, &scope)
+            .await
+            .unwrap();
+        assert_eq!(second.len(), 5);
+        assert_eq!(
+            EventRepository::count_filtered(&pool, &page(20), &scope)
+                .await
+                .unwrap(),
+            25
+        );
+    }
+
+    #[tokio::test]
+    async fn search_skips_a_hidden_event() {
+        let pool = test_pool().await;
+        let (author, shown) = seed_user_and_service(&pool).await;
+        let hidden = named_service(&pool, "Vault").await;
+        create_event(&pool, "Payroll outage", author, vec![shown]).await;
+        create_event(&pool, "Payroll audit", author, vec![hidden]).await;
+        let filters = EventFilters {
+            q: Some("payroll".to_string()),
+            ..page(10)
+        };
+        let scope = Scope::visible(vec![shown]);
+
+        let rows = EventRepository::list_page(&pool, &filters, &scope)
+            .await
+            .unwrap();
+        assert_eq!(titles(&rows), vec!["Payroll outage"]);
+        assert_eq!(
+            EventRepository::count_filtered(&pool, &filters, &scope)
+                .await
+                .unwrap(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn filtering_on_a_hidden_service_finds_nothing() {
+        let pool = test_pool().await;
+        let (author, shown) = seed_user_and_service(&pool).await;
+        let hidden = named_service(&pool, "Vault").await;
+        create_event(&pool, "Both", author, vec![shown, hidden]).await;
+        let scope = Scope::visible(vec![shown]);
+        let on_hidden = EventFilters {
+            service_id: Some(hidden),
+            ..page(10)
+        };
+        let on_shown = EventFilters {
+            service_id: Some(shown),
+            ..page(10)
+        };
+
+        assert!(
+            EventRepository::list_page(&pool, &on_hidden, &scope)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            EventRepository::count_filtered(&pool, &on_hidden, &scope)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            EventRepository::count_filtered(&pool, &on_shown, &scope)
+                .await
+                .unwrap(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn a_mixed_event_keeps_only_the_visible_services() {
+        let pool = test_pool().await;
+        let (author, _) = seed_user_and_service(&pool).await;
+        let mail = named_service(&pool, "Mail").await;
+        let wiki = named_service(&pool, "Wiki").await;
+        let zebra = named_service(&pool, "Zebra").await;
+        let secret = named_service(&pool, "Vault").await;
+        create_event(&pool, "Mixed", author, vec![zebra, secret, wiki, mail]).await;
+        create_event(&pool, "Nobody", author, vec![]).await;
+        create_event(&pool, "Closed", author, vec![secret]).await;
+        let scope = Scope::visible(vec![wiki, zebra]);
+
+        let rows = EventRepository::list_page(&pool, &page(10), &scope)
+            .await
+            .unwrap();
+        assert_eq!(titles(&rows), vec!["Nobody", "Mixed"]);
+        let mixed = &rows[1];
+        assert_eq!(mixed.services(), vec!["Wiki", "Zebra"]);
+        assert_eq!(mixed.service_ids, format!("{wiki},{zebra}"));
+        assert_eq!(
+            mixed.service_icons,
+            format!("wiki{ICON_SEPARATOR}{NAME_SEPARATOR}zebra{ICON_SEPARATOR}")
+        );
+        assert!(!rows[0].has_services());
+    }
+
+    #[tokio::test]
+    async fn limited_lists_return_visible_rows_when_the_newest_are_hidden() {
+        let pool = test_pool().await;
+        let (author, shown) = seed_user_and_service(&pool).await;
+        let hidden = named_service(&pool, "Vault").await;
+        for i in 0..3 {
+            create_event(&pool, &format!("Shown {i}"), author, vec![shown]).await;
+        }
+        for i in 0..5 {
+            create_event(&pool, &format!("Hidden {i}"), author, vec![hidden]).await;
+        }
+        let scope = Scope::visible(vec![shown]);
+
+        let activity = EventRepository::list_recent_activity(
+            &pool,
+            3,
+            &[ActivityKind::MajorIncidents],
+            &scope,
+        )
+        .await
+        .unwrap();
+        let feed = EventRepository::list_for_feed(&pool, 3, &scope)
+            .await
+            .unwrap();
+        for rows in [activity, feed] {
+            assert_eq!(titles(&rows), vec!["Shown 2", "Shown 1", "Shown 0"]);
+        }
+    }
+
+    #[tokio::test]
+    async fn finished_maintenance_returns_visible_rows_when_the_newest_are_hidden() {
+        let pool = test_pool().await;
+        let (author, shown) = seed_user_and_service(&pool).await;
+        let hidden = named_service(&pool, "Vault").await;
+        let start = Utc::now() + chrono::Duration::hours(3);
+        for (i, service) in (0_i64..).zip([shown, shown, hidden, hidden]) {
+            let event = EventRepository::create(&pool, &maintenance(author, vec![service], start))
+                .await
+                .unwrap();
+            let updated = Utc::now() + chrono::Duration::minutes(i);
+            sqlx::query("UPDATE events SET lifecycle = 'completed', updated_at = ? WHERE id = ?")
+                .bind(clock::db(updated))
+                .bind(event.id)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+
+        let rows =
+            EventRepository::list_finished_maintenance(&pool, 2, &Scope::visible(vec![shown]))
+                .await
+                .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|row| row.services() == vec!["API"]));
+    }
+
+    #[tokio::test]
+    async fn open_lists_and_the_unread_count_leave_out_hidden_events() {
+        let pool = test_pool().await;
+        let (author, shown) = seed_user_and_service(&pool).await;
+        let hidden = named_service(&pool, "Vault").await;
+        let before = Utc::now() - chrono::Duration::minutes(1);
+        let start = Utc::now() + chrono::Duration::hours(3);
+        create_event(&pool, "Shown incident", author, vec![shown]).await;
+        create_event(&pool, "Hidden incident", author, vec![hidden]).await;
+        for service in [shown, hidden] {
+            EventRepository::create(&pool, &maintenance(author, vec![service], start))
+                .await
+                .unwrap();
+        }
+        let scope = Scope::visible(vec![shown]);
+
+        let banner = EventRepository::list_open_for_banner(&pool, &scope)
+            .await
+            .unwrap();
+        assert_eq!(titles(&banner), vec!["Shown incident"]);
+        let upcoming = EventRepository::list_open_maintenance(&pool, &scope)
+            .await
+            .unwrap();
+        assert_eq!(upcoming.len(), 1);
+        assert_eq!(upcoming[0].service_ids, shown.to_string());
+        assert_eq!(
+            EventRepository::count_since(&pool, before, &scope)
+                .await
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            EventRepository::count_since(&pool, before, &Scope::All)
+                .await
+                .unwrap(),
+            4
+        );
+    }
+
+    #[tokio::test]
+    async fn find_with_services_hides_events_and_strips_services() {
+        let pool = test_pool().await;
+        let (author, shown) = seed_user_and_service(&pool).await;
+        let hidden = named_service(&pool, "Vault").await;
+        let closed = create_event(&pool, "Closed", author, vec![hidden]).await;
+        let mixed = create_event(&pool, "Mixed", author, vec![shown, hidden]).await;
+        let scope = Scope::visible(vec![shown]);
+
+        assert!(
+            EventRepository::find_with_services(&pool, closed, &scope)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let found = EventRepository::find_with_services(&pool, mixed, &scope)
+            .await
+            .unwrap()
+            .unwrap();
+        let ids: Vec<i64> = found.services.iter().map(|service| service.id).collect();
+        assert_eq!(ids, vec![shown]);
+        let all = EventRepository::find_with_services(&pool, mixed, &Scope::All)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(all.services.len(), 2);
     }
 
     #[test]
@@ -1026,5 +1439,110 @@ mod tests {
         assert_eq!(fts_query("+ - * \"\""), "");
         assert_eq!(fts_query(""), "");
         assert_eq!(fts_query("l'hébergeur"), "\"l\"* \"hébergeur\"*");
+    }
+
+    fn announced(author_id: i64, minutes_ago: i64) -> CreateEventInput {
+        CreateEventInput {
+            next_update: Some(NextUpdate {
+                at: Utc::now() - chrono::Duration::minutes(minutes_ago),
+                every_minutes: None,
+            }),
+            ..incident("Mail is slow", author_id, Vec::new())
+        }
+    }
+
+    fn five_minutes_ago() -> DateTime<Utc> {
+        Utc::now() - chrono::Duration::minutes(5)
+    }
+
+    #[tokio::test]
+    async fn an_overdue_update_is_reminded_once() {
+        let pool = test_pool().await;
+        let (uid, _) = seed_user_and_service(&pool).await;
+        let event = EventRepository::create(&pool, &announced(uid, 10))
+            .await
+            .unwrap();
+
+        let due = EventRepository::due_reminders(&pool, five_minutes_ago())
+            .await
+            .unwrap();
+        assert_eq!(due.len(), 1);
+        assert_eq!((due[0].event_id, due[0].user_id), (event.id, uid));
+        assert_eq!(due[0].email, "t@t.com");
+
+        let at = due[0].next_update_at;
+        assert!(
+            EventRepository::mark_reminded(&pool, event.id, at)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !EventRepository::mark_reminded(&pool, event.id, at)
+                .await
+                .unwrap()
+        );
+        let due = EventRepository::due_reminders(&pool, five_minutes_ago())
+            .await
+            .unwrap();
+        assert!(due.is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_update_barely_late_waits_for_its_margin() {
+        let pool = test_pool().await;
+        let (uid, _) = seed_user_and_service(&pool).await;
+        EventRepository::create(&pool, &announced(uid, 2))
+            .await
+            .unwrap();
+
+        let due = EventRepository::due_reminders(&pool, five_minutes_ago())
+            .await
+            .unwrap();
+        assert!(due.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_new_announcement_arms_the_reminder_again() {
+        let pool = test_pool().await;
+        let (uid, _) = seed_user_and_service(&pool).await;
+        let event = EventRepository::create(&pool, &announced(uid, 10))
+            .await
+            .unwrap();
+        let at = event.next_update_at.unwrap();
+        EventRepository::mark_reminded(&pool, event.id, at)
+            .await
+            .unwrap();
+
+        let later = NextUpdate {
+            at: Utc::now() - chrono::Duration::minutes(8),
+            every_minutes: None,
+        };
+        EventRepository::set_next_update(&pool, event.id, Some(later), uid)
+            .await
+            .unwrap();
+
+        let due = EventRepository::due_reminders(&pool, five_minutes_ago())
+            .await
+            .unwrap();
+        assert_eq!(due.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_resolved_incident_owes_no_reminder() {
+        let pool = test_pool().await;
+        let (uid, _) = seed_user_and_service(&pool).await;
+        let event = EventRepository::create(&pool, &announced(uid, 10))
+            .await
+            .unwrap();
+        sqlx::query("UPDATE events SET lifecycle = 'resolved' WHERE id = ?")
+            .bind(event.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let due = EventRepository::due_reminders(&pool, five_minutes_ago())
+            .await
+            .unwrap();
+        assert!(due.is_empty());
     }
 }

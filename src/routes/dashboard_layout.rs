@@ -10,8 +10,18 @@ use serde::Deserialize;
 use crate::error::AppError;
 use crate::i18n::Locale;
 use crate::middleware::{HtmlForm, RequireAdmin};
+use crate::models::{JournalKind, User};
+use crate::repositories::NewJournalEntry;
 use crate::services::DashboardLayoutService;
 use crate::state::AppState;
+
+async fn record_arranged(state: &AppState, admin: &User, detail: String) {
+    NewJournalEntry::new(JournalKind::DashboardArranged)
+        .by(admin)
+        .with_detail(detail)
+        .record(&state.pool)
+        .await;
+}
 
 #[derive(Deserialize)]
 pub struct OrderForm {
@@ -25,7 +35,7 @@ pub async fn save_order(
     HtmlForm(form): HtmlForm<OrderForm>,
 ) -> Result<Response, AppError> {
     DashboardLayoutService::save_order(&state.pool, &form.order).await?;
-    tracing::info!(admin_id = admin.id, "Dashboard order saved");
+    record_arranged(&state, &admin, "order".to_string()).await;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -43,7 +53,12 @@ pub async fn toggle_module(
 ) -> Result<Response, AppError> {
     let enabled = matches!(form.enabled.as_deref(), Some("true" | "on" | "1"));
     DashboardLayoutService::set_enabled(&state.pool, &module_id, enabled).await?;
-    tracing::info!(admin_id = admin.id, %module_id, enabled, "Dashboard module toggled");
+    record_arranged(
+        &state,
+        &admin,
+        format!("module={module_id} enabled={enabled}"),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -60,7 +75,8 @@ pub async fn set_width(
     HtmlForm(form): HtmlForm<WidthForm>,
 ) -> Result<Response, AppError> {
     let width = DashboardLayoutService::set_width(&state.pool, &module_id, &form.width).await?;
-    tracing::info!(admin_id = admin.id, %module_id, width = width.as_str(), "Dashboard module width saved");
+    let width = width.as_str();
+    record_arranged(&state, &admin, format!("module={module_id} width={width}")).await;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -78,6 +94,7 @@ pub async fn set_shown(
     HtmlForm(form): HtmlForm<ShownForm>,
 ) -> Result<Response, AppError> {
     DashboardLayoutService::set_shown(&state.pool, &i18n, &module_id, &form.show).await?;
-    tracing::info!(admin_id = admin.id, %module_id, "Dashboard module settings saved");
+    let shown = form.show.join(",");
+    record_arranged(&state, &admin, format!("module={module_id} show={shown}")).await;
     Ok(StatusCode::NO_CONTENT.into_response())
 }

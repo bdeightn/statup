@@ -1,6 +1,10 @@
 {# Body of one Atom entry, rendered to a string and escaped into the feed.
    The feed is public, so it names no member. #}
 <p><strong>{{ event.kind_label(i18n) }}{% if let Some(key) = event.lifecycle_key() %} · {{ i18n.t(key) }}{% endif %}</strong></p>
+{% if let Some(review) = review_html %}
+<h4>{{ i18n.t("events.review_title") }}</h4>
+{{ review|safe }}
+{% endif %}
 {% if event.has_services() %}
 <p>{{ i18n.t("feed.services") }} {{ event.services_label() }}</p>
 {% endif %}

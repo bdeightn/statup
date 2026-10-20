@@ -31,10 +31,7 @@ async fn register_from(app: &TestApp, zone: &str) {
 }
 
 async fn set_zone(app: &TestApp, zone: &str) -> (StatusCode, Option<String>) {
-    let csrf = app.csrf_from("/admin/settings").await;
-    let (status, _, location) = app
-        .post_form("/admin/settings/time-zone", &csrf, &[("time_zone", zone)])
-        .await;
+    let (status, _, location) = app.save_settings(&[("time_zone", zone)], None).await;
     (status, location)
 }
 
@@ -51,19 +48,15 @@ async fn the_zone_comes_from_the_first_browser_then_from_the_settings() {
 
     let (status, location) = set_zone(&app, "America/New_York").await;
     assert_eq!(status, StatusCode::SEE_OTHER);
-    assert_eq!(location.as_deref(), Some("/admin/settings?zone=1"));
-    let (_, body) = app.get("/admin/settings?zone=1").await;
-    assert!(
-        body.contains("America/New York"),
-        "the receipt names the zone"
-    );
+    assert_eq!(location.as_deref(), Some("/admin/settings?saved=1"));
+    let (_, body) = app.get("/admin/settings?saved=1").await;
     assert!(body.contains(r#"<option value="America/New_York" selected>"#));
 
-    let (status, _) = set_zone(&app, "Mars/Olympus").await;
+    let (status, location) = set_zone(&app, "Mars/Olympus").await;
     assert_eq!(
-        status,
-        StatusCode::BAD_REQUEST,
-        "an unknown zone is refused"
+        (status, location),
+        (StatusCode::OK, None),
+        "an unknown zone is refused in the page"
     );
     let (_, body) = app.get("/admin/settings").await;
     assert!(body.contains(r#"<option value="America/New_York" selected>"#));

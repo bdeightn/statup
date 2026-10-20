@@ -1,7 +1,5 @@
 //! The list of events and its search.
 
-use std::fmt::Write as _;
-
 use askama::Template;
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
@@ -12,10 +10,12 @@ use crate::clock;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::is_htmx;
-use crate::middleware::{CsrfToken, OptionalUser};
-use crate::models::{DayGroup, EventFilters, Kind, LifecycleGroup, Service, group_by_day};
+use crate::middleware::{CsrfToken, Viewer};
+use crate::models::{
+    DayGroup, EventFilters, EventSummary, Kind, LifecycleGroup, Scope, Service, group_by_day,
+};
 use crate::repositories::{EventRepository, ServiceRepository, UserRepository};
-use crate::routes::page::{TitlePart, title_parts};
+use crate::routes::page::{TitlePart, query_pairs, title_parts};
 use crate::routes::{Frame, members_only, render};
 use crate::state::AppState;
 
@@ -95,31 +95,21 @@ impl ListQuery {
 
     /// Query string of the current filters, ready for a `page=` parameter.
     fn page_link_base(&self) -> String {
-        let mut url = String::from("/events?");
-        let pairs = [
+        let pairs = query_pairs(&[
             ("kind", self.kind.map(|k| k.as_str().to_string())),
             ("service_id", self.service_id.map(|id| id.to_string())),
             ("lifecycle", self.group().map(|g| g.as_str().to_string())),
             ("q", self.query()),
             ("from", self.from.clone()),
             ("to", self.to.clone()),
-        ];
-        for (name, value) in pairs {
-            if let Some(value) = value {
-                let encoded = percent_encoding::utf8_percent_encode(
-                    &value,
-                    percent_encoding::NON_ALPHANUMERIC,
-                );
-                let _ = write!(url, "{name}={encoded}&");
-            }
-        }
-        url
+        ]);
+        format!("/events?{pairs}")
     }
 }
 
 /// The part of the list that the filters refresh.
 pub struct EventResults {
-    pub groups: Vec<DayGroup>,
+    pub groups: Vec<DayGroup<EventSummary>>,
     pub total: i64,
     pub count_label: String,
     pub page: i64,
@@ -176,15 +166,16 @@ struct EventResultsTemplate {
 async fn load_results(
     state: &AppState,
     query: &ListQuery,
+    scope: &Scope,
     i18n: &I18n,
 ) -> Result<EventResults, AppError> {
     let filters = query.filters();
-    let mut events = EventRepository::list_page(&state.pool, &filters).await?;
-    let total = EventRepository::count_filtered(&state.pool, &filters).await?;
+    let mut events = EventRepository::list_page(&state.pool, &filters, scope).await?;
+    let total = EventRepository::count_filtered(&state.pool, &filters, scope).await?;
     let has_next = events.len() > usize::try_from(PAGE_SIZE).unwrap_or(usize::MAX);
     events.truncate(usize::try_from(PAGE_SIZE).unwrap_or(usize::MAX));
     Ok(EventResults {
-        groups: group_by_day(events, i18n),
+        groups: group_by_day(events, i18n, |event| &event.created_at),
         total,
         count_label: i18n.plural("events.count", usize::try_from(total).unwrap_or(0)),
         page: query.page(),
@@ -197,29 +188,31 @@ async fn load_results(
 }
 
 pub async fn list(
-    OptionalUser(user): OptionalUser,
+    viewer: Viewer,
     State(state): State<AppState>,
     Query(query): Query<ListQuery>,
     headers: HeaderMap,
     csrf_token: CsrfToken,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    if let Some(redirect) = members_only(&state, user.as_ref(), &headers) {
+    let user = viewer.user.as_ref();
+    if let Some(redirect) = members_only(&state, user, &headers) {
         return Ok(redirect);
     }
-    let results = load_results(&state, &query, &i18n).await?;
+    let results = load_results(&state, &query, &viewer.scope, &i18n).await?;
     if is_htmx(&headers) {
         return render(&EventResultsTemplate { results, i18n });
     }
-    let frame = Frame::load(&state.pool, user.as_ref(), csrf_token.0, &i18n).await?;
-    if let Some(u) = &user {
+    let frame = Frame::load(&state.pool, user, csrf_token.0, &i18n).await?;
+    if let Some(u) = user {
         UserRepository::mark_seen(&state.pool, u.id).await;
     }
+    let services = ServiceRepository::list_visible(&state.pool, &viewer.scope).await?;
     render(&EventListTemplate {
         frame,
         results,
         query,
-        services: ServiceRepository::list_all(&state.pool).await?,
+        services,
         i18n,
     })
 }

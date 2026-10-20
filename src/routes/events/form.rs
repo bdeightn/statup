@@ -6,19 +6,21 @@ use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
 use crate::clock;
+use crate::db::DbPool;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
 use crate::models::{
-    Category, CreateEventInput, Event, EventWithServices, Kind, Lifecycle, SEPARATOR, Service,
-    Severity, UpdateEventInput, User,
+    Category, CreateEventInput, Event, EventWithServices, JournalKind, Kind, Lifecycle, NextUpdate,
+    SEARCH_FROM, SEPARATOR, Scope, Service, Severity, UpdateEventInput, User,
 };
 use crate::repositories::{
-    CreateTemplateInput, EventRepository, EventTemplateRepository, OutageRepository,
-    ServiceRepository,
+    CreateTemplateInput, EventRepository, EventTemplateRepository, FolderRepository,
+    NewJournalEntry, OutageRepository, ServiceRepository,
 };
+use crate::routes::services::{ServiceGroup, grouped};
 use crate::routes::{Frame, render};
-use crate::services::{EventService, EventTemplateService, can_modify};
+use crate::services::{EventService, EventTemplateService, can_modify, read_next_update};
 use crate::state::AppState;
 
 /// How many recent maintenances the announcement form offers.
@@ -57,6 +59,8 @@ pub struct EventInput {
     keeps_services_up: Option<String>,
     #[serde(default, deserialize_with = "super::deserialize_blank_as_none")]
     follows_event_id: Option<i64>,
+    #[serde(default)]
+    next_update: String,
 }
 
 impl EventInput {
@@ -98,6 +102,14 @@ impl EventInput {
         kind == Kind::Maintenance && self.keeps_services_up.is_some()
     }
 
+    /// When an incident's first update is due; only an incident has one.
+    fn next_update(&self, kind: Kind) -> Result<Option<NextUpdate>, AppError> {
+        if kind != Kind::Incident {
+            return Ok(None);
+        }
+        read_next_update(&self.next_update)
+    }
+
     /// The step an incident is declared at; only an incident has one.
     fn opening_step(&self, kind: Kind) -> Option<Lifecycle> {
         (kind == Kind::Incident)
@@ -127,6 +139,8 @@ pub struct EventFormData {
     /// A maintenance being announced that leaves its services up.
     pub keeps_services_up: bool,
     pub follows_event_id: Option<i64>,
+    /// When an incident being declared will have its first update.
+    pub next_update: String,
 }
 
 /// A maintenance an announcement may follow, dated so that two with the
@@ -174,6 +188,7 @@ impl EventFormData {
             opening_step: None,
             keeps_services_up: false,
             follows_event_id: None,
+            next_update: String::new(),
         }
     }
 
@@ -209,6 +224,7 @@ impl EventFormData {
             opening_step: None,
             keeps_services_up: false,
             follows_event_id: Some(ews.event.id),
+            next_update: String::new(),
         }
     }
 
@@ -238,6 +254,7 @@ impl EventFormData {
             opening_step: None,
             keeps_services_up: false,
             follows_event_id: event.follows_event_id,
+            next_update: String::new(),
         }
     }
 
@@ -257,6 +274,7 @@ impl EventFormData {
             start_locked: false,
             started_at: input.started_at,
             follows_event_id: input.follows_event_id,
+            next_update: input.next_update,
         }
     }
 
@@ -270,6 +288,7 @@ impl EventFormData {
     fn options_in_use(&self) -> bool {
         self.follows_event_id.is_some()
             || !self.started_at.is_empty()
+            || !self.next_update.is_empty()
             || self
                 .opening_step
                 .is_some_and(|step| step != Lifecycle::Investigating)
@@ -306,7 +325,9 @@ impl EventFormData {
 struct EventFormTemplate {
     frame: Frame,
     error: Option<String>,
-    services: Vec<Service>,
+    /// The services under their folders, those in none first.
+    sections: Vec<ServiceGroup>,
+    service_count: usize,
     /// Recent maintenances an announcement may follow.
     maintenances: Vec<MaintenanceChoice>,
     edit_id: Option<i64>,
@@ -320,6 +341,37 @@ struct EventFormTemplate {
     i18n: I18n,
 }
 
+impl EventFormTemplate {
+    /// A folder's box starts checked when the event names all its services.
+    fn folder_checked(&self, section: &ServiceGroup) -> bool {
+        section
+            .services
+            .iter()
+            .all(|service| self.form.service_ids.contains(&service.id))
+    }
+
+    fn searchable(&self) -> bool {
+        self.service_count > SEARCH_FROM
+    }
+}
+
+/// The services under their folders; a folder with none is left out. The
+/// folders are only read when a service is in one.
+async fn service_sections(
+    pool: &DbPool,
+    services: Vec<Service>,
+) -> Result<Vec<ServiceGroup>, AppError> {
+    let folders = if services.iter().any(|service| service.folder_id.is_some()) {
+        FolderRepository::list(pool).await?
+    } else {
+        Vec::new()
+    };
+    Ok(grouped(services, folders)
+        .into_iter()
+        .filter(|section| !section.services.is_empty())
+        .collect())
+}
+
 async fn render_form(
     state: &AppState,
     user: &User,
@@ -329,9 +381,11 @@ async fn render_form(
     form: EventFormData,
     error: Option<String>,
 ) -> Result<Response, AppError> {
+    let services = ServiceRepository::list_all(&state.pool).await?;
     render(&EventFormTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
-        services: ServiceRepository::list_all(&state.pool).await?,
+        service_count: services.len(),
+        sections: service_sections(&state.pool, services).await?,
         maintenances: maintenance_choices(state, form.follows_event_id, &i18n).await?,
         zone_hint: i18n.tf(
             "events.zone_hint",
@@ -358,7 +412,7 @@ async fn maintenance_choices(
     i18n: &I18n,
 ) -> Result<Vec<MaintenanceChoice>, AppError> {
     let mut choices: Vec<MaintenanceChoice> =
-        EventRepository::list_finished_maintenance(&state.pool, MAINTENANCE_CHOICES)
+        EventRepository::list_finished_maintenance(&state.pool, MAINTENANCE_CHOICES, &Scope::All)
             .await?
             .into_iter()
             .map(|m| {
@@ -394,7 +448,7 @@ pub async fn new_form(
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
     let followed = match query.after {
-        Some(id) => EventRepository::find_with_services(&state.pool, id)
+        Some(id) => EventRepository::find_with_services(&state.pool, id, &Scope::All)
             .await?
             .filter(|ews| ews.event.kind == Kind::Maintenance),
         None => None,
@@ -438,24 +492,39 @@ pub async fn create(
 ) -> Result<Response, AppError> {
     let kind = input.kind();
     let planned = input.planned(kind);
-    let create_input = CreateEventInput {
-        kind,
-        severity: input.severity(kind),
-        planned,
-        category: input.category(kind),
-        title: input.title.trim().to_string(),
-        description: input.description.trim().to_string(),
-        planned_start: input.start().filter(|_| planned),
-        planned_end: input.end().filter(|_| kind == Kind::Maintenance),
-        started_at: input.began(kind),
-        opening_step: input.opening_step(kind),
-        keeps_services_up: input.keeps_services_up(kind),
-        service_ids: input.service_ids.clone(),
-        follows_event_id: input.follows_event_id,
-        author_id: user.id,
+    let created = match input.next_update(kind) {
+        Ok(next_update) => {
+            EventService::create(
+                &state.pool,
+                CreateEventInput {
+                    kind,
+                    severity: input.severity(kind),
+                    planned,
+                    category: input.category(kind),
+                    title: input.title.trim().to_string(),
+                    description: input.description.trim().to_string(),
+                    planned_start: input.start().filter(|_| planned),
+                    planned_end: input.end().filter(|_| kind == Kind::Maintenance),
+                    started_at: input.began(kind),
+                    opening_step: input.opening_step(kind),
+                    keeps_services_up: input.keeps_services_up(kind),
+                    service_ids: input.service_ids.clone(),
+                    follows_event_id: input.follows_event_id,
+                    author_id: user.id,
+                    next_update,
+                },
+            )
+            .await
+        }
+        Err(e) => Err(e),
     };
-    match EventService::create(&state.pool, create_input).await {
+    match created {
         Ok(event) => {
+            NewJournalEntry::new(JournalKind::EventCreated)
+                .by(&user)
+                .about(&event.title)
+                .record(&state.pool)
+                .await;
             after_create(&state, &user, &input, kind).await;
             Ok(Redirect::to(&format!("/events/{}?published=1", event.id)).into_response())
         }
@@ -487,8 +556,15 @@ async fn after_create(state: &AppState, user: &User, input: &EventInput, kind: K
         category: input.category(kind),
         created_by: user.id,
     };
-    if let Err(e) = EventTemplateService::create(&state.pool, template).await {
-        tracing::warn!(error = %e, "Failed to save event template");
+    match EventTemplateService::create(&state.pool, template).await {
+        Ok(saved) => {
+            NewJournalEntry::new(JournalKind::TemplateSaved)
+                .by(user)
+                .about(&saved.title)
+                .record(&state.pool)
+                .await;
+        }
+        Err(e) => tracing::warn!(error = %e, "Failed to save event template"),
     }
 }
 
@@ -499,7 +575,7 @@ pub async fn edit_form(
     csrf_token: CsrfToken,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    let ews = EventService::find_with_services(&state.pool, id).await?;
+    let ews = EventService::find_with_services(&state.pool, id, &Scope::All).await?;
     if !can_modify(&ews.event, user.role) {
         return Err(AppError::refused("validation.event_closed_admin_only"));
     }
@@ -516,7 +592,7 @@ pub async fn update(
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<EventInput>,
 ) -> Result<Response, AppError> {
-    let event = EventService::find_with_services(&state.pool, id)
+    let event = EventService::find_with_services(&state.pool, id, &Scope::All)
         .await?
         .event;
     let (kind, planned) = (event.kind, event.planned);
@@ -531,8 +607,16 @@ pub async fn update(
         service_ids: input.service_ids.clone(),
         follows_event_id: input.follows_event_id,
     };
+    let title = changes.title.clone();
     match EventService::update(&state.pool, id, changes, user.role).await {
-        Ok(()) => Ok(Redirect::to(&format!("/events/{id}")).into_response()),
+        Ok(()) => {
+            NewJournalEntry::new(JournalKind::EventEdited)
+                .by(&user)
+                .about(&title)
+                .record(&state.pool)
+                .await;
+            Ok(Redirect::to(&format!("/events/{id}")).into_response())
+        }
         Err(AppError::Validation(key)) => {
             let mut form = EventFormData::from_input(input, kind, planned);
             form.start_locked = kind == Kind::Maintenance && event.started_at.is_some();

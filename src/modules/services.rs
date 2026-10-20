@@ -15,7 +15,8 @@ use crate::error::AppError;
 use crate::i18n::I18n;
 use crate::models::{Service, ServiceStatus, Severity, split_duration};
 use crate::repositories::{
-    EventRepository, IncidentSpan, OutageRepository, OutageSpan, ServiceRepository,
+    EventRepository, FolderRepository, IncidentSpan, OutageRepository, OutageSpan,
+    ServiceRepository,
 };
 
 use super::{ColumnWidth, Module, ModuleOption, ModuleRenderContext, render_template};
@@ -73,10 +74,47 @@ pub struct ServiceRow {
     pub strip: Strip,
 }
 
+/// The services of one folder under its name, or those without a folder.
+pub struct Section {
+    folder: Option<i64>,
+    pub title: Option<String>,
+    pub rows: Vec<ServiceRow>,
+}
+
+/// Cuts the rows, in the chosen order, into one section per folder. A
+/// folder's name only comes from rows the viewer is shown, so a folder
+/// whose services are all hidden leaves no title behind.
+fn sections(rows: Vec<ServiceRow>, names: &HashMap<i64, String>) -> Vec<Section> {
+    let mut sections: Vec<Section> = Vec::new();
+    for row in rows {
+        let folder = row.service.folder_id;
+        match sections.last_mut() {
+            Some(last) if last.folder == folder => last.rows.push(row),
+            _ => sections.push(Section {
+                folder,
+                title: folder.and_then(|id| names.get(&id).cloned()),
+                rows: vec![row],
+            }),
+        }
+    }
+    sections
+}
+
+/// The names of the folders, read only when a service shown is in one.
+async fn folder_names(
+    pool: &DbPool,
+    services: &[Service],
+) -> Result<HashMap<i64, String>, AppError> {
+    if services.iter().all(|service| service.folder_id.is_none()) {
+        return Ok(HashMap::new());
+    }
+    Ok(FolderRepository::names(pool).await?)
+}
+
 #[derive(Template)]
 #[template(path = "modules/services.html")]
 struct ServicesTemplate {
-    rows: Vec<ServiceRow>,
+    sections: Vec<Section>,
     can_publish: bool,
     i18n: I18n,
 }
@@ -100,14 +138,18 @@ impl Module for ServicesModule {
     }
 
     async fn render(&self, ctx: &ModuleRenderContext<'_>) -> Result<String, AppError> {
+        // The reader's scope comes first: a hidden service with a problem
+        // must not come back through the rule below.
         let services: Vec<Service> = ServiceService::list_for_display(ctx.pool)
             .await?
             .into_iter()
+            .filter(|service| ctx.scope.sees_service(service.id))
             .filter(|service| {
                 service.status != ServiceStatus::Operational || !is_left_out(service, ctx.hidden)
             })
             .collect();
         let mut by_service = strips(ctx.pool, &services, LONG_DAYS, ctx.i18n).await?;
+        let names = folder_names(ctx.pool, &services).await?;
         let rows = services
             .into_iter()
             .filter_map(|service| {
@@ -116,7 +158,7 @@ impl Module for ServicesModule {
             })
             .collect();
         let template = ServicesTemplate {
-            rows,
+            sections: sections(rows, &names),
             can_publish: ctx.can_publish(),
             i18n: ctx.i18n.clone(),
         };

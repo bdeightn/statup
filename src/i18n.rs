@@ -22,6 +22,9 @@ pub struct Language {
     pub code: &'static str,
     /// Its own name, shown as is whatever the page's language.
     pub name: &'static str,
+    /// Where its documentation sits on statup.dev; empty for English, also
+    /// shown to the languages the documentation is not written in.
+    pub docs: &'static str,
     clock_24h: bool,
     plural: PluralRule,
     source: &'static str,
@@ -42,6 +45,7 @@ enum PluralRule {
 pub const LANGUAGES: &[Language] = &[
     Language {
         code: "fr",
+        docs: "/fr",
         name: "Français",
         clock_24h: true,
         plural: PluralRule::UpToOne,
@@ -49,6 +53,7 @@ pub const LANGUAGES: &[Language] = &[
     },
     Language {
         code: "en",
+        docs: "",
         name: "English",
         clock_24h: false,
         plural: PluralRule::One,
@@ -56,6 +61,7 @@ pub const LANGUAGES: &[Language] = &[
     },
     Language {
         code: "de",
+        docs: "",
         name: "Deutsch",
         clock_24h: true,
         plural: PluralRule::One,
@@ -63,6 +69,7 @@ pub const LANGUAGES: &[Language] = &[
     },
     Language {
         code: "es",
+        docs: "",
         name: "Español",
         clock_24h: true,
         plural: PluralRule::One,
@@ -259,6 +266,28 @@ impl I18n {
             (_, 1.., 0) => self.tf("duration.hours", &[("h", &h)]),
             (_, 1.., _) => self.tf("duration.hours_minutes", &[("h", &h), ("m", &m)]),
             _ => self.tf("duration.minutes", &[("m", &m)]),
+        }
+    }
+
+    /// The time alone today, the date and time otherwise.
+    pub fn format_short_when(&self, at: &DateTime<Utc>) -> String {
+        if clock::local_date(at) == clock::today() {
+            self.format_time(at)
+        } else {
+            self.format_datetime(at)
+        }
+    }
+
+    /// "à 14:30" for a moment due later today, "demain à 09:00" tomorrow.
+    pub fn format_due(&self, at: &DateTime<Utc>) -> String {
+        let time = self.format_time(at);
+        let day = clock::local_date(at);
+        if day == clock::today() {
+            self.tf("date.at_time", &[("time", &time)])
+        } else if Some(day) == clock::today().succ_opt() {
+            self.tf("date.tomorrow_at_time", &[("time", &time)])
+        } else {
+            self.format_datetime(at)
         }
     }
 

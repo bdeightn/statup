@@ -1,0 +1,52 @@
+---
+title: Surveillance
+description: "Laisser Statup vérifier qu'un site web ou un serveur répond, et afficher de lui-même une panne quand il ne répond plus."
+---
+
+Statup peut vérifier lui-même un service, chaque minute, depuis le serveur sur lequel il tourne : les adresses internes fonctionnent donc.
+
+## Mettre en place une vérification
+
+Dans le formulaire du service, sous **Surveillance**, choisissez :
+
+- **Aucune**, par défaut : pas de vérification.
+- **Web**, pour une adresse qui doit répondre. **URL** est une adresse complète en `http://` ou `https://`, comme `https://intranet.example.com`, de 2 000 caractères au plus. Cochez **Accepter un certificat interne** pour un outil dont le certificat n'est signé par aucune autorité publique.
+- **Port**, pour un hôte et son port, comme `192.168.1.1` et `443` : un serveur, ou un routeur ou un pare-feu par son port d'administration. **Port** est un nombre de 1 à 65535.
+
+Une adresse qui contient un identifiant ou un mot de passe est refusée : les vérifications ne conservent aucun identifiant de connexion.
+
+**Tester** lance la vérification tout de suite, sans enregistrer, et dit pourquoi elle échoue : port fermé, aucune réponse en 10 secondes, nom inconnu, certificat refusé, serveur qui répond par une erreur, adresse qui redirige en boucle, ou connexion qui échoue.
+
+## Déroulement d'une vérification
+
+- Chaque minute, jusqu'à 16 vérifications à la fois, chacune disposant de 10 secondes.
+- **Web** envoie un `GET` avec le user agent `statup` et suit jusqu'à 5 redirections. Tout code inférieur à 500 compte comme une réponse, même un refus comme 401 ou 404.
+- **Port** ouvre une connexion TCP et n'envoie rien. Une connexion acceptée vaut réponse.
+- Les vérifications ne contactent que les adresses que vous avez réglées.
+
+## Des échecs à la panne
+
+Quand un service échoue à autant de vérifications de suite que son délai compte de minutes, trois par défaut, il passe **En panne**, marqué **Détecté automatiquement**, à compter de sa première vérification ratée. La première vérification qui obtient une réponse y met fin, et l'état réglé à la main revient.
+
+Chaque service règle son délai sous **Surveillance** : « Déclarer une panne après 3 min sans réponse », de 1 à 60. Un serveur critique peut afficher sa panne au bout d'une minute, une imprimante au bout de quinze. Changer le délai, ou enregistrer le formulaire avec la même vérification, laisse telle quelle une panne déjà affichée.
+
+Statup ne rédige jamais d'incident lui-même. **Déclarer un incident**, sur le bandeau ou sur la page Services, ouvre un nouvel incident avec l'impact **Majeur**, le service et le début déjà remplis. Voir [Incidents](incidents.md).
+
+## Quand aucune panne n'est déclarée
+
+- **Pendant une maintenance en cours** qui cite le service, sauf si elle est marquée **Sans coupure**. Les échecs sont comptés mais ne déclenchent rien. Si le service échoue encore à la fin de la maintenance, la panne est déclarée à la vérification ratée suivante, et datée de ce moment. Une vérification qui obtient une réponse pendant la maintenance met tout de même fin à une panne.
+- **Quand Statup perd lui-même sa connexion.** Si au moins trois services qui répondaient échouent tous lors du même passage, ce passage est ignoré, pour cinq passages de suite au plus. Deux services qui échouent ensemble sont jugés normalement.
+
+## Alertes
+
+Les services qui tombent dans la même minute, comme ceux d'un serveur en cours de redémarrage, sont signalés en un seul message par canal (« 3 services ne répondent plus », avec leurs noms), et leur retour en un message de plus. Un service déjà couvert par un incident ouvert n'envoie aucune alerte. Déclarer une maintenance avant un redémarrage prévu fait taire les vérifications. Voir [Alertes](alerts.md).
+
+## Dans l'historique
+
+Une panne détectée de quinze minutes ou plus colore ses journées dans l'historique de disponibilité du service, sauf si un incident couvre déjà ce jour-là. Une panne plus courte laisse la journée en vert. Voir [Services](services.md#availability-history).
+
+Changer le type de vérification, l'adresse, ou **Accepter un certificat interne** efface une panne en cours, par exemple une fausse panne due à une adresse erronée. Les pannes déjà terminées restent dans l'historique.
+
+## Couper les vérifications
+
+[`MONITORING=false`](configuration.md#monitoring) arrête les vérifications lancées chaque minute. Les adresses restent enregistrées, et **Tester** vérifie toujours une adresse quand vous appuyez dessus.

@@ -1,10 +1,13 @@
 //! What every page needs around its content: the masthead, the footer and
 //! the token htmx sends back with its requests.
 
+use std::fmt::Write as _;
+
 use askama::Template;
 use axum::http::HeaderMap;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use chrono::Utc;
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 
 use crate::clock;
 use crate::db::DbPool;
@@ -12,8 +15,22 @@ use crate::error::AppError;
 use crate::i18n::I18n;
 use crate::middleware::headers::is_htmx;
 use crate::models::User;
+use crate::routes::notices::{Bell, bell};
 use crate::services::EventService;
 use crate::state::AppState;
+
+/// The filters that are set, as `name=value&` pairs with the values encoded,
+/// so that a parameter can be appended.
+pub fn query_pairs(pairs: &[(&str, Option<String>)]) -> String {
+    let mut query = String::new();
+    for (name, value) in pairs {
+        if let Some(value) = value {
+            let encoded = utf8_percent_encode(value, NON_ALPHANUMERIC);
+            let _ = write!(query, "{name}={encoded}&");
+        }
+    }
+    query
+}
 
 /// Anonymous visitors read only while the pages are open to everyone; the
 /// others are sent to the sign-in page. A background request is told to
@@ -52,6 +69,8 @@ pub struct Frame {
     /// "UTC+2", the instance zone.
     pub zone: String,
     pub clock_offset: i32,
+    /// The notices of a member who publishes.
+    pub bell: Option<Bell>,
 }
 
 impl Frame {
@@ -69,8 +88,12 @@ impl Frame {
     ) -> Result<Self, AppError> {
         let now = Utc::now();
         let unread_count = match user {
-            Some(u) => EventService::unread_count(pool, u.last_seen_at).await?,
+            Some(u) => EventService::unread_count(pool, u).await?,
             None => 0,
+        };
+        let bell = match user {
+            Some(u) => bell(pool, u, i18n).await?,
+            None => None,
         };
         Ok(Self {
             csrf_token,
@@ -91,6 +114,7 @@ impl Frame {
             clock_time: i18n.format_time(&now),
             zone: clock::offset_label(&now),
             clock_offset: clock::offset_minutes(&now),
+            bell,
         })
     }
 }

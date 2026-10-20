@@ -17,11 +17,12 @@ use crate::error::AppError;
 use crate::i18n::{I18n, LANGUAGES, Locale, language};
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
 use crate::models::{
-    Channel, ChannelInput, ChannelKind, Delivery, DeliveryStatus, Happening, SEPARATOR, User,
+    Channel, ChannelInput, ChannelKind, Delivery, DeliveryStatus, Happening, JournalKind,
+    SEPARATOR, User,
 };
-use crate::repositories::{NotificationRepository, SettingsRepository};
+use crate::repositories::{NewJournalEntry, NotificationRepository, SettingsRepository};
 use crate::services::{
-    Facts, Failure, Finding, Notice, Origin, PAGE_ADDRESS_SETTING, Sender, Subject,
+    Facts, Failure, Finding, Notice, Origin, PAGE_ADDRESS_SETTING, Sender, Subject, channel_detail,
     destination_allowed, destination_name_refusal, email_addresses, page_address,
 };
 use crate::state::AppState;
@@ -413,7 +414,7 @@ fn last_send(
     LastSend::Trouble("crit", text)
 }
 
-fn reason_of(code: Option<&str>, i18n: &I18n) -> String {
+pub(crate) fn reason_of(code: Option<&str>, i18n: &I18n) -> String {
     code.and_then(Failure::from_code).map_or_else(
         || i18n.t("notifications.failure_unknown").to_string(),
         |failure| failure_text(failure, i18n),
@@ -504,6 +505,11 @@ pub async fn create(
     };
     let channel = NotificationRepository::create_channel(&state.pool, &input).await?;
     remember_page_address(&state, &headers).await?;
+    NewJournalEntry::new(JournalKind::ChannelCreated)
+        .by(&user)
+        .about(&channel.name)
+        .record(&state.pool)
+        .await;
     Ok(Redirect::to(&format!("/admin/notifications?added={}", channel.id)).into_response())
 }
 
@@ -577,24 +583,35 @@ pub async fn update(
         }
     };
     NotificationRepository::update_channel(&state.pool, id, &input).await?;
+    NewJournalEntry::new(JournalKind::ChannelUpdated)
+        .by(&user)
+        .about(&input.name)
+        .record(&state.pool)
+        .await;
     Ok(Redirect::to(&format!("/admin/notifications?saved={id}")).into_response())
 }
 
 pub async fn delete(
-    _admin: RequireAdmin,
+    RequireAdmin(user): RequireAdmin,
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
+    let channel = find(&state, id).await?;
     if !NotificationRepository::delete_channel(&state.pool, id).await? {
         return Err(AppError::NotFound);
     }
+    NewJournalEntry::new(JournalKind::ChannelDeleted)
+        .by(&user)
+        .about(&channel.name)
+        .record(&state.pool)
+        .await;
     Ok(Redirect::to("/admin/notifications?deleted=1").into_response())
 }
 
 /// Sends a test message to the destination the form describes, without
 /// saving anything, and says how it went.
 pub async fn test(
-    _admin: RequireAdmin,
+    RequireAdmin(user): RequireAdmin,
     State(state): State<AppState>,
     Locale(i18n): Locale,
     headers: HeaderMap,
@@ -615,6 +632,17 @@ pub async fn test(
         .unwrap_or_else(|| origin(&state, &headers));
     let (notice, facts) = test_message(&channel, page);
     let result = state.notifier.send(&channel, &notice, &facts).await;
+    let outcome = result
+        .as_ref()
+        .map_or_else(|failure| failure.code(), |()| "sent".to_string());
+    let mut entry = NewJournalEntry::new(JournalKind::ChannelTested)
+        .by(&user)
+        .with_detail(channel_detail(channel.kind, &outcome));
+    // A channel tried before it has a name is named by its tool alone.
+    if !channel.name.trim().is_empty() {
+        entry = entry.about(channel.name.trim());
+    }
+    entry.record(&state.pool).await;
     let (tone, message) = match result {
         Ok(()) => ("ok", i18n.t("notifications.test_sent").to_string()),
         Err(failure) => {
@@ -694,6 +722,10 @@ pub async fn save_page_address(
         return render_list(&state, &user, csrf_token, i18n, &headers, page).await;
     }
     SettingsRepository::set(&state.pool, PAGE_ADDRESS_SETTING, &typed).await?;
+    NewJournalEntry::new(JournalKind::PageAddressSaved)
+        .by(&user)
+        .record(&state.pool)
+        .await;
     Ok(Redirect::to("/admin/notifications?address=1").into_response())
 }
 

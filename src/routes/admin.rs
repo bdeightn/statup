@@ -5,15 +5,18 @@ use axum::extract::{Multipart, Path, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
+use super::setup::{GeneralInput, apply_general, read_general, record_settings_saved};
 use super::{Frame, render};
 use crate::clock;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::no_store;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
-use crate::models::{Role, User, check_display_name};
-use crate::repositories::{IconRepository, NotificationRepository, UserRepository};
-use crate::services::{AuthService, CURRENT_VERSION, LogoService, NewerRelease, SettingsService};
+use crate::models::{JournalKind, Role, User, check_display_name};
+use crate::repositories::{
+    GroupRepository, NewJournalEntry, NotificationRepository, UserRepository,
+};
+use crate::services::{AuthService, CURRENT_VERSION, LogoService, NewerRelease};
 use crate::state::AppState;
 
 #[derive(Template)]
@@ -27,26 +30,22 @@ struct SettingsPageTemplate {
     notice: Option<SettingsNotice>,
     /// A refused name, said in the page rather than on the bare error page.
     error: Option<String>,
-    /// The instance zone, and the ones it may switch to.
-    time_zone: &'static str,
+    /// The zone shown as chosen, and the ones it may switch to.
+    time_zone: String,
     zones: Vec<&'static str>,
     users_count: i64,
     admins_count: i64,
-    icons_count: i64,
     notifications_count: i64,
+    /// What the journal captures and for how long.
+    journal_label: String,
     /// A newer published version, once the daily check finds one.
     newer: Option<NewerRelease>,
     i18n: I18n,
 }
 
 enum SettingsNotice {
-    Renamed(String),
-    NameReset,
-    ZoneSet(&'static str),
-    LogoSet,
+    Saved,
     LogoRemoved,
-    PublicOpened,
-    PublicClosed,
 }
 
 impl SettingsPageTemplate {
@@ -69,19 +68,9 @@ impl SettingsPageTemplate {
         zone.replace('_', " ")
     }
 
-    fn zone_notice(&self, zone: &str) -> String {
-        self.i18n
-            .tf("admin.zone_notice", &[("zone", &Self::zone_label(zone))])
-    }
-
     fn newer_notice(&self, release: &NewerRelease) -> String {
         self.i18n
             .tf("admin.version_newer", &[("version", &release.version)])
-    }
-
-    fn icons_label(&self) -> String {
-        let count = usize::try_from(self.icons_count).unwrap_or(0);
-        self.i18n.plural("admin.icons", count)
     }
 
     fn notifications_label(&self) -> String {
@@ -90,46 +79,61 @@ impl SettingsPageTemplate {
     }
 }
 
-/// What the settings page says on top of the saved values.
+/// What the general card shows: the saved values, or the ones a refused
+/// save sent, with what to say on top.
 struct SettingsPage {
     instance_name: String,
+    time_zone: String,
+    public_mode: bool,
     notice: Option<SettingsNotice>,
     error: Option<String>,
 }
 
+impl SettingsPage {
+    fn saved(state: &AppState) -> Self {
+        Self {
+            instance_name: crate::instance_name(),
+            time_zone: clock::zone().name().to_string(),
+            public_mode: state.is_public_mode(),
+            notice: None,
+            error: None,
+        }
+    }
+
+    fn typed(state: &AppState, input: &GeneralInput) -> Self {
+        let saved = Self::saved(state);
+        Self {
+            instance_name: input.instance_name.trim().to_string(),
+            time_zone: input.time_zone.clone().unwrap_or(saved.time_zone),
+            public_mode: match input.access.as_str() {
+                "everyone" => true,
+                "members" => false,
+                _ => saved.public_mode,
+            },
+            ..saved
+        }
+    }
+
+    fn refused(self, i18n: &I18n, key: &str) -> Self {
+        Self {
+            error: Some(i18n.t(key).to_string()),
+            ..self
+        }
+    }
+}
+
 #[derive(Deserialize, Default)]
 pub struct SettingsQuery {
-    renamed: Option<String>,
-    public: Option<String>,
-    zone: Option<String>,
+    saved: Option<String>,
     logo: Option<String>,
 }
 
 impl SettingsQuery {
-    /// The name is read back from memory, not from the address bar, so the
-    /// receipt cannot be made to say anything the instance is not called.
     fn notice(&self) -> Option<SettingsNotice> {
-        if self.renamed.is_some() {
-            let name = crate::instance_name();
-            return Some(if name.is_empty() {
-                SettingsNotice::NameReset
-            } else {
-                SettingsNotice::Renamed(name)
-            });
+        if self.saved.is_some() {
+            return Some(SettingsNotice::Saved);
         }
-        if self.zone.is_some() {
-            return Some(SettingsNotice::ZoneSet(clock::zone().name()));
-        }
-        match self.logo.as_deref() {
-            Some("set") => return Some(SettingsNotice::LogoSet),
-            Some("removed") => return Some(SettingsNotice::LogoRemoved),
-            _ => {}
-        }
-        match self.public.as_deref() {
-            Some("on") => Some(SettingsNotice::PublicOpened),
-            Some("off") => Some(SettingsNotice::PublicClosed),
-            _ => None,
-        }
+        (self.logo.as_deref() == Some("removed")).then_some(SettingsNotice::LogoRemoved)
     }
 }
 
@@ -148,7 +152,23 @@ struct UsersListTemplate {
     add_form: AddMemberForm,
     /// The add-member fold opens itself when its form came back refused.
     add_open: bool,
+    groups: Vec<GroupRow>,
+    new_group: NewGroupForm,
     i18n: I18n,
+}
+
+/// A group on the Team page: a link to its own page.
+struct GroupRow {
+    id: i64,
+    name: String,
+    members: String,
+}
+
+/// The "New group" panel, open again with the refused name and why.
+#[derive(Default)]
+struct NewGroupForm {
+    value: String,
+    error: Option<String>,
 }
 
 struct UserRow {
@@ -169,6 +189,7 @@ enum NoticeKind {
     RoleUpdated(Role),
     Disabled,
     Enabled,
+    GroupDeleted,
 }
 
 /// A new account, or a reset, with the temporary password to hand over.
@@ -190,10 +211,17 @@ struct AddMemberForm {
 pub struct UsersQuery {
     role: Option<i64>,
     toggled: Option<i64>,
+    group_deleted: Option<u8>,
 }
 
 impl UsersQuery {
     fn notice(&self, users: &[UserRow]) -> Option<Notice> {
+        if self.group_deleted.is_some() {
+            return Some(Notice {
+                name: String::new(),
+                kind: NoticeKind::GroupDeleted,
+            });
+        }
         let find = |id: Option<i64>| id.and_then(|id| users.iter().find(|u| u.id == id));
         if let Some(user) = find(self.role) {
             return Some(Notice {
@@ -247,9 +275,8 @@ pub async fn settings_page(
     Query(query): Query<SettingsQuery>,
 ) -> Result<Response, AppError> {
     let page = SettingsPage {
-        instance_name: crate::instance_name(),
         notice: query.notice(),
-        error: None,
+        ..SettingsPage::saved(&state)
     };
     render_settings(&state, &user, csrf_token, i18n, page).await
 }
@@ -264,16 +291,16 @@ async fn render_settings(
     let frame = Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?;
     render(&SettingsPageTemplate {
         frame,
-        public_mode: state.is_public_mode(),
+        public_mode: page.public_mode,
         instance_name: page.instance_name,
         notice: page.notice,
         error: page.error,
-        time_zone: clock::zone().name(),
+        time_zone: page.time_zone,
         zones: clock::zone_names(),
         users_count: UserRepository::count_all(&state.pool).await?,
         admins_count: UserRepository::count_admins(&state.pool).await?,
-        icons_count: IconRepository::count(&state.pool).await?,
         notifications_count: NotificationRepository::count_channels(&state.pool).await?,
+        journal_label: super::journal::tile_label(state, &i18n).await,
         newer: state.update.newer(),
         i18n,
     })
@@ -313,6 +340,42 @@ async fn show_password(
     Ok(no_store(response))
 }
 
+async fn load_groups(state: &AppState, i18n: &I18n) -> Result<Vec<GroupRow>, AppError> {
+    Ok(GroupRepository::list(&state.pool)
+        .await?
+        .into_iter()
+        .map(|group| GroupRow {
+            members: i18n.plural(
+                "admin.group_members",
+                usize::try_from(group.member_count).unwrap_or(0),
+            ),
+            id: group.id,
+            name: group.name,
+        })
+        .collect())
+}
+
+/// The Team page again, with the "New group" panel open on the refused
+/// name and why.
+pub(super) async fn refused_page(
+    state: &AppState,
+    admin: &User,
+    csrf_token: String,
+    i18n: I18n,
+    key: &str,
+    name: String,
+) -> Result<Response, AppError> {
+    let users = load_rows(state, &i18n).await?;
+    let page = ListPage {
+        new_group: NewGroupForm {
+            error: Some(i18n.t(key).to_string()),
+            value: name,
+        },
+        ..ListPage::default()
+    };
+    render_users(state, admin, csrf_token, i18n, users, page).await
+}
+
 async fn load_rows(state: &AppState, i18n: &I18n) -> Result<Vec<UserRow>, AppError> {
     Ok(UserRepository::list_all(&state.pool)
         .await?
@@ -329,6 +392,7 @@ struct ListPage {
     error: Option<String>,
     add_form: AddMemberForm,
     add_open: bool,
+    new_group: NewGroupForm,
 }
 
 impl ListPage {
@@ -358,6 +422,8 @@ async fn render_users(
         error: page.error,
         add_form: page.add_form,
         add_open: page.add_open,
+        groups: load_groups(state, &i18n).await?,
+        new_group: page.new_group,
         i18n,
     })
 }
@@ -373,7 +439,12 @@ pub async fn add_member(
 ) -> Result<Response, AppError> {
     match create_member(&state, &input).await {
         Ok(created) => {
-            tracing::info!(admin_id = admin.id, "Member added");
+            NewJournalEntry::new(JournalKind::MemberAdded)
+                .by(&admin)
+                .about(&created.name)
+                .with_detail(input.role.as_str())
+                .record(&state.pool)
+                .await;
             show_password(&state, &admin, csrf_token, i18n, created).await
         }
         Err(AppError::Validation(key)) => {
@@ -404,7 +475,6 @@ async fn create_member(
         .parse()
         .map_err(|_| AppError::validation("validation.invalid_role"))?;
     let (user, password) = AuthService::add_member(&state.pool, &input.email, &name, role).await?;
-    tracing::info!(new_user_id = user.id, "Temporary password issued");
     Ok(CreatedAccount {
         name: user.display_name,
         email: user.email,
@@ -441,11 +511,11 @@ async fn issue_reset(
         return Err(AppError::validation("validation.cannot_reset_self"));
     }
     let (user, password) = AuthService::reset_member_password(&state.pool, user_id).await?;
-    tracing::info!(
-        admin_id = admin.id,
-        target_user_id = user.id,
-        "Temporary password issued"
-    );
+    NewJournalEntry::new(JournalKind::MemberPasswordReset)
+        .by(admin)
+        .about(&user.display_name)
+        .record(&state.pool)
+        .await;
     Ok(CreatedAccount {
         name: user.display_name,
         email: user.email,
@@ -485,19 +555,19 @@ async fn apply_role(
     if user_id == admin.id {
         return Err(AppError::validation("validation.cannot_change_own_role"));
     }
-    UserRepository::find_by_id(&state.pool, user_id)
+    let target = UserRepository::find_by_id(&state.pool, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
     if !UserRepository::update_role(&state.pool, user_id, new_role).await? {
         return Err(AppError::validation("validation.last_admin"));
     }
 
-    tracing::info!(
-        admin_id = admin.id,
-        target_user_id = user_id,
-        new_role = new_role.as_str(),
-        "Role updated"
-    );
+    NewJournalEntry::new(JournalKind::MemberRoleChanged)
+        .by(admin)
+        .about(&target.display_name)
+        .with_detail(new_role.as_str())
+        .record(&state.pool)
+        .await;
     Ok(())
 }
 
@@ -531,72 +601,44 @@ async fn apply_toggle(state: &AppState, admin: &User, user_id: i64) -> Result<()
         return Err(AppError::validation("validation.last_active_admin"));
     }
 
-    let action = if new_active { "enabled" } else { "disabled" };
-    tracing::info!(
-        admin_id = admin.id,
-        target_user_id = user_id,
-        action,
-        "User active status changed"
-    );
+    let kind = if new_active {
+        JournalKind::MemberEnabled
+    } else {
+        JournalKind::MemberDisabled
+    };
+    NewJournalEntry::new(kind)
+        .by(admin)
+        .about(&target.display_name)
+        .record(&state.pool)
+        .await;
     Ok(())
 }
 
-#[derive(Deserialize)]
-pub struct InstanceNameInput {
-    #[serde(default)]
-    instance_name: String,
-}
-
-pub async fn update_instance_name(
-    RequireAdmin(admin): RequireAdmin,
-    State(state): State<AppState>,
-    CsrfToken(csrf_token): CsrfToken,
-    Locale(i18n): Locale,
-    HtmlForm(input): HtmlForm<InstanceNameInput>,
-) -> Result<Response, AppError> {
-    let name = input.instance_name.trim();
-    if let Some(key) = SettingsService::name_refusal(name) {
-        let page = SettingsPage {
-            instance_name: name.to_string(),
-            notice: None,
-            error: Some(i18n.t(key).to_string()),
-        };
-        return render_settings(&state, &admin, csrf_token, i18n, page).await;
-    }
-
-    SettingsService::set_name(&state.pool, name).await?;
-    tracing::info!(
-        admin_id = admin.id,
-        instance_name = name,
-        "Instance name updated"
-    );
-
-    Ok(Redirect::to("/admin/settings?renamed=1").into_response())
-}
-
-/// A logo refused for its file is said on the settings page.
-pub async fn update_logo(
+/// The general card is saved at once: name, logo, zone and audience. A
+/// refusal shows the page again with what was chosen.
+pub async fn save_settings(
     RequireAdmin(admin): RequireAdmin,
     State(state): State<AppState>,
     CsrfToken(csrf_token): CsrfToken,
     Locale(i18n): Locale,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
-    let stored = match super::icons::extract_upload(&mut multipart).await {
-        Ok((_, data)) => LogoService::replace(&state.pool, &state.upload_dir, data).await,
-        Err(e) => Err(e),
+    let input = match read_general(&mut multipart).await {
+        Ok(input) => input,
+        Err(AppError::Validation(key)) => {
+            let page = SettingsPage::saved(&state).refused(&i18n, &key);
+            return render_settings(&state, &admin, csrf_token, i18n, page).await;
+        }
+        Err(e) => return Err(e),
     };
-    match stored {
+    let changed = input.changed_fields(&state);
+    match apply_general(&state, &input).await {
         Ok(()) => {
-            tracing::info!(admin_id = admin.id, "Logo updated");
-            Ok(Redirect::to("/admin/settings?logo=set").into_response())
+            record_settings_saved(&state, &admin, &changed).await;
+            Ok(Redirect::to("/admin/settings?saved=1").into_response())
         }
         Err(AppError::Validation(key)) => {
-            let page = SettingsPage {
-                instance_name: crate::instance_name(),
-                notice: None,
-                error: Some(i18n.t(&key).to_string()),
-            };
+            let page = SettingsPage::typed(&state, &input).refused(&i18n, &key);
             render_settings(&state, &admin, csrf_token, i18n, page).await
         }
         Err(e) => Err(e),
@@ -608,58 +650,9 @@ pub async fn remove_logo(
     State(state): State<AppState>,
 ) -> Result<Response, AppError> {
     LogoService::remove(&state.pool, &state.upload_dir).await?;
-    tracing::info!(admin_id = admin.id, "Logo removed");
+    NewJournalEntry::new(JournalKind::LogoRemoved)
+        .by(&admin)
+        .record(&state.pool)
+        .await;
     Ok(Redirect::to("/admin/settings?logo=removed").into_response())
-}
-
-#[derive(Deserialize)]
-pub struct TimeZoneInput {
-    #[serde(default)]
-    time_zone: String,
-}
-
-pub async fn update_time_zone(
-    RequireAdmin(admin): RequireAdmin,
-    State(state): State<AppState>,
-    HtmlForm(input): HtmlForm<TimeZoneInput>,
-) -> Result<Response, AppError> {
-    let zone = clock::parse_zone(&input.time_zone)
-        .ok_or_else(|| AppError::validation("validation.unknown_zone"))?;
-    SettingsService::set_time_zone(&state.pool, zone).await?;
-    tracing::info!(
-        admin_id = admin.id,
-        time_zone = zone.name(),
-        "Time zone updated"
-    );
-    Ok(Redirect::to("/admin/settings?zone=1").into_response())
-}
-
-#[derive(Deserialize)]
-pub struct AccessInput {
-    #[serde(default)]
-    access: String,
-}
-
-/// Who can read the page: the two choices are the state and the action at
-/// once, so the handler sets rather than toggles.
-pub async fn set_public_access(
-    RequireAdmin(admin): RequireAdmin,
-    State(state): State<AppState>,
-    HtmlForm(input): HtmlForm<AccessInput>,
-) -> Result<Response, AppError> {
-    let public = match input.access.as_str() {
-        "everyone" => true,
-        "members" => false,
-        _ => return Err(AppError::validation("validation.unknown_access")),
-    };
-    SettingsService::set_public_mode(&state, public).await?;
-
-    tracing::info!(
-        admin_id = admin.id,
-        public_mode = public,
-        "Public access updated"
-    );
-
-    let receipt = if public { "on" } else { "off" };
-    Ok(Redirect::to(&format!("/admin/settings?public={receipt}")).into_response())
 }

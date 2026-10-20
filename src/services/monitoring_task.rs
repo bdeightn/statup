@@ -13,15 +13,19 @@ use super::monitoring::{
     Observation, Outcome, Transition, looks_like_own_failure, next_state, skip_round,
 };
 use super::probe::{CHECK_TIMEOUT, Prober, Probes, Report};
-use super::{ServiceService, notify};
+use super::{ServiceService, notify_later, tell_outage_detected};
 use crate::db::DbPool;
 use crate::error::AppError;
-use crate::models::{CheckedService, Happening, Notification};
-use crate::repositories::{EventRepository, ServiceRepository};
+use crate::journal;
+use crate::models::{CheckKind, CheckedService, Happening, JournalKind, Notification};
+use crate::repositories::{EventRepository, NewJournalEntry, ServiceRepository};
 
 const ROUND_INTERVAL: Duration = Duration::from_secs(60);
 /// Checks running at once, so a long list never floods the network.
 const MAX_CONCURRENT_CHECKS: usize = 16;
+/// How long a round's messages wait, so the services that fell together
+/// leave as one message.
+const WAVE_WAIT: chrono::TimeDelta = chrono::TimeDelta::seconds(10);
 
 /// What the last check of a service found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,36 +151,93 @@ pub async fn run_round<P: Prober>(
     if services.is_empty() {
         return Ok(());
     }
+    let detailed = journal::captures_details(pool).await;
     let silenced: HashSet<i64> = EventRepository::services_under_maintenance(pool)
         .await?
         .into_iter()
         .collect();
     let reports = probe_all(prober, &services).await;
     state.last.record(&reports);
-    let observed: Vec<(i64, Observation)> = services
+    let observed: Vec<Checked<'_>> = services
         .iter()
         .filter_map(|service| {
-            let outcome = reports.get(&service.id)?.outcome();
+            let report = reports.get(&service.id)?;
             let observation = Observation {
                 failures: state.failures(service.id),
                 detected: service.detected_status.is_some(),
-                outcome,
+                outcome: report.outcome(),
+                outage_after: service.outage_after_minutes,
             };
-            Some((service.id, observation))
+            Some(Checked {
+                service,
+                report,
+                observation,
+            })
         })
         .collect();
-    if skip_this_round(state, &observed) {
+    if skip_this_round(pool, state, &observed, detailed).await {
         return Ok(());
     }
     // One service that cannot be recorded, such as one deleted during the
     // round, leaves the others to be judged.
-    for (service_id, observation) in observed {
+    let mut changes = Vec::new();
+    for checked in &observed {
+        let service_id = checked.service.id;
         let silenced = silenced.contains(&service_id);
-        if let Err(e) = apply(pool, state, service_id, observation, silenced, now).await {
-            tracing::warn!(service_id, error = %e, "Monitoring could not record a change");
+        match apply(pool, state, checked, silenced, now, detailed).await {
+            Ok(Some(happening)) => changes.push((happening, service_id)),
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!(service_id, error = %e, "Monitoring could not record a change");
+            }
         }
     }
+    announce(pool, &changes, now).await;
     Ok(())
+}
+
+/// A service of the round, what its check found, and what the rules see.
+struct Checked<'a> {
+    service: &'a CheckedService,
+    report: &'a Report,
+    observation: Observation,
+}
+
+impl Checked<'_> {
+    /// What the journal says about this check: the address, without what
+    /// follows the host, then why it failed and how many times in a row.
+    fn detail(&self, failures: u8) -> String {
+        let mut parts = vec![self.place()];
+        if self.observation.outcome == Outcome::Failed {
+            parts.push(self.report.finding.words());
+            parts.extend(self.report.detail.clone());
+            parts.push(format!("{failures} failed in a row"));
+        }
+        parts.join(" · ")
+    }
+
+    /// Where the check goes. A web address keeps only its origin, read by
+    /// the URL parser rather than by searching the text: whatever follows
+    /// the host can hold a key, in any form the address takes.
+    fn place(&self) -> String {
+        match self.service.kind {
+            CheckKind::Tcp => self.service.target.clone(),
+            CheckKind::Http => match reqwest::Url::parse(&self.service.target) {
+                Ok(url) => format!("{}/…", url.origin().ascii_serialization()),
+                Err(_) => String::new(),
+            },
+        }
+    }
+
+    async fn record(&self, pool: &DbPool, kind: JournalKind, failures: u8, detailed: bool) {
+        if !journal::kept(kind, detailed) {
+            return;
+        }
+        let entry = NewJournalEntry::new(kind)
+            .about(&self.service.name)
+            .with_detail(self.detail(failures));
+        journal::record_with(pool, entry, detailed).await;
+    }
 }
 
 /// Every check of the round, at most [`MAX_CONCURRENT_CHECKS`] at once. A
@@ -209,16 +270,22 @@ async fn probe_all<P: Prober>(
 
 /// A round where every service that answered fails at once points at
 /// Statup's own connection: it is ignored, a few times in a row at most.
-fn skip_this_round(state: &mut MonitorState, observed: &[(i64, Observation)]) -> bool {
-    let observations: Vec<Observation> = observed.iter().map(|(_, o)| *o).collect();
+async fn skip_this_round(
+    pool: &DbPool,
+    state: &mut MonitorState,
+    observed: &[Checked<'_>],
+    detailed: bool,
+) -> bool {
+    let observations: Vec<Observation> = observed.iter().map(|c| c.observation).collect();
     let (skip, skipped_rounds) =
         skip_round(looks_like_own_failure(&observations), state.skipped_rounds);
     state.skipped_rounds = skipped_rounds;
     if skip {
-        tracing::warn!(
-            services = observations.len(),
-            "Every checked service failed at once: round ignored, Statup's own connection is suspected"
-        );
+        let entry = NewJournalEntry::new(JournalKind::MonitoringRoundSkipped).with_detail(format!(
+            "{} services, Statup's own connection is suspected",
+            observations.len()
+        ));
+        journal::record_with(pool, entry, detailed).await;
     }
     skip
 }
@@ -226,41 +293,69 @@ fn skip_this_round(state: &mut MonitorState, observed: &[(i64, Observation)]) ->
 async fn apply(
     pool: &DbPool,
     state: &mut MonitorState,
-    service_id: i64,
-    observation: Observation,
+    checked: &Checked<'_>,
     silenced: bool,
     now: DateTime<Utc>,
-) -> Result<(), AppError> {
-    let (failures, transition) = next_state(observation, silenced);
+    detailed: bool,
+) -> Result<Option<Happening>, AppError> {
+    let service_id = checked.service.id;
+    let (failures, transition) = next_state(checked.observation, silenced);
     let since = state.record(service_id, failures, silenced, now);
-    match transition {
-        Transition::Stay => return Ok(()),
+    // A failed check says why an outage is coming; once it is declared, or
+    // while a maintenance takes the service down, it would only repeat.
+    let building = !checked.observation.detected && !silenced;
+    if checked.observation.outcome == Outcome::Failed && building {
+        checked
+            .record(pool, JournalKind::CheckFailed, failures, detailed)
+            .await;
+    }
+    let told = match transition {
+        Transition::Stay => return Ok(None),
         Transition::Down => {
             ServiceRepository::mark_detected_down(pool, service_id, since).await?;
-            tracing::info!(service_id, "Service detected down");
+            checked
+                .record(pool, JournalKind::OutageDetected, failures, detailed)
+                .await;
             // An incident being worked on already tells people.
-            if EventRepository::status_drivers(pool, service_id)
+            EventRepository::status_drivers(pool, service_id)
                 .await?
                 .is_empty()
-            {
-                notify(
-                    pool,
-                    Notification::service(Happening::ServiceDown, service_id),
-                )
-                .await;
-            }
+                .then_some(Happening::ServiceDown)
         }
         Transition::Up => {
             ServiceRepository::mark_detected_up(pool, service_id, now).await?;
-            tracing::info!(service_id, "Service detected back up");
-            notify(
-                pool,
-                Notification::service(Happening::ServiceUp, service_id),
-            )
-            .await;
+            checked
+                .record(pool, JournalKind::OutageEnded, failures, detailed)
+                .await;
+            Some(Happening::ServiceUp)
         }
+    };
+    ServiceService::recalculate_status(pool, service_id).await?;
+    Ok(told)
+}
+
+/// Queues what the round found to tell, every message of the wave at one
+/// instant a little ahead: the delivery, which runs more often than the
+/// round, then finds the whole wave and sends it as one message.
+async fn announce(pool: &DbPool, changes: &[(Happening, i64)], now: DateTime<Utc>) {
+    // A lone change has nothing to wait for.
+    let send_at = if changes.len() > 1 {
+        now + WAVE_WAIT
+    } else {
+        now
+    };
+    for (happening, service_id) in changes {
+        let notification = Notification::service(*happening, *service_id);
+        notify_later(pool, notification, now, send_at).await;
     }
-    ServiceService::recalculate_status(pool, service_id).await
+    let fallen: Vec<i64> = changes
+        .iter()
+        .filter(|(happening, _)| *happening == Happening::ServiceDown)
+        .map(|(_, service_id)| *service_id)
+        .collect();
+    if !fallen.is_empty() {
+        tell_outage_detected(pool, &fallen).await;
+    }
 }
 
 /// Runs [`run_round`] every minute for the life of the server, sharing what
@@ -296,7 +391,9 @@ mod tests {
         ChannelInput, ChannelKind, CheckKind, CreateEventInput, Kind, Role, ServiceCheck,
         ServiceStatus, Severity,
     };
-    use crate::repositories::{NotificationRepository, OutageRepository, UserRepository};
+    use crate::repositories::{
+        MemberNoticeRepository, NotificationRepository, OutageRepository, UserRepository,
+    };
     use crate::services::Finding;
     use crate::test_helpers::test_pool;
 
@@ -345,6 +442,93 @@ mod tests {
             .unwrap();
     }
 
+    #[tokio::test]
+    async fn failed_checks_stop_being_kept_once_the_outage_is_declared() {
+        let pool = test_pool().await;
+        checked_service(&pool, "Intranet").await;
+        crate::journal::save_settings(&pool, true, 90)
+            .await
+            .unwrap();
+        let mut state = MonitorState::default();
+
+        rounds(&pool, &mut state, Outcome::Failed, &[0, 1, 2, 3, 4, 5, 6]).await;
+
+        let kinds: Vec<String> = sqlx::query_scalar("SELECT kind FROM journal_entries ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            kinds,
+            [
+                "check_failed",
+                "check_failed",
+                "check_failed",
+                "outage_detected"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_outage_and_its_end_are_kept_without_what_follows_the_host() {
+        let pool = test_pool().await;
+        let id = checked_service(&pool, "Intranet").await;
+        let check = ServiceCheck {
+            kind: CheckKind::Http,
+            target: "https://intranet.example/health?key=SECRET".to_string(),
+            internal_cert: false,
+        };
+        ServiceRepository::set_check(&pool, id, Some(&check))
+            .await
+            .unwrap();
+        let mut state = MonitorState::default();
+
+        rounds(&pool, &mut state, Outcome::Failed, &[0, 1, 2]).await;
+        rounds(&pool, &mut state, Outcome::Answered, &[3]).await;
+
+        let lines: Vec<(String, String, String)> =
+            sqlx::query_as("SELECT kind, subject, detail FROM journal_entries ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        let kinds: Vec<&str> = lines.iter().map(|(kind, _, _)| kind.as_str()).collect();
+        assert_eq!(kinds, ["outage_detected", "outage_ended"]);
+        assert_eq!(lines[0].1, "Intranet");
+        assert_eq!(
+            lines[0].2,
+            "https://intranet.example/… · connection refused · 3 failed in a row"
+        );
+        assert!(
+            lines
+                .iter()
+                .all(|(_, _, detail)| !detail.contains("SECRET"))
+        );
+    }
+
+    #[tokio::test]
+    async fn an_awkward_address_still_loses_what_follows_its_host() {
+        let pool = test_pool().await;
+        let id = checked_service(&pool, "Intranet").await;
+        let check = ServiceCheck {
+            kind: CheckKind::Http,
+            target: "https://intranet.example/a b)?key=SECRET".to_string(),
+            internal_cert: false,
+        };
+        ServiceRepository::set_check(&pool, id, Some(&check))
+            .await
+            .unwrap();
+        let mut state = MonitorState::default();
+
+        rounds(&pool, &mut state, Outcome::Failed, &[0, 1, 2]).await;
+
+        let details: Vec<String> = sqlx::query_scalar("SELECT detail FROM journal_entries")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_ne!(details, Vec::<String>::new());
+        assert!(details.iter().all(|detail| !detail.contains("SECRET")));
+        assert!(details[0].starts_with("https://intranet.example/… · "));
+    }
+
     async fn rounds(pool: &DbPool, state: &mut MonitorState, outcome: Outcome, minutes: &[i64]) {
         let prober = Arc::new(Always(outcome));
         for &n in minutes {
@@ -380,6 +564,7 @@ mod tests {
             service_ids: vec![service_id],
             follows_event_id: None,
             author_id: author.id,
+            next_update: None,
         };
         EventRepository::create(pool, &input).await.unwrap().id
     }
@@ -399,6 +584,46 @@ mod tests {
         let spans = OutageRepository::since(&pool, minute(0)).await.unwrap();
         assert_eq!(spans[&id][0].start, minute(1));
         assert_eq!(spans[&id][0].end, None);
+    }
+
+    #[tokio::test]
+    async fn each_service_falls_after_its_own_delay() {
+        let pool = test_pool().await;
+        let critical = checked_service(&pool, "Payroll").await;
+        let printer = checked_service(&pool, "Printer").await;
+        ServiceRepository::set_outage_after(&pool, critical, 1)
+            .await
+            .unwrap();
+        let mut state = MonitorState::default();
+
+        rounds(&pool, &mut state, Outcome::Failed, &[1]).await;
+        assert_eq!(states(&pool, critical).await.0, ServiceStatus::MajorOutage);
+        assert_eq!(states(&pool, printer).await.0, ServiceStatus::Operational);
+
+        rounds(&pool, &mut state, Outcome::Failed, &[2, 3]).await;
+        assert_eq!(states(&pool, printer).await.0, ServiceStatus::MajorOutage);
+        let spans = OutageRepository::since(&pool, minute(0)).await.unwrap();
+        assert_eq!(spans[&critical][0].start, minute(1));
+        assert_eq!(spans[&printer][0].start, minute(1));
+    }
+
+    #[tokio::test]
+    async fn an_outage_found_by_the_checks_is_told_to_the_editors() {
+        let pool = test_pool().await;
+        let editor = UserRepository::create(&pool, "ed@example.com", "hash", "Ed", Role::Publisher)
+            .await
+            .unwrap()
+            .id;
+        let id = checked_service(&pool, "Mail").await;
+        let mut state = MonitorState::default();
+
+        rounds(&pool, &mut state, Outcome::Failed, &[1, 2, 3]).await;
+
+        let notices = MemberNoticeRepository::list_for(&pool, editor, 10)
+            .await
+            .unwrap();
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].service_id, Some(id));
     }
 
     #[tokio::test]
@@ -608,6 +833,7 @@ mod tests {
             service_ids: vec![explained],
             follows_event_id: None,
             author_id: lead.id,
+            next_update: None,
         };
         EventRepository::create(&pool, &incident).await.unwrap();
         let mut state = MonitorState::default();
@@ -627,5 +853,66 @@ mod tests {
                 (Happening::ServiceUp, alone)
             ]
         );
+    }
+
+    /// Every service fails but one, which keeps the round from looking
+    /// like Statup's own connection lost.
+    struct AllBut(i64);
+
+    impl Prober for AllBut {
+        fn check(&self, service: &CheckedService) -> impl Future<Output = Report> + Send {
+            let outcome = if service.id == self.0 {
+                Outcome::Answered
+            } else {
+                Outcome::Failed
+            };
+            std::future::ready(report(outcome))
+        }
+    }
+
+    #[tokio::test]
+    async fn services_that_fall_together_leave_as_one_wave() {
+        let pool = test_pool().await;
+        let detected_only = ChannelInput {
+            name: "IT team".to_string(),
+            kind: ChannelKind::Teams,
+            target: "https://example.logic.azure.com/workflows/1".to_string(),
+            locale: "fr".to_string(),
+            on_incidents: false,
+            on_maintenances: false,
+            on_publications: false,
+            on_detected: true,
+        };
+        NotificationRepository::create_channel(&pool, &detected_only)
+            .await
+            .unwrap();
+        let editor = UserRepository::create(&pool, "ed@example.com", "hash", "Ed", Role::Publisher)
+            .await
+            .unwrap()
+            .id;
+        for name in ["Mail", "Wiki", "VPN"] {
+            checked_service(&pool, name).await;
+        }
+        let standing = checked_service(&pool, "Intranet").await;
+        let mut state = MonitorState::default();
+
+        let prober = Arc::new(AllBut(standing));
+        for n in 1..=3 {
+            run_round(&pool, &prober, &mut state, minute(n))
+                .await
+                .unwrap();
+        }
+
+        let instants: Vec<String> =
+            sqlx::query_scalar("SELECT DISTINCT created_at FROM notification_deliveries")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(instants.len(), 1, "the three outages share one instant");
+        let notices = MemberNoticeRepository::list_for(&pool, editor, 10)
+            .await
+            .unwrap();
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].others, 2);
     }
 }

@@ -1,5 +1,6 @@
 //! Event template repository: SQL queries on event presets.
 
+use super::escape_like;
 use crate::db::DbPool;
 use crate::models::{Category, EventTemplate, Kind, Severity};
 
@@ -63,10 +64,7 @@ impl EventTemplateRepository {
         query: &str,
         limit: i64,
     ) -> Result<Vec<EventTemplate>, sqlx::Error> {
-        let escaped = query
-            .replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_");
+        let escaped = escape_like(query);
         sqlx::query_as::<_, EventTemplate>(
             "SELECT * FROM event_templates WHERE title LIKE ? ESCAPE '\\' \
              ORDER BY usage_count DESC, created_at DESC LIMIT ?",

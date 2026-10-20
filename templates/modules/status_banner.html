@@ -16,7 +16,7 @@
                 <p class="first-step-what">{{ i18n.t("banner.step_services") }}</p>
                 <p class="first-step-why">{{ i18n.t("banner.step_services_hint") }}</p>
             </div>
-            <a href="/services/new" class="btn btn-primary">{{ i18n.t("banner.step_services_action") }}</a>
+            <a href="/services/new" class="btn btn-primary">{{ i18n.t("services.new") }}</a>
         </li>
         <li class="first-step">
             <span class="first-step-num" aria-hidden="true">3</span>
@@ -25,12 +25,24 @@
                 <p class="first-step-why">
                     <label for="page-address">{{ i18n.t("banner.step_share_address") }}</label>
                     <input id="page-address" class="first-step-address" type="text" value="{{ address }}" size="{{ address.chars().count() }}" readonly data-select-on-focus data-fit-text>.
-                    {{ i18n.t("banner.step_share_hint") }}
+                    <a href="/admin/settings" class="link">{{ i18n.t("banner.step_share_hint") }}</a>
                 </p>
             </div>
             <button type="button" class="btn btn-ghost" data-copy="#page-address" data-copied="{{ i18n.t("banner.address_copied") }}">{{ i18n.t("banner.copy_address") }}</button>
         </li>
     </ol>
+</section>
+{% else if let Some(signed_in) = nothing_visible %}
+<section class="hero" aria-labelledby="status-headline">
+    <h2 id="status-headline" class="hero-title">
+        <span class="ring-dot" data-tone="neutral" aria-hidden="true"></span>
+        <span>{{ i18n.t("banner.nothing_visible") }}</span>
+    </h2>
+    {% if !signed_in %}
+    <div class="hero-body">
+        <p class="hero-meta">{{ i18n.t("banner.nothing_visible_hint") }}</p>
+    </div>
+    {% endif %}
 </section>
 {% else if !has_services %}
 <section class="hero" aria-labelledby="status-headline">
@@ -66,6 +78,7 @@
                 <span class="hero-item-meta">
                     {%- if let Some(since) = cause.since %}{{ cause.title }}&nbsp;<span aria-hidden="true">·</span> {{ since }}{% else %}{{ cause.title }}{% endif -%}
                 </span>
+                {% if let Some(next) = cause.next %}<span class="hero-item-next">{{ next }}</span>{% endif %}
                 {% if let Some(latest) = cause.latest %}
                 <span class="hero-item-update"><span class="hero-item-update-time">{{ latest.when }}&nbsp;<span aria-hidden="true">·</span></span> {{ latest.text }}</span>
                 {% endif %}

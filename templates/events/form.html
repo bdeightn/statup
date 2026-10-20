@@ -9,6 +9,7 @@
 {% block scripts %}
 <script src="{{ crate::asset("js/custom-select.js") }}" defer></script>
 <script src="{{ crate::asset("js/event-form.js") }}" defer></script>
+{% if self.searchable() %}<script src="{{ crate::asset("js/list-filter.js") }}" defer></script>{% endif %}
 <script src="{{ crate::asset("js/schedule.js") }}" defer></script>
 {% endblock %}
 
@@ -30,10 +31,21 @@
             <summary class="btn btn-ghost">{{ i18n.t("events.from_template") }} {% call ui::caret_icon() %}{% endcall %}</summary>
             <div class="more-actions-menu template-menu">
                 {% for template in templates %}
-                <button type="button" class="more-actions-item" data-template-choice="{{ template.id }}">
-                    <span class="template-menu-title">{{ template.title }}</span>
-                    <span class="template-menu-meta">{{ template.summary(i18n) }}</span>
-                </button>
+                <div class="template-menu-row">
+                    <button type="button" class="more-actions-item" data-template-choice="{{ template.id }}">
+                        <span class="template-menu-title">{{ template.title }}</span>
+                        <span class="template-menu-meta">{{ template.summary(i18n) }}</span>
+                    </button>
+                    <form method="post" action="/events/templates/{{ template.id }}/delete" class="template-menu-delete" data-confirm>
+                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                        <button type="button" class="text-action" data-confirm-open>{{ i18n.t("common.delete") }}<span class="sr-only"> <q>{{ template.title }}</q></span></button>
+                        <div class="confirm" role="group" aria-label="{{ i18n.t("common.delete") }} {{ template.title }}" data-confirm-box hidden>
+                            <span class="confirm-text">{{ i18n.t("common.question_open") }}{{ i18n.t("common.delete") }} <q>{{ template.title }}</q>{{ i18n.t("common.question_mark") }}</span>
+                            <button type="button" class="confirm-cancel" data-confirm-cancel>{{ i18n.t("common.cancel") }}</button>
+                            <button type="submit" class="confirm-go" data-danger>{{ i18n.t("common.delete") }}</button>
+                        </div>
+                    </form>
+                </div>
                 {% endfor %}
             </div>
         </details>
@@ -125,20 +137,38 @@
                         </fieldset>
                     </div>
 
-                    <section class="form-block" aria-labelledby="services-label">
+                    {# The services under their folders, as on the dashboard: a
+                       folder's box checks all of them, and only the services'
+                       own boxes are sent. #}
+                    <section class="form-block" aria-labelledby="services-label" data-filter-scope>
                         <h2 id="services-label" class="field-label">{{ i18n.t("events.services_concerned") }}</h2>
-                        {% if services.is_empty() %}
-                        <p class="field-hint mt-1">{{ i18n.t("events.no_services_available") }} <a href="/services/new" class="link">{{ i18n.t("events.create_service_link") }}</a></p>
+                        {% if sections.is_empty() %}
+                        <p class="field-hint mt-1">{{ i18n.t("events.no_services_available") }} <a href="/services/new" class="link">{{ i18n.t("services.new") }}</a></p>
                         {% else %}
+                        {% if self.searchable() %}
+                        <input type="search" class="input mt-2" autocomplete="off" placeholder="{{ i18n.t("events.search_service") }}" data-filter-input aria-label="{{ i18n.t("events.search_service") }}">
+                        {% endif %}
                         <div class="svc-pick-list" role="group" aria-labelledby="services-label">
-                            {% for service in services %}
-                            <label class="svc-pick">
-                                <input type="checkbox" name="service_ids" value="{{ service.id }}" class="checkbox" data-service-name="{{ service.name }}"{% if form.has_service(service.id) %} checked{% endif %}>
-                                <span class="svc-pick-name">{{ service.name }}</span>
-                                <span class="state" data-tone="{{ service.status.tone().as_str() }}">{{ i18n.t(service.status.i18n_key()) }}</span>
-                            </label>
+                            {% for section in sections %}
+                            <div class="svc-pick-section" data-filter-group{% if let Some(folder) = section.folder %} role="group" aria-labelledby="svc-folder-{{ folder.id }}" data-folder-pick{% endif %}>
+                                {% if let Some(folder) = section.folder %}
+                                <label class="svc-pick svc-pick-folder">
+                                    <input type="checkbox" class="checkbox" data-folder-box{% if self.folder_checked(section) %} checked{% endif %}>
+                                    <span id="svc-folder-{{ folder.id }}" class="svc-pick-name">{{ folder.name }}</span>
+                                    <span class="count">{{ section.services.len() }}</span>
+                                </label>
+                                {% endif %}
+                                {% for service in section.services %}
+                                <label class="svc-pick" data-filter-text="{{ service.name }}{% if let Some(folder) = section.folder %} {{ folder.name }}{% endif %}">
+                                    <input type="checkbox" name="service_ids" value="{{ service.id }}" class="checkbox" data-service-name="{{ service.name }}"{% if form.has_service(service.id) %} checked{% endif %}>
+                                    <span class="svc-pick-name">{{ service.name }}</span>
+                                    <span class="state" data-tone="{{ service.status.tone().as_str() }}">{{ i18n.t(service.status.i18n_key()) }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
                             {% endfor %}
                         </div>
+                        <p class="field-hint mt-2" data-filter-none hidden>{{ i18n.t("events.no_service_found") }}</p>
                         {% endif %}
                         <p class="consequence" role="status" data-consequence-row hidden>
                             <span class="dot" data-consequence-dot hidden aria-hidden="true"></span>
@@ -170,7 +200,7 @@
                         {% if edit_id.is_none() %}
                         <div class="reveal-row form-grid{% if form.kind_is("incident") %} is-open{% endif %}" data-for-kind="incident">
                             <fieldset class="choice-group">
-                                <legend class="field-label">{{ i18n.t("events.opening_step") }}</legend>
+                                <legend class="field-label">{{ i18n.t("events.state") }}</legend>
                                 <div class="choice-row">
                                     <label class="choice"><input type="radio" name="opening_step" value="investigating" class="sr-only"{% if form.opening_step_is("investigating") %} checked{% endif %}><span>{{ i18n.t("lifecycle.investigating") }}</span></label>
                                     <label class="choice"><input type="radio" name="opening_step" value="in_progress" class="sr-only"{% if form.opening_step_is("in_progress") %} checked{% endif %}><span>{{ i18n.t("lifecycle.in_progress") }}</span></label>
@@ -194,6 +224,10 @@
                                         <div class="calendar" role="dialog" aria-label="{{ i18n.t("events.pick_date") }}" data-calendar hidden></div>
                                     </div>
                                 </div>
+                            </div>
+                            <div class="field next-update-field">
+                                <label for="next_update" class="field-label">{{ i18n.t("events.next_update_label") }}</label>
+                                <input id="next_update" name="next_update" type="text" class="input" value="{{ form.next_update }}" placeholder="{{ i18n.t("events.next_update_placeholder") }}" autocomplete="off" maxlength="16">
                             </div>
                         </div>
                         {% endif %}

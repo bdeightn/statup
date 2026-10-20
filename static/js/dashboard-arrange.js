@@ -11,7 +11,10 @@
     const page = document.querySelector("[data-arrange]");
     const live = document.getElementById("live");
     const toggle = document.querySelector("[data-arrange-toggle]");
-    if (!page || !live || !toggle) return;
+    const done = document.querySelector("[data-arrange-done]");
+    const title = document.querySelector("[data-arrange-title]");
+    if (!page || !live || !toggle || !done || !title) return;
+    const restingTitle = title.textContent;
 
     let drag = null;
     let saveTimer = null;
@@ -40,14 +43,16 @@
         document.querySelectorAll("[data-arrange-only]").forEach((element) => {
             element.hidden = !on;
         });
+        document.querySelectorAll("[data-arrange-off]").forEach((element) => {
+            element.hidden = on;
+        });
     }
 
     function setMode(on) {
         if (!on) closeOptions();
         document.body.classList.toggle("is-arranging", on);
         reveal(on);
-        toggle.setAttribute("aria-pressed", String(on));
-        toggle.textContent = on ? toggle.dataset.labelClose : toggle.dataset.labelOpen;
+        title.textContent = on ? title.dataset.labelArranging : restingTitle;
         const url = new URL(window.location.href);
         if (on) url.searchParams.set("arrange", "1");
         else url.searchParams.delete("arrange");
@@ -318,12 +323,17 @@
 
     live.addEventListener("pointerup", (event) => endDrag(event, false));
     live.addEventListener("pointercancel", (event) => endDrag(event, true));
+    // Escape first drops a block being moved, then closes an open settings
+    // panel (handled on the row, which marks the key as used), then the mode.
     document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && drag) endDrag(null, true);
+        if (event.key !== "Escape") return;
+        if (drag) endDrag(null, true);
+        else if (arranging() && !event.defaultPrevented) finish();
     });
 
     live.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && openOptions) {
+            event.preventDefault();
             const cell = live.querySelector(`.dash-cell[data-module-id="${openOptions.moduleId}"]`);
             closeOptions();
             const button = cell && cell.querySelector("[data-options-toggle]");
@@ -369,7 +379,17 @@
         if (show) setShown(show.dataset.show, true);
     });
 
-    toggle.addEventListener("click", () => setMode(!arranging()));
+    function finish() {
+        setMode(false);
+        toggle.focus();
+    }
+
+    toggle.addEventListener("click", () => {
+        setMode(true);
+        done.focus();
+        announce(page.dataset.opened);
+    });
+    done.addEventListener("click", finish);
     window.addEventListener("pagehide", () => {
         if (saveTimer) saveOrder();
     });

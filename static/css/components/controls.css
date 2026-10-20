@@ -289,6 +289,11 @@
         transition: border-color 150ms ease, box-shadow 150ms ease;
     }
 
+    /* A name is short: its box stops at 360px. */
+    .input-name {
+        max-width: 360px;
+    }
+
     .input:hover {
         border-color: var(--focus);
     }
@@ -312,6 +317,11 @@
         min-height: 104px;
         line-height: 1.55;
         resize: vertical;
+    }
+
+    /* A sentence or two: two lines, longer on demand. */
+    textarea.input-brief {
+        min-height: 62px;
     }
 
     /* Custom select over a native one; the list is portaled to the body. */
@@ -357,7 +367,8 @@
     }
 
     .cs-trigger:focus-visible,
-    .cs-open .cs-trigger {
+    .cs-open .cs-trigger,
+    details[open] > .cs-trigger {
         border-color: var(--focus);
         box-shadow: 0 0 0 3px var(--focus-halo);
         outline: none;
@@ -391,7 +402,8 @@
         transition: transform 150ms ease;
     }
 
-    .cs-open .cs-caret {
+    .cs-open .cs-caret,
+    details[open] > .cs-trigger .cs-caret {
         transform: rotate(180deg);
     }
 
@@ -487,6 +499,23 @@
         transform: rotate(45deg);
     }
 
+    /* Some of what the box stands for is checked: a dash instead of the
+       tick. */
+    .checkbox:indeterminate {
+        background: var(--primary);
+        border-color: var(--primary);
+    }
+
+    .checkbox:indeterminate::after {
+        top: 6.5px;
+        left: 3.5px;
+        width: 8px;
+        height: 0;
+        border-width: 0 0 2px;
+        opacity: 1;
+        transform: none;
+    }
+
     /* The monitoring of a service: one section, its rows close together. */
     .check-fields {
         display: grid;
@@ -503,6 +532,47 @@
     .check-target > .input {
         flex: 1;
         min-width: 0;
+    }
+
+    /* The delay before an outage: a sentence with its number inside, that
+       wraps like text on a narrow form. */
+    .outage-delay {
+        display: block;
+        font-size: var(--text-md);
+        line-height: 2.25;
+        color: var(--ink);
+        text-wrap: balance;
+    }
+
+    /* A number typed in a line of text: no box, a dotted underline that
+       turns solid while it is typed. */
+    .inline-number {
+        width: 3.5ch;
+        padding: 0 2px;
+        font: inherit;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        text-align: center;
+        color: var(--ink);
+        background: none;
+        border: 0;
+        border-bottom: 1px dashed var(--edge-input);
+        border-radius: 0;
+        transition: border-color 150ms ease, background-color 150ms ease;
+    }
+
+    .inline-number:hover {
+        border-bottom-color: var(--focus);
+    }
+
+    .inline-number:focus {
+        outline: none;
+        background: var(--hover);
+        border-bottom: 1px solid var(--focus);
+    }
+
+    .inline-number[aria-invalid="true"] {
+        border-bottom-color: var(--sem-crit-text);
     }
 
     /* A host, its port (five digits) and the button. */

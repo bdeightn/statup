@@ -10,11 +10,11 @@ use crate::clock;
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{
-    CreateEventInput, Event, EventWithServices, Happening, Kind, Lifecycle, Notification, Role,
-    Severity, UpdateEventInput, User,
+    CreateEventInput, Event, EventWithServices, Happening, Kind, Lifecycle, NextUpdate,
+    Notification, ReviewSaved, Role, Scope, Severity, UpdateEventInput, User,
 };
-use crate::repositories::EventRepository;
-use crate::services::{ServiceService, notify};
+use crate::repositories::{EventRepository, EventReviewRepository};
+use crate::services::{ServiceService, notify, scope_of};
 
 /// How often announced maintenances are started and completed.
 const SCHEDULE_INTERVAL: Duration = Duration::from_secs(60);
@@ -94,12 +94,14 @@ impl EventService {
         Ok(())
     }
 
-    /// Posts a message, moves the event to `next`, or both at once.
+    /// Posts a message, moves the event to `next`, or both at once. An
+    /// incident's next update becomes `next_update`, none once it is over.
     pub async fn post_update(
         pool: &DbPool,
         id: i64,
         message: &str,
         next: Option<Lifecycle>,
+        next_update: Option<NextUpdate>,
         author: &User,
     ) -> Result<(), AppError> {
         let event = find(pool, id).await?;
@@ -123,6 +125,11 @@ impl EventService {
                 return Err(AppError::validation("validation.invalid_transition"));
             }
             recalculate_event_services(pool, id).await?;
+        }
+        if event.kind == Kind::Incident {
+            let over = next.is_some_and(Lifecycle::is_terminal);
+            let next_update = next_update.filter(|_| !over);
+            EventRepository::set_next_update(pool, id, next_update, author.id).await?;
         }
         tell_update(pool, &event, next, update_id).await;
         Ok(())
@@ -175,20 +182,52 @@ impl EventService {
         Ok(())
     }
 
-    /// Incidents and maintenances created since the reader's last visit.
-    pub async fn unread_count(
+    /// Publishes the review of a resolved incident, or corrects it. Only the
+    /// publication is sent: a correction stays on the page.
+    pub async fn publish_review(
         pool: &DbPool,
-        last_seen_at: Option<DateTime<Utc>>,
-    ) -> Result<i64, AppError> {
-        let since = last_seen_at.unwrap_or(DateTime::UNIX_EPOCH);
-        Ok(EventRepository::count_since(pool, since).await?)
+        id: i64,
+        body: &str,
+        author: &User,
+    ) -> Result<(), AppError> {
+        let event = find(pool, id).await?;
+        check_review_allowed(&event, author.role)?;
+        let body = body.trim();
+        if body.is_empty() {
+            return Err(AppError::validation("validation.review_empty"));
+        }
+        let saved = EventReviewRepository::save(pool, id, body, author.id).await?;
+        if saved == ReviewSaved::Published {
+            let notification =
+                Notification::event(Happening::Reviewed, event.kind, id, event.lifecycle);
+            notify(pool, notification).await;
+        }
+        Ok(())
+    }
+
+    /// Removes the review of a resolved incident. Nothing is sent, as for
+    /// any removal.
+    pub async fn remove_review(pool: &DbPool, id: i64, role: Role) -> Result<(), AppError> {
+        let event = find(pool, id).await?;
+        check_review_allowed(&event, role)?;
+        EventReviewRepository::delete(pool, id).await?;
+        Ok(())
+    }
+
+    /// Incidents and maintenances created since the member's last visit,
+    /// among those they may see.
+    pub async fn unread_count(pool: &DbPool, member: &User) -> Result<i64, AppError> {
+        let since = member.last_seen_at.unwrap_or(DateTime::UNIX_EPOCH);
+        let scope = scope_of(pool, Some(member)).await?;
+        Ok(EventRepository::count_since(pool, since, &scope).await?)
     }
 
     pub async fn find_with_services(
         pool: &DbPool,
         event_id: i64,
+        scope: &Scope,
     ) -> Result<EventWithServices, AppError> {
-        EventRepository::find_with_services(pool, event_id)
+        EventRepository::find_with_services(pool, event_id, scope)
             .await?
             .ok_or(AppError::NotFound)
     }
@@ -236,6 +275,11 @@ pub fn spawn_maintenance_schedule(pool: DbPool) -> AbortHandle {
         }
     });
     task.abort_handle()
+}
+
+/// When the team says its next update is due, read from what it wrote.
+pub fn read_next_update(text: &str) -> Result<Option<NextUpdate>, AppError> {
+    NextUpdate::parse(text, Utc::now()).map_err(|_| AppError::validation("validation.next_update"))
 }
 
 /// Title rules as a message key, so a route can re-render the form with
@@ -367,6 +411,20 @@ fn check_modification_allowed(event: &Event, role: Role) -> Result<(), AppError>
     }
 }
 
+/// Whoever publishes writes the review of a resolved incident: the one thing
+/// an editor may still write once an incident is closed.
+pub fn can_review(event: &Event, role: Role) -> bool {
+    role.can_publish() && event.takes_review()
+}
+
+fn check_review_allowed(event: &Event, role: Role) -> Result<(), AppError> {
+    if can_review(event, role) {
+        Ok(())
+    } else {
+        Err(AppError::refused("validation.review_resolved_only"))
+    }
+}
+
 pub fn can_delete_update(event: &Event, author_id: i64, user: &User) -> bool {
     user.role.can_admin()
         || (author_id == user.id && user.role.can_publish() && is_modifiable(event))
@@ -414,6 +472,8 @@ mod tests {
             follows_event_id: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            next_update_at: None,
+            update_every_minutes: None,
         }
     }
 
@@ -522,6 +582,25 @@ mod tests {
         assert!(can_modify(&open, Role::Publisher));
         assert!(!can_modify(&open, Role::Reader));
         assert!(can_modify(&event(None, Kind::Publication), Role::Publisher));
+    }
+
+    #[test]
+    fn a_resolved_incident_takes_a_review_from_whoever_publishes() {
+        let resolved = event(Some(Lifecycle::Resolved), Kind::Incident);
+        assert!(can_review(&resolved, Role::Publisher));
+        assert!(can_review(&resolved, Role::Admin));
+        assert!(!can_review(&resolved, Role::Reader));
+        for lifecycle in [
+            Lifecycle::Investigating,
+            Lifecycle::Monitoring,
+            Lifecycle::Cancelled,
+        ] {
+            let incident = event(Some(lifecycle), Kind::Incident);
+            assert!(!can_review(&incident, Role::Admin), "{lifecycle:?}");
+        }
+        let work = event(Some(Lifecycle::Completed), Kind::Maintenance);
+        assert!(!can_review(&work, Role::Admin));
+        assert!(!can_review(&event(None, Kind::Publication), Role::Admin));
     }
 
     #[test]

@@ -1,5 +1,6 @@
 // An editor declares a critical incident on a service, sees the service go
-// down on the dashboard, resolves the incident and sees it operational again.
+// down on the dashboard, resolves the incident and sees it operational again,
+// then writes the report that heads the incident's page.
 import { expect, test } from "../fixtures.js";
 
 test("an outage takes a service down until the incident is resolved", async ({ page }, testInfo) => {
@@ -39,4 +40,11 @@ test("an outage takes a service down until the incident is resolved", async ({ p
 
     await page.goto("/");
     await expect(serviceRow().getByText("Opérationnel", { exact: true })).toBeVisible();
+
+    await page.goto(incidentUrl);
+    await page.getByRole("link", { name: "Écrire le bilan" }).click();
+    await page.getByLabel("Bilan de l'incident").fill("Un disque plein a arrêté la paie.");
+    await page.getByRole("button", { name: "Publier le bilan" }).click();
+    await expect(page.getByRole("heading", { name: "Bilan", exact: true })).toBeVisible();
+    await expect(page.getByText("Un disque plein a arrêté la paie.").filter({ visible: true })).toBeVisible();
 });

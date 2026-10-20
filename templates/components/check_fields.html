@@ -1,7 +1,8 @@
 {# The monitoring of a service, on its page and at the first launch: the
-   template gives `self.check()`, `check_error` and `i18n`. The rows that do
+   template gives `self.check()`, `check_error`, `outage_error` and `i18n`. The rows that do
    not apply leave the request (service-check.js). The Test button sits by
-   the address it tests; its result comes under the rows. #}
+   the address it tests; its result comes under the rows. The delay before
+   an outage shows on a service's page only, for either kind. #}
 <div class="check-fields" data-check-fields>
     <fieldset class="form-block choice-group">
         <legend class="field-label">{{ i18n.t("services.check_label") }}</legend>
@@ -51,6 +52,21 @@
         <p id="check-error" class="field-error" role="alert">{{ message }}</p>
         {% endif %}{% endif %}
     </div>
+
+    {% if let Some(minutes) = self.check().outage_after %}
+    <div class="reveal-row{% if !self.check().is("none") %} is-open{% endif %}" data-for-check="http tcp">
+        <label class="outage-delay">
+            <span>{{ i18n.t("services.check_outage_before") }}</span>
+            <input id="check_outage_after" name="check_outage_after" type="text" class="inline-number" inputmode="numeric" autocomplete="off" maxlength="2"
+                   value="{{ minutes }}" placeholder="{{ crate::services::DEFAULT_OUTAGE_AFTER }}"
+                   {% if outage_error.is_some() %}aria-invalid="true" aria-describedby="outage-error" autofocus{% endif %}>
+            <span>{{ i18n.t("services.check_outage_unit") }}</span>
+        </label>
+        {% if let Some(message) = outage_error %}
+        <p id="outage-error" class="field-error" role="alert">{{ message }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
 
     <div aria-live="polite" data-check-result></div>
 </div>

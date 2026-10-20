@@ -10,12 +10,14 @@ use serde::Deserialize;
 use super::form::MaintenanceChoice;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
-use crate::middleware::{CsrfToken, OptionalUser};
-use crate::models::{Event, Kind, Lifecycle, Service, ServiceTag, User};
-use crate::repositories::EventRepository;
+use crate::middleware::{CsrfToken, Viewer};
+use crate::models::{
+    Event, EventReview, Kind, Lifecycle, Scope, Service, ServiceTag, User, delay_text,
+};
+use crate::repositories::{EventRepository, EventReviewRepository, ServiceRepository};
 use crate::routes::timeline::{self, TimelineEntry};
 use crate::routes::{Frame, members_only, render};
-use crate::services::{EventService, can_modify, sanitize_markdown};
+use crate::services::{EventService, can_modify, can_review, sanitize_markdown};
 use crate::state::AppState;
 
 pub struct TransitionOption {
@@ -30,7 +32,79 @@ pub struct TransitionOption {
 pub struct Composer {
     pub message: String,
     pub lifecycle: Option<Lifecycle>,
+    /// When the next update is due, as written.
+    pub next_update: String,
     pub error: Option<String>,
+}
+
+impl Composer {
+    /// A fresh composer offers again the delay the last update gave.
+    fn prefilled(mut self, event: &Event) -> Self {
+        if self.error.is_none() {
+            self.next_update = event
+                .update_every_minutes
+                .map(delay_text)
+                .unwrap_or_default();
+        }
+        self
+    }
+}
+
+/// What a closed event offers whoever publishes: after a maintenance, the
+/// announcement of what is new; after an incident, its review to write,
+/// correct or remove.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FollowUp {
+    None,
+    Changelog,
+    Review,
+}
+
+impl FollowUp {
+    fn of(event: &Event, user: Option<&User>) -> Self {
+        let Some(user) = user else {
+            return Self::None;
+        };
+        if can_review(event, user.role) {
+            Self::Review
+        } else if user.role.can_publish()
+            && event.kind == Kind::Maintenance
+            && event.lifecycle == Some(Lifecycle::Completed)
+        {
+            Self::Changelog
+        } else {
+            Self::None
+        }
+    }
+
+    pub fn is_changelog(self) -> bool {
+        self == Self::Changelog
+    }
+
+    pub fn is_review(self) -> bool {
+        self == Self::Review
+    }
+}
+
+/// What the review form holds when it is shown again.
+#[derive(Default)]
+pub struct ReviewForm {
+    pub body: String,
+    pub error: Option<String>,
+}
+
+impl ReviewForm {
+    /// A fresh form holds the review as written, to correct it.
+    fn prefilled(mut self, view: &EventView) -> Self {
+        if self.error.is_none() {
+            self.body = view
+                .review
+                .as_ref()
+                .map(|review| review.body.clone())
+                .unwrap_or_default();
+        }
+        self
+    }
 }
 
 #[derive(Template)]
@@ -39,13 +113,12 @@ pub(super) struct EventDetailTemplate {
     frame: Frame,
     view: EventView,
     can_edit: bool,
-    /// A finished maintenance offers a publisher the announcement of what
-    /// is new after it.
-    changelog_offer: bool,
+    follow_up: FollowUp,
     transitions: Vec<TransitionOption>,
     revert_label: Option<String>,
     published_notice: bool,
     composer: Composer,
+    review_form: ReviewForm,
     i18n: I18n,
 }
 
@@ -58,6 +131,10 @@ pub(super) struct DrawerTemplate {
     transitions: Vec<TransitionOption>,
     /// Undoing a step is offered on the event's page only.
     revert_label: Option<String>,
+    /// The next step after the event, done on its page.
+    follow_up: FollowUp,
+    /// The service whose panel this one was opened from, to go back to.
+    back_to: Option<(i64, String)>,
     composer: Composer,
     i18n: I18n,
 }
@@ -71,7 +148,31 @@ pub struct EventView {
     pub state: Option<StateLine>,
     /// An announcement reads as a text, its updates after it.
     pub article: Option<TimelineEntry>,
+    /// A resolved incident reads its review first, its timeline after it.
+    pub review: Option<ReviewView>,
     pub timeline: Vec<TimelineEntry>,
+}
+
+/// The review of a resolved incident, dated and, for members, signed.
+pub struct ReviewView {
+    pub time: String,
+    pub iso: String,
+    pub author: Option<String>,
+    pub html: String,
+    /// As its author wrote it, for the form that corrects it.
+    pub body: String,
+}
+
+impl ReviewView {
+    fn new(review: EventReview, user: Option<&User>, i18n: &I18n) -> Self {
+        Self {
+            time: i18n.format_datetime(&review.published_at),
+            iso: review.published_at.to_rfc3339(),
+            author: user.map(|_| review.author_name),
+            html: sanitize_markdown(&review.body),
+            body: review.body,
+        }
+    }
 }
 
 impl EventView {
@@ -97,31 +198,26 @@ pub struct StateLine {
     pub tone: &'static str,
     pub label: String,
     pub detail: Option<String>,
-    /// How long ago the last update was posted on an open incident.
+    /// How long ago the last update was posted on an open incident, and
+    /// when the next one is due.
     pub last_news: Option<String>,
 }
 
 async fn load_view(
     state: &AppState,
     id: i64,
-    user: Option<&User>,
+    viewer: &Viewer,
     i18n: &I18n,
 ) -> Result<EventView, AppError> {
-    let ews = EventService::find_with_services(&state.pool, id).await?;
+    let user = viewer.user.as_ref();
+    let ews = EventService::find_with_services(&state.pool, id, &viewer.scope).await?;
     let updates = EventRepository::list_updates(&state.pool, id).await?;
     let last_posted = updates.iter().map(|update| update.created_at).max();
     let author = match user {
         Some(_) => Some(author_name(state, ews.event.author_id, i18n).await?),
         None => None,
     };
-    let follows = match ews.event.follows_event_id {
-        Some(id) => EventRepository::find_by_id(&state.pool, id)
-            .await?
-            .map(|m| {
-                MaintenanceChoice::new(id, m.title, &m.ended_at.unwrap_or(m.updated_at), i18n)
-            }),
-        None => None,
-    };
+    let follows = load_follows(state, &ews.event, &viewer.scope, i18n).await?;
     let mut timeline = timeline::build(
         &ews.event,
         sanitize_markdown(&ews.event.description),
@@ -134,14 +230,49 @@ async fn load_view(
         .then(|| timeline.iter().position(|entry| entry.update_id.is_none()))
         .flatten()
         .map(|opening| timeline.remove(opening));
+    let review = load_review(state, &ews.event, user, i18n).await?;
     Ok(EventView {
         follows,
         article,
+        review,
         state: state_line(&ews.event, last_posted, i18n),
         event: ews.event,
         services: ews.services,
         timeline,
     })
+}
+
+/// The maintenance an announcement follows; none when the viewer may not
+/// see it, so the link does not betray it.
+async fn load_follows(
+    state: &AppState,
+    event: &Event,
+    scope: &Scope,
+    i18n: &I18n,
+) -> Result<Option<MaintenanceChoice>, AppError> {
+    let Some(id) = event.follows_event_id else {
+        return Ok(None);
+    };
+    let found = EventRepository::find_with_services(&state.pool, id, scope).await?;
+    Ok(found.map(|ews| {
+        let m = ews.event;
+        MaintenanceChoice::new(id, m.title, &m.ended_at.unwrap_or(m.updated_at), i18n)
+    }))
+}
+
+/// The review of a resolved incident; none for any other event, nor for an
+/// incident an administrator opened again.
+async fn load_review(
+    state: &AppState,
+    event: &Event,
+    user: Option<&User>,
+    i18n: &I18n,
+) -> Result<Option<ReviewView>, AppError> {
+    if !event.takes_review() {
+        return Ok(None);
+    }
+    let review = EventReviewRepository::find(&state.pool, event.id).await?;
+    Ok(review.map(|review| ReviewView::new(review, user, i18n)))
 }
 
 async fn author_name(state: &AppState, author_id: i64, i18n: &I18n) -> Result<String, AppError> {
@@ -157,9 +288,12 @@ async fn author_name(state: &AppState, author_id: i64, i18n: &I18n) -> Result<St
 
 fn state_line(event: &Event, last_posted: Option<DateTime<Utc>>, i18n: &I18n) -> Option<StateLine> {
     let lifecycle = event.lifecycle?;
-    let last_news = last_posted
+    let last_ago = last_posted
         .filter(|_| event.kind == Kind::Incident && lifecycle.is_active())
-        .map(|at| i18n.tf("events.last_news", &[("ago", &i18n.format_ago(&at))]));
+        .map(|at| i18n.format_ago(&at));
+    let last_news = event
+        .next_update_text(last_ago.as_deref(), i18n)
+        .or_else(|| last_ago.map(|ago| i18n.tf("events.last_news", &[("ago", &ago)])));
     let detail = match lifecycle {
         Lifecycle::Scheduled => i18n.format_countdown(event.countdown()),
         Lifecycle::Cancelled => None,
@@ -207,7 +341,7 @@ pub struct DetailQuery {
 }
 
 pub async fn detail(
-    OptionalUser(user): OptionalUser,
+    viewer: Viewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Query(query): Query<DetailQuery>,
@@ -215,51 +349,64 @@ pub async fn detail(
     csrf_token: CsrfToken,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    if let Some(redirect) = members_only(&state, user.as_ref(), &headers) {
+    if let Some(redirect) = members_only(&state, viewer.user.as_ref(), &headers) {
         return Ok(redirect);
     }
     let page = detail_page(
         &state,
         id,
-        user.as_ref(),
+        &viewer,
         csrf_token.0,
         i18n,
         Composer::default(),
+        ReviewForm::default(),
     )
     .await?;
     render(&EventDetailTemplate {
-        published_notice: query.published.is_some() && page.can_edit,
+        published_notice: query.published.is_some() && page.frame.can_publish,
         ..page
     })
 }
 
+impl DrawerTemplate {
+    /// "Back to Mail", the link's name for screen readers.
+    fn back_label(&self, service: &str) -> String {
+        self.i18n.tf("events.back_to_service", &[("name", service)])
+    }
+}
+
+/// The event's page, with what the author had typed in the form that was
+/// refused, `composer` or `review_form`.
 pub(super) async fn detail_page(
     state: &AppState,
     id: i64,
-    user: Option<&User>,
+    viewer: &Viewer,
     csrf_token: String,
     i18n: I18n,
     composer: Composer,
+    review_form: ReviewForm,
 ) -> Result<EventDetailTemplate, AppError> {
-    let view = load_view(state, id, user, &i18n).await?;
+    let user = viewer.user.as_ref();
+    let view = load_view(state, id, viewer, &i18n).await?;
+    let composer = composer.prefilled(&view.event);
+    let review_form = review_form.prefilled(&view);
     let can_edit = user.is_some_and(|u| can_modify(&view.event, u.role));
-    let changelog_offer = user.is_some_and(|u| u.role.can_publish())
-        && view.event.kind == Kind::Maintenance
-        && view.event.lifecycle == Some(Lifecycle::Completed);
     Ok(EventDetailTemplate {
-        changelog_offer,
+        follow_up: FollowUp::of(&view.event, user),
         frame: Frame::load(&state.pool, user, csrf_token, &i18n).await?,
         transitions: transition_options(&view.event, composer.lifecycle, &i18n),
-        revert_label: revert_label(&view.event, &i18n),
+        revert_label: can_edit.then(|| revert_label(&view.event, &i18n)).flatten(),
         published_notice: false,
         can_edit,
         view,
         composer,
+        review_form,
         i18n,
     })
 }
 
-/// "Back to Investigating", when the last step can be undone.
+/// "Back to Investigating", when the last step can be undone; offered only
+/// to whoever may change the event, as the undo itself checks.
 fn revert_label(event: &Event, i18n: &I18n) -> Option<String> {
     event
         .previous_lifecycle_key()
@@ -269,16 +416,20 @@ fn revert_label(event: &Event, i18n: &I18n) -> Option<String> {
 pub(super) async fn drawer_page(
     state: &AppState,
     id: i64,
-    user: Option<&User>,
+    viewer: &Viewer,
     csrf_token: String,
     i18n: I18n,
     composer: Composer,
 ) -> Result<DrawerTemplate, AppError> {
-    let view = load_view(state, id, user, &i18n).await?;
+    let user = viewer.user.as_ref();
+    let view = load_view(state, id, viewer, &i18n).await?;
+    let composer = composer.prefilled(&view.event);
     let can_edit = user.is_some_and(|u| can_modify(&view.event, u.role));
     Ok(DrawerTemplate {
         transitions: transition_options(&view.event, composer.lifecycle, &i18n),
         revert_label: None,
+        follow_up: FollowUp::of(&view.event, user),
+        back_to: None,
         can_edit,
         csrf_token,
         view,
@@ -287,25 +438,30 @@ pub(super) async fn drawer_page(
     })
 }
 
+#[derive(Deserialize)]
+pub struct DrawerQuery {
+    /// The service whose panel the event was opened from.
+    service: Option<i64>,
+}
+
 pub async fn drawer_content(
-    OptionalUser(user): OptionalUser,
+    viewer: Viewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    Query(query): Query<DrawerQuery>,
     headers: HeaderMap,
     csrf_token: CsrfToken,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
-    if let Some(redirect) = members_only(&state, user.as_ref(), &headers) {
+    if let Some(redirect) = members_only(&state, viewer.user.as_ref(), &headers) {
         return Ok(redirect);
     }
-    let page = drawer_page(
-        &state,
-        id,
-        user.as_ref(),
-        csrf_token.0,
-        i18n,
-        Composer::default(),
-    )
-    .await?;
+    let mut page =
+        drawer_page(&state, id, &viewer, csrf_token.0, i18n, Composer::default()).await?;
+    if let Some(service_id) = query.service.filter(|id| viewer.scope.sees_service(*id)) {
+        page.back_to = ServiceRepository::find_by_id(&state.pool, service_id)
+            .await?
+            .map(|service| (service.id, service.name));
+    }
     render(&page)
 }

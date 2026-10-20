@@ -137,6 +137,20 @@ impl TestApp {
         (status, body)
     }
 
+    /// GET as htmx does for a refresh: same route, the fragment answer.
+    pub async fn get_htmx(&self, path: &str) -> (StatusCode, String) {
+        let resp = self
+            .client
+            .get(self.url(path))
+            .header("HX-Request", "true")
+            .send()
+            .await
+            .expect("GET request failed");
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        (status, body)
+    }
+
     pub async fn get_response(&self, path: &str) -> reqwest::Response {
         self.client
             .get(self.url(path))
@@ -169,6 +183,65 @@ impl TestApp {
             .await
             .expect("POST request failed");
 
+        let status = resp.status();
+        let location = location(&resp);
+        let body = resp.text().await.unwrap_or_default();
+        (status, body, location)
+    }
+
+    /// The general settings card, sent at once as its page sends it: the
+    /// access already chosen and an empty name, with `changes` over them,
+    /// and a logo when given. The zone stays unless `changes` names one.
+    pub async fn save_settings(
+        &self,
+        changes: &[(&str, &str)],
+        logo: Option<(&str, &str, &[u8])>,
+    ) -> (StatusCode, String, Option<String>) {
+        let (_, page) = self.get("/admin/settings").await;
+        let public = page.contains(r#"value="everyone" class="sr-only" checked"#);
+        let mut fields: Vec<(&str, String)> = vec![
+            ("csrf_token", extract_csrf_token(&page)),
+            ("instance_name", String::new()),
+            (
+                "access",
+                if public { "everyone" } else { "members" }.to_string(),
+            ),
+        ];
+        for (name, value) in changes {
+            match fields.iter_mut().find(|(field, _)| field == name) {
+                Some(field) => field.1 = (*value).to_string(),
+                None => fields.push((name, (*value).to_string())),
+            }
+        }
+        let mut body = Vec::new();
+        for (name, value) in fields {
+            body.extend(
+                format!(
+                    "--statup\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+                )
+                .into_bytes(),
+            );
+        }
+        if let Some((filename, content_type, data)) = logo {
+            body.extend(
+                format!(
+                    "--statup\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n\
+                     Content-Type: {content_type}\r\n\r\n"
+                )
+                .into_bytes(),
+            );
+            body.extend_from_slice(data);
+            body.extend_from_slice(b"\r\n");
+        }
+        body.extend_from_slice(b"--statup--\r\n");
+        let resp = self
+            .client
+            .post(self.url("/admin/settings/general"))
+            .header("content-type", "multipart/form-data; boundary=statup")
+            .body(body)
+            .send()
+            .await
+            .expect("POST request failed");
         let status = resp.status();
         let location = location(&resp);
         let body = resp.text().await.unwrap_or_default();

@@ -15,7 +15,11 @@
     </header>
 
     {% if !feed_readable %}
+    {% if frame.is_admin %}
+    <div class="form-notice mb-6"><p>{{ i18n.t("subscribe.members_only_admin") }} <a href="/admin/settings" class="link">{{ i18n.t("nav.admin") }}</a></p></div>
+    {% else %}
     <div class="form-notice mb-6"><p>{{ i18n.t("subscribe.members_only") }}</p></div>
+    {% endif %}
     {% endif %}
 
     <div class="card-grid card-grid-3">
@@ -42,7 +46,7 @@
                 <h2 id="chat-title" class="card-title">{{ i18n.t("subscribe.chat_title") }}</h2>
             </header>
             <div class="card-body">
-                <p class="page-lede">{{ i18n.t("subscribe.chat_text") }}</p>
+                <p class="page-lede">{{ i18n.t("subscribe.chat_text") }}{% if frame.is_admin %} <a href="/admin/notifications" class="link">{{ i18n.t("notifications.manage") }}</a>{% endif %}</p>
             </div>
         </section>
 

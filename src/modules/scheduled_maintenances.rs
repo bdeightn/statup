@@ -56,11 +56,12 @@ impl Module for ScheduledMaintenancesModule {
 
     async fn render(&self, ctx: &ModuleRenderContext<'_>) -> Result<String, AppError> {
         let i18n = ctx.i18n;
-        let open = EventRepository::list_open_maintenance(ctx.pool).await?;
+        let open = EventRepository::list_open_maintenance(ctx.pool, ctx.scope).await?;
         let (ongoing, upcoming): (Vec<_>, Vec<_>) = open
             .iter()
             .partition(|m| m.lifecycle == Some(Lifecycle::InProgress));
-        let finished = EventRepository::list_finished_maintenance(ctx.pool, FINISHED_LIMIT).await?;
+        let finished =
+            EventRepository::list_finished_maintenance(ctx.pool, FINISHED_LIMIT, ctx.scope).await?;
         let rows = ongoing
             .into_iter()
             .map(|m| ongoing_row(m, i18n))

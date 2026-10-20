@@ -127,6 +127,7 @@ pub struct ServiceCheck {
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct CheckedService {
     pub id: i64,
+    pub name: String,
     #[sqlx(rename = "check_kind")]
     pub kind: CheckKind,
     #[sqlx(rename = "check_target")]
@@ -134,6 +135,8 @@ pub struct CheckedService {
     #[sqlx(rename = "check_internal_cert")]
     pub internal_cert: bool,
     pub detected_status: Option<ServiceStatus>,
+    /// Minutes of failed checks before the service shows an outage.
+    pub outage_after_minutes: u8,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -152,8 +155,14 @@ pub struct Service {
     pub check_kind: Option<CheckKind>,
     pub check_target: Option<String>,
     pub check_internal_cert: bool,
+    /// Minutes of failed checks before the service shows an outage.
+    pub outage_after_minutes: u8,
     /// What the checks found, while the service does not answer.
     pub detected_status: Option<ServiceStatus>,
+    pub visibility: super::Visibility,
+    pub folder_id: Option<i64>,
+    /// Whether its "who sees" is a copy kept in step with its folder.
+    pub follows_folder: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     /// File name of the uploaded icon, when the query joins it.

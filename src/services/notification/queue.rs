@@ -1,6 +1,6 @@
 //! What happened, queued for the destinations that receive it.
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 use crate::db::DbPool;
 use crate::models::Notification;
@@ -10,7 +10,19 @@ use crate::repositories::NotificationRepository;
 /// to the log and no further: the change it reports is saved already, and a
 /// message must never undo it.
 pub async fn notify(pool: &DbPool, notification: Notification) {
-    if let Err(e) = NotificationRepository::enqueue(pool, &notification, Utc::now()).await {
+    let now = Utc::now();
+    notify_later(pool, notification, now, now).await;
+}
+
+/// Queues a message that happened at `now` and leaves no sooner than
+/// `send_at`.
+pub async fn notify_later(
+    pool: &DbPool,
+    notification: Notification,
+    now: DateTime<Utc>,
+    send_at: DateTime<Utc>,
+) {
+    if let Err(e) = NotificationRepository::enqueue_after(pool, &notification, now, send_at).await {
         tracing::warn!(
             error = %e,
             happening = notification.happening.as_str(),
@@ -71,6 +83,7 @@ mod tests {
             service_ids: Vec::new(),
             follows_event_id: None,
             author_id: author.id,
+            next_update: None,
         }
     }
 
@@ -122,7 +135,7 @@ mod tests {
             ("All good.", Some(Lifecycle::Resolved)),
         ];
         for (message, next) in steps {
-            EventService::post_update(&pool, event.id, message, next, &author)
+            EventService::post_update(&pool, event.id, message, next, None, &author)
                 .await
                 .unwrap();
         }
@@ -140,6 +153,48 @@ mod tests {
                 (Happening::Updated, in_progress, false),
                 (Happening::Closed, Some(Lifecycle::Resolved), true),
                 (Happening::Updated, in_progress, false),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_review_is_sent_once_to_whoever_receives_incidents() {
+        let pool = test_pool().await;
+        everything(&pool).await;
+        let works = ChannelInput {
+            name: "Works".to_string(),
+            kind: ChannelKind::Slack,
+            target: "https://hooks.slack.com/services/works".to_string(),
+            locale: "fr".to_string(),
+            on_incidents: false,
+            on_maintenances: true,
+            on_publications: false,
+            on_detected: false,
+        };
+        NotificationRepository::create_channel(&pool, &works)
+            .await
+            .unwrap();
+        let author = admin(&pool).await;
+        let event = EventService::create(&pool, new_event(Kind::Incident, &author))
+            .await
+            .unwrap();
+        let resolved = Some(Lifecycle::Resolved);
+        EventService::post_update(&pool, event.id, "Fixed.", resolved, None, &author)
+            .await
+            .unwrap();
+
+        for text in ["A cable was cut.", "A cable was cut by road works."] {
+            EventService::publish_review(&pool, event.id, text, &author)
+                .await
+                .unwrap();
+        }
+
+        assert_eq!(
+            queued(&pool).await,
+            [
+                (Happening::Opened, Some(Lifecycle::Investigating), false),
+                (Happening::Closed, resolved, true),
+                (Happening::Reviewed, resolved, false),
             ]
         );
     }
@@ -189,7 +244,7 @@ mod tests {
         let note = EventService::create(&pool, new_event(Kind::Publication, &author))
             .await
             .unwrap();
-        EventService::post_update(&pool, note.id, "Now open on Mondays.", None, &author)
+        EventService::post_update(&pool, note.id, "Now open on Mondays.", None, None, &author)
             .await
             .unwrap();
 

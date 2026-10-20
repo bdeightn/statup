@@ -5,7 +5,7 @@
         <div class="card-actions">
             <a href="/subscribe" class="card-action card-follow">{% call ui::feed_icon() %}{% endcall %}{{ i18n.t("dashboard.follow") }}</a>
             {% if !groups.is_empty() %}
-            <a href="/events" class="card-action">{{ i18n.t("dashboard.view_all") }}</a>
+            <a href="/events" class="card-action">{{ i18n.t("dashboard.view_all") }}<span class="sr-only">, {{ i18n.t("dashboard.activity") }}</span></a>
             {% endif %}
         </div>
     </header>
@@ -18,7 +18,7 @@
     {% for group in groups %}
     <h3 class="log-day">{{ group.label }}</h3>
     <ul class="log-list">
-        {% for event in group.events %}
+        {% for event in group.items %}
         <li>
             <a class="log-row{% if event.is_current() %} log-row-open{% else %} log-row-closed{% endif %}" href="/events/{{ event.id }}" data-drawer="/events/{{ event.id }}/drawer">
                 <span class="log-time">{{ i18n.format_time(event.created_at) }}</span>

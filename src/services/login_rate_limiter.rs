@@ -60,10 +60,28 @@ pub struct LoginRateLimiter {
     reset_requests: Mutex<HashMap<IpAddr, Entry>>,
 }
 
+/// What a request for a reset link meets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResetRequest {
+    Allowed,
+    /// This request is the first one refused in the window.
+    JustBlocked,
+    Blocked,
+}
+
 /// A panic while a map was held leaves plain counters behind, still usable,
 /// so a poisoned lock is recovered rather than propagated.
 fn lock<K>(map: &Mutex<HashMap<K, Entry>>) -> MutexGuard<'_, HashMap<K, Entry>> {
     map.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Failures counted against this address, all accounts together.
+fn address_failures(map: &HashMap<Key, Entry>, ip: &IpAddr) -> u32 {
+    let block = limit_key(*ip);
+    map.iter()
+        .filter(|(key, _)| key.ip == block)
+        .map(|(_, entry)| entry.count)
+        .sum()
 }
 
 impl LoginRateLimiter {
@@ -72,19 +90,23 @@ impl LoginRateLimiter {
     }
 
     /// Counts a password reset link request from this address, and tells
-    /// whether it may go ahead.
-    pub fn allow_reset_request(&self, ip: &IpAddr) -> bool {
+    /// whether it may go ahead. Only the first refusal of a window says so,
+    /// so that a burst of requests is journaled once.
+    pub fn count_reset_request(&self, ip: &IpAddr) -> ResetRequest {
         let mut map = lock(&self.reset_requests);
         map.retain(|_, entry| !entry.expired());
         let entry = map.entry(limit_key(*ip)).or_insert(Entry {
             count: 0,
             first_attempt: Instant::now(),
         });
-        if entry.count >= MAX_RESET_REQUESTS_PER_ADDRESS {
-            return false;
+        if entry.count > MAX_RESET_REQUESTS_PER_ADDRESS {
+            return ResetRequest::Blocked;
         }
         entry.count += 1;
-        true
+        if entry.count > MAX_RESET_REQUESTS_PER_ADDRESS {
+            return ResetRequest::JustBlocked;
+        }
+        ResetRequest::Allowed
     }
 
     /// Whether this account has had too many wrong current passwords.
@@ -95,8 +117,9 @@ impl LoginRateLimiter {
             .is_some_and(|entry| entry.count >= MAX_ATTEMPTS)
     }
 
-    /// Record a wrong current password for this account.
-    pub fn record_password_check_failure(&self, user_id: i64) {
+    /// Record a wrong current password for this account. True when this one
+    /// blocks the account.
+    pub fn record_password_check_failure(&self, user_id: i64) -> bool {
         let mut map = lock(&self.password_checks);
         map.retain(|_, entry| !entry.expired());
         let entry = map.entry(user_id).or_insert(Entry {
@@ -104,9 +127,7 @@ impl LoginRateLimiter {
             first_attempt: Instant::now(),
         });
         entry.count += 1;
-        if entry.count == MAX_ATTEMPTS {
-            tracing::warn!(user_id, "Current password check limit reached");
-        }
+        entry.count == MAX_ATTEMPTS
     }
 
     /// Forget the wrong current passwords of this account.
@@ -121,18 +142,13 @@ impl LoginRateLimiter {
         let account = map
             .get(&Key::new(ip, email))
             .is_some_and(|entry| entry.count >= MAX_ATTEMPTS);
-        let block = limit_key(*ip);
-        let address: u32 = map
-            .iter()
-            .filter(|(key, _)| key.ip == block)
-            .map(|(_, entry)| entry.count)
-            .sum();
-        account || address >= MAX_ATTEMPTS_PER_ADDRESS
+        account || address_failures(&map, ip) >= MAX_ATTEMPTS_PER_ADDRESS
     }
 
     /// Record a failed sign-in for this address and account, and forget the
-    /// pairs whose window is over.
-    pub fn record_failure(&self, ip: &IpAddr, email: &str) {
+    /// pairs whose window is over. True when this failure blocks the account
+    /// or the address.
+    pub fn record_failure(&self, ip: &IpAddr, email: &str) -> bool {
         let mut map = self.attempts();
         map.retain(|_, entry| !entry.expired());
 
@@ -141,14 +157,8 @@ impl LoginRateLimiter {
             first_attempt: Instant::now(),
         });
         entry.count += 1;
-
-        if entry.count == MAX_ATTEMPTS {
-            tracing::warn!(
-                ip = %ip,
-                "Sign-in rate limit reached ({MAX_ATTEMPTS} failures in {} min)",
-                WINDOW.as_secs() / 60
-            );
-        }
+        let account_blocked = entry.count == MAX_ATTEMPTS;
+        account_blocked || address_failures(&map, ip) == MAX_ATTEMPTS_PER_ADDRESS
     }
 
     /// Clear the failure count for this address and account after a
@@ -173,11 +183,45 @@ mod tests {
     fn reset_requests_stop_at_the_address_ceiling_and_lock_no_one_out() {
         let limiter = LoginRateLimiter::default();
         for _ in 0..MAX_RESET_REQUESTS_PER_ADDRESS {
-            assert!(limiter.allow_reset_request(&ip("127.0.0.1")));
+            assert_eq!(
+                limiter.count_reset_request(&ip("127.0.0.1")),
+                ResetRequest::Allowed
+            );
         }
-        assert!(!limiter.allow_reset_request(&ip("127.0.0.1")));
-        assert!(limiter.allow_reset_request(&ip("192.0.2.1")));
+        assert_eq!(
+            limiter.count_reset_request(&ip("127.0.0.1")),
+            ResetRequest::JustBlocked
+        );
+        assert_eq!(
+            limiter.count_reset_request(&ip("127.0.0.1")),
+            ResetRequest::Blocked
+        );
+        assert_eq!(
+            limiter.count_reset_request(&ip("192.0.2.1")),
+            ResetRequest::Allowed
+        );
         assert!(!limiter.is_blocked(&ip("127.0.0.1"), ALICE));
+    }
+
+    #[test]
+    fn only_the_failure_that_blocks_says_so() {
+        let limiter = LoginRateLimiter::default();
+        let blocking: Vec<bool> = (0..=MAX_ATTEMPTS)
+            .map(|_| limiter.record_failure(&ip("127.0.0.1"), ALICE))
+            .collect();
+        assert_eq!(blocking, [false, false, false, false, true, false]);
+
+        let walking = LoginRateLimiter::default();
+        let blocking = (0..MAX_ATTEMPTS_PER_ADDRESS)
+            .filter(|n| walking.record_failure(&ip("127.0.0.1"), &format!("user{n}@example.org")))
+            .count();
+        assert_eq!(blocking, 1, "the address ceiling is reached once");
+
+        let checks = LoginRateLimiter::default();
+        let blocking = (0..=MAX_ATTEMPTS)
+            .filter(|_| checks.record_password_check_failure(1))
+            .count();
+        assert_eq!(blocking, 1);
     }
 
     #[test]
