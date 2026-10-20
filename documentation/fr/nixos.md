@@ -97,7 +97,7 @@ nix flake update statup
 sudo nixos-rebuild switch
 ```
 
-La base de données est migrée au démarrage de la nouvelle version. Pour rester sur une version, pointez l'entrée sur son étiquette, comme `github:karl-cta/statup/v0.8.0`.
+La base de données est migrée au démarrage de la nouvelle version. Pour rester sur une version, pointez l'entrée sur son étiquette, comme `github:karl-cta/statup/v0.7.1`.
 
 ## Réinitialiser un mot de passe
 

@@ -97,7 +97,7 @@ nix flake update statup
 sudo nixos-rebuild switch
 ```
 
-The database is migrated when the new version starts. To stay on one version, point the input at its tag, such as `github:karl-cta/statup/v0.8.0`.
+The database is migrated when the new version starts. To stay on one version, point the input at its tag, such as `github:karl-cta/statup/v0.7.1`.
 
 ## Reset a password
 
