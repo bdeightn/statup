@@ -1,6 +1,6 @@
 # The manifests with the version of Statup blanked out: a release only bumps
 # it, and the dependencies built below stay in the layer cache.
-FROM alpine:3.21 AS manifests
+FROM alpine:3.24 AS manifests
 
 WORKDIR /app
 
@@ -34,7 +34,7 @@ COPY migrations ./migrations
 RUN touch src/main.rs src/lib.rs && cargo build --release --locked
 
 # Stylesheet, built apart so a change in static/ does not rebuild the binary
-FROM alpine:3.21 AS styles
+FROM alpine:3.24 AS styles
 
 # Tailwind CSS v4 standalone CLI, the musl build since the image is Alpine.
 # It links the C++ runtime dynamically.
@@ -63,7 +63,7 @@ RUN tailwindcss --input static/css/input.css --output static/css/style.css --min
     find static/css -mindepth 1 -type d -exec rm -rf {} +
 
 # Runtime
-FROM alpine:3.21
+FROM alpine:3.24
 
 # A fixed id, so a bind-mounted data directory can be given to it.
 RUN addgroup -S -g 10001 statup && \
