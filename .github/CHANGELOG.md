@@ -2,6 +2,10 @@
 
 All notable changes to Statup are listed here. The project is pre-v1: until 1.0, a minor version may change the interface or the database, and the README asks you to back up before upgrading.
 
+## Unreleased
+
+- Email subscriptions. On **Get notified**, a visitor types their address, ticks incidents, maintenance or announcements and confirms through the link emailed to them; a signed-in member subscribes at the address of their account, with nothing to confirm. Each one then receives an email when an incident is opened or a maintenance announced, at each update, when it ends, for its report and for each announcement, in their language and naming only the services they may see. Every email ends with an unsubscribe link, and mail clients may offer their own button when the page is served over https. Administrators see the subscribers from the Alerts page, can remove one, and open subscriptions to visitors there: they are closed on a new instance. Offered only with a mail server (`SMTP_HOST`); the database is upgraded on start.
+
 ## 0.7.1, 2026-10-20
 
 - Statup runs on NixOS: a flake in the repository builds the package and provides a `services.statup` module, with every setting under `settings`, secrets in an `environmentFile`, the data in `/var/lib/statup` and the firewall closed unless `openFirewall` is set. Contributed by @bdeightn, built and booted on a NixOS machine by the checks of each change, and described on a new NixOS page of the documentation.
