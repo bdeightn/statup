@@ -149,8 +149,9 @@ jobs:
           cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope={0}', matrix.runner) || '' }}
 
   # Builds the Nix package and boots the NixOS machine of flake.nix, which
-  # starts the service and runs the commands of the NixOS page. Only when what
-  # the flake builds from has changed; if the comparison fails, it runs.
+  # starts the service and runs the commands of the NixOS page. Only when the
+  # flake or the Rust dependencies have changed, what breaks a Nix build in
+  # practice; if the comparison fails, it runs.
   nix:
     name: Nix package and NixOS service
     if: ${{ !github.event.pull_request.draft }}
@@ -164,7 +165,7 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          if git diff --quiet "$BASE" HEAD -- flake.nix Cargo.toml Cargo.lock static templates; then
+          if git diff --quiet "$BASE" HEAD -- flake.nix Cargo.toml Cargo.lock; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.changes.outputs.skip != 'true'
