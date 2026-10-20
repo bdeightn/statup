@@ -31,7 +31,7 @@ use crate::middleware::{AuthUser, CsrfToken, FormCsrfToken, HtmlForm, OptionalUs
 use crate::models::{Choices, JournalKind, Subscriber, User};
 use crate::repositories::{NewJournalEntry, SubscriberRepository, UserRepository};
 use crate::services::{
-    AuthService, ConfirmEmail, Notifier, RequestCheck, SubscribeRequest, SubscriptionService,
+    AuthService, LinkEmail, LinkPurpose, Notifier, RequestCheck, SubscriptionService,
 };
 use crate::state::AppState;
 
@@ -51,19 +51,14 @@ struct EmailCard {
     step: Step,
     address: String,
     choices: Choices,
-    /// What was wrong with the form, in words, and where.
-    error: Option<(Spot, String)>,
+    /// What is wrong with the address, in words.
+    address_error: Option<String>,
+    /// That no box is ticked, in words.
+    boxes_error: Option<String>,
     /// What was just done, in words: a link sent, choices saved.
     notice: Option<String>,
     /// Since when a member receives the news, in words.
     since: Option<String>,
-}
-
-/// The part of the form a mistake is about.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Spot {
-    Address,
-    Boxes,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -74,12 +69,13 @@ enum Step {
 }
 
 impl EmailCard {
-    fn form(address: &str, choices: Choices, error: Option<(Spot, String)>) -> Self {
+    fn form(address: &str, choices: Choices) -> Self {
         Self {
             step: Step::Form,
             address: address.to_string(),
             choices,
-            error,
+            address_error: None,
+            boxes_error: None,
             notice: None,
             since: None,
         }
@@ -87,18 +83,6 @@ impl EmailCard {
 
     fn is_form(&self) -> bool {
         self.step == Step::Form
-    }
-
-    fn address_wrong(&self) -> bool {
-        matches!(self.error, Some((Spot::Address, _)))
-    }
-
-    fn boxes_wrong(&self) -> bool {
-        matches!(self.error, Some((Spot::Boxes, _)))
-    }
-
-    fn error_text(&self) -> Option<&str> {
-        self.error.as_ref().map(|(_, text)| text.as_str())
     }
 
     fn is_asked(&self) -> bool {
@@ -162,7 +146,7 @@ pub struct TokenQuery {
 /// Visitors may subscribe: the page is open to everyone and an
 /// administrator opened it to their subscriptions.
 async fn visitors_welcome(state: &AppState) -> Result<bool, AppError> {
-    Ok(state.is_public_mode() && SubscriptionService::visitors_open(&state.pool).await?)
+    SubscriptionService::visitors_welcome(&state.pool, state.is_public_mode()).await
 }
 
 /// How to follow updates without opening the page: by email when the page
@@ -195,7 +179,7 @@ async fn visitor_card(state: &AppState) -> Result<Option<EmailCard>, AppError> {
     if link_base(state).await?.is_none() || !visitors_welcome(state).await? {
         return Ok(None);
     }
-    Ok(Some(EmailCard::form("", Choices::EVERYTHING, None)))
+    Ok(Some(EmailCard::form("", Choices::EVERYTHING)))
 }
 
 async fn member_card(
@@ -219,7 +203,8 @@ async fn member_card(
         choices: subscription
             .as_ref()
             .map_or(Choices::EVERYTHING, |s| s.choices),
-        error: None,
+        address_error: None,
+        boxes_error: None,
         notice,
         since: subscription.map(|s| {
             let date = i18n.format_date_long(&clock::local_date(&s.created_at));
@@ -261,12 +246,8 @@ pub async fn ask(
         return Ok(Redirect::to("/subscribe").into_response());
     };
     let choices = input.boxes.choices();
-    let card = match checked_address(&input.email, choices) {
-        Err((spot, key)) => {
-            let error = Some((spot, i18n.t(key).to_string()));
-            EmailCard::form(input.email.trim(), choices, error)
-        }
-        Ok(email) => {
+    let card = match AuthService::normalize_email(&input.email) {
+        Ok(email) if choices.any() => {
             let ip = request_ip(&state, &headers, connect_info);
             if state.login_limiter.count_subscribe_request(&ip) == RequestCheck::Allowed {
                 ask_later(&state, &email, base, choices, i18n.locale());
@@ -274,22 +255,19 @@ pub async fn ask(
             EmailCard {
                 step: Step::Asked,
                 notice: Some(i18n.tf("subscribe.asked", &[("email", &email)])),
-                ..EmailCard::form(&email, choices, None)
+                ..EmailCard::form(&email, choices)
             }
         }
+        Ok(_) => EmailCard {
+            boxes_error: Some(i18n.t("subscribe.no_choice").to_string()),
+            ..EmailCard::form(input.email.trim(), choices)
+        },
+        Err(_) => EmailCard {
+            address_error: Some(i18n.t("validation.email_invalid").to_string()),
+            ..EmailCard::form(input.email.trim(), choices)
+        },
     };
     render_page(&state, None, &headers, csrf_token, Some(card), i18n).await
-}
-
-/// The address, cleaned, or what is wrong with the form and the key of
-/// its words.
-fn checked_address(email: &str, choices: Choices) -> Result<String, (Spot, &'static str)> {
-    let email = AuthService::normalize_email(email)
-        .map_err(|_| (Spot::Address, "validation.email_invalid"))?;
-    if !choices.any() {
-        return Err((Spot::Boxes, "subscribe.no_choice"));
-    }
-    Ok(email)
 }
 
 fn ask_later(state: &AppState, email: &str, base: String, choices: Choices, locale: &'static str) {
@@ -313,21 +291,20 @@ async fn send_confirmation(
     choices: Choices,
     locale: &str,
 ) -> Result<(), AppError> {
-    let SubscribeRequest::Issued(link) =
-        SubscriptionService::request(pool, email, locale, choices).await?
-    else {
+    let Some(token) = SubscriptionService::request(pool, email, locale, choices).await? else {
         return Ok(());
     };
     let i18n = I18n::new(locale);
-    let url = format!("{base}/subscribe/confirm?token={}", link.token);
+    let url = format!("{base}/subscribe/confirm?token={token}");
     let instance = crate::brand_name();
-    let mail = ConfirmEmail {
-        to: &link.email,
+    let mail = LinkEmail {
+        purpose: LinkPurpose::Subscription,
+        to: email,
         url: &url,
         instance: &instance,
         i18n: &i18n,
     };
-    if let Err(failure) = notifier.send_subscription_confirmation(&mail).await {
+    if let Err(failure) = notifier.send_link(&mail).await {
         tracing::warn!(failure = %failure.code(), "Subscription confirmation email not sent");
     }
     Ok(())
@@ -535,17 +512,21 @@ fn unsubscribed(i18n: I18n) -> LinkTemplate {
 
 async fn record_ended(pool: &DbPool, subscriber: &Subscriber) -> Result<(), AppError> {
     let entry = NewJournalEntry::new(JournalKind::SubscriptionEnded);
-    let member = match subscriber.user_id {
-        Some(id) => UserRepository::find_by_id(pool, id).await?,
-        None => None,
-    };
-    let entry = match (&member, &subscriber.email) {
-        (Some(member), _) => entry.on_member(member),
+    let entry = match (member_of(pool, subscriber).await?, &subscriber.email) {
+        (Some(member), _) => entry.on_member(&member),
         (None, Some(email)) => entry.about(email.clone()),
         (None, None) => entry,
     };
     entry.record(pool).await;
     Ok(())
+}
+
+/// The member a subscription belongs to, when it is a member's.
+async fn member_of(pool: &DbPool, subscriber: &Subscriber) -> Result<Option<User>, AppError> {
+    match subscriber.user_id {
+        Some(id) => Ok(UserRepository::find_by_id(pool, id).await?),
+        None => Ok(None),
+    }
 }
 
 /// Where a subscriber's emails go: the address they confirmed, or their
@@ -554,9 +535,6 @@ pub(super) async fn address_of(pool: &DbPool, subscriber: &Subscriber) -> Result
     if let Some(email) = &subscriber.email {
         return Ok(email.clone());
     }
-    let member = match subscriber.user_id {
-        Some(id) => UserRepository::find_by_id(pool, id).await?,
-        None => None,
-    };
+    let member = member_of(pool, subscriber).await?;
     Ok(member.map(|member| member.email).unwrap_or_default())
 }

@@ -10,7 +10,7 @@ use common::{MailSink, Options, TestApp};
 use statup::clock;
 use statup::i18n::I18n;
 use statup::models::{Choices, CreateEventInput, Kind, Role, Severity};
-use statup::services::{EventService, SubscribeRequest, SubscriptionService};
+use statup::services::{EventService, SubscriptionService};
 
 const ADMIN_PASSWORD: &str = "admin_password_12";
 const READER_PASSWORD: &str = "reader_password_12";
@@ -61,7 +61,7 @@ impl TestApp {
 
     async fn subscribe_visitor(&self, email: &str, choices: Choices) -> i64 {
         let token = match SubscriptionService::request(&self.pool, email, "en", choices).await {
-            Ok(SubscribeRequest::Issued(link)) => link.token,
+            Ok(Some(token)) => token,
             _ => panic!("no link issued for {email}"),
         };
         SubscriptionService::confirm(&self.pool, &token)

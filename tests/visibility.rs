@@ -18,8 +18,7 @@ use statup::repositories::{
     FolderRepository, GroupRepository, ServiceRepository, SubscriberRepository, UserRepository,
 };
 use statup::services::{
-    EventService, Notifier, ServiceService, SubscribeRequest, SubscriptionService,
-    deliver_to_subscribers,
+    EventService, Notifier, ServiceService, SubscriptionService, deliver_to_subscribers,
 };
 
 const PASSWORD: &str = "correct horse battery staple";
@@ -978,10 +977,10 @@ async fn subscribe_everyone(pool: &SqlitePool, members: &[i64]) {
     let request = SubscriptionService::request(pool, VISITOR, "en", Choices::EVERYTHING)
         .await
         .unwrap();
-    let SubscribeRequest::Issued(link) = request else {
+    let Some(token) = request else {
         panic!("no confirmation link for the visitor");
     };
-    SubscriptionService::confirm(pool, &link.token)
+    SubscriptionService::confirm(pool, &token)
         .await
         .unwrap()
         .expect("the visitor is subscribed");

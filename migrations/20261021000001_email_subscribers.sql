@@ -64,5 +64,7 @@ CREATE INDEX idx_subscriber_deliveries_queue
 CREATE INDEX idx_subscriber_deliveries_due
     ON subscriber_deliveries(next_attempt_at, id) WHERE status = 'pending';
 CREATE INDEX idx_subscriber_deliveries_created ON subscriber_deliveries(created_at);
+CREATE INDEX idx_subscriber_deliveries_waiting
+    ON subscriber_deliveries(created_at) WHERE status = 'pending';
 CREATE INDEX idx_subscriber_deliveries_event ON subscriber_deliveries(event_id);
 CREATE INDEX idx_subscriber_deliveries_update ON subscriber_deliveries(update_id);

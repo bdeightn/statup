@@ -44,14 +44,14 @@
                 <div class="subscribe-control">
                     {% if card.is_form() %}
                     <label for="subscribe-email" class="sr-only">{{ i18n.t("auth.email") }}</label>
-                    <input id="subscribe-email" name="email" type="email" class="input" value="{{ card.address }}" placeholder="{{ i18n.t("auth.email") }}" required autocomplete="email"{% if card.address_wrong() %} aria-invalid="true" aria-describedby="subscribe-error"{% endif %}>
+                    <input id="subscribe-email" name="email" type="email" class="input" value="{{ card.address }}" placeholder="{{ i18n.t("auth.email") }}" required autocomplete="email"{% if card.address_error.is_some() %} aria-invalid="true" aria-describedby="subscribe-error"{% endif %}>
                     <button type="submit" class="btn btn-primary">{{ i18n.t("subscribe.submit") }}</button>
                     {% else %}
                     <button type="submit" name="action" value="save" class="btn btn-primary">{% if card.subscribed() %}{{ i18n.t("common.save") }}{% else %}{{ i18n.t("subscribe.submit") }}{% endif %}</button>
                     {% if card.subscribed() %}<button type="submit" name="action" value="stop" class="text-action">{{ i18n.t("subscribe.stop") }}</button>{% endif %}
                     {% endif %}
                 </div>
-                {% if card.address_wrong() %}{% if let Some(error) = card.error_text() %}<p id="subscribe-error" class="field-error subscribe-error">{{ error }}</p>{% endif %}{% endif %}
+                {% if let Some(error) = card.address_error %}<p id="subscribe-error" class="field-error subscribe-error">{{ error }}</p>{% endif %}
             </div>
         </form>
         {% endif %}

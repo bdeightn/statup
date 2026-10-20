@@ -292,12 +292,7 @@ async fn settle(
         record_delivery(pool, JournalKind::AlertAbandoned, channel, &code, detailed).await;
         return Ok(());
     }
-    let retry = if failure.is_permanent() {
-        None
-    } else {
-        retry_at(delivery.attempts, failure, now)
-    };
-    if let Some(at) = retry {
+    if let Some(at) = retry_at(delivery.attempts, failure, now) {
         for id in ids {
             NotificationRepository::retry_later(pool, *id, &code, at).await?;
         }
@@ -333,12 +328,16 @@ pub(crate) fn channel_detail(kind: ChannelKind, outcome: &str) -> String {
     format!("{} · {outcome}", kind.as_str())
 }
 
-/// When to try again after `attempts` attempts, or `None` once they are used.
+/// When to try again after `attempts` attempts, or `None` once they are used
+/// or when waiting cannot fix the failure.
 pub(super) fn retry_at(
     attempts: i64,
     failure: Failure,
     now: DateTime<Utc>,
 ) -> Option<DateTime<Utc>> {
+    if failure.is_permanent() {
+        return None;
+    }
     let delay = *RETRY_DELAYS.get(usize::try_from(attempts).ok()?)?;
     let asked = match failure {
         Failure::TooManyRequests(Some(asked)) => asked.min(LONGEST_ASKED_WAIT),

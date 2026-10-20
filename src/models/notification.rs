@@ -144,6 +144,16 @@ impl Audience {
             Kind::Publication => Self::Publications,
         }
     }
+
+    /// The column of the box that receives this part of the page.
+    pub fn column(self) -> &'static str {
+        match self {
+            Self::Incidents => "on_incidents",
+            Self::Maintenances => "on_maintenances",
+            Self::Publications => "on_publications",
+            Self::DetectedOutages => "on_detected",
+        }
+    }
 }
 
 // One box of the form per flag, one column each.

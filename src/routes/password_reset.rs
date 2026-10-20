@@ -27,7 +27,7 @@ use crate::middleware::{FormCsrfToken, HtmlForm, OptionalUser};
 use crate::models::{JournalKind, User};
 use crate::repositories::NewJournalEntry;
 use crate::services::{
-    LinkRequest, Notifier, PasswordResetService, RequestCheck, ResetEmail, page_address,
+    LinkEmail, LinkPurpose, LinkRequest, Notifier, PasswordResetService, RequestCheck, page_address,
 };
 use crate::state::AppState;
 
@@ -204,13 +204,14 @@ async fn send_link(
     let i18n = I18n::new(link.user.preferred_locale.as_deref().unwrap_or(page_locale));
     let url = format!("{base}/password/reset?token={}", link.token);
     let instance = crate::brand_name();
-    let mail = ResetEmail {
+    let mail = LinkEmail {
+        purpose: LinkPurpose::PasswordReset,
         to: &link.user.email,
         url: &url,
         instance: &instance,
         i18n: &i18n,
     };
-    if let Err(failure) = notifier.send_password_reset(&mail).await {
+    if let Err(failure) = notifier.send_link(&mail).await {
         let code = failure.code();
         NewJournalEntry::new(JournalKind::PasswordResetNotSent)
             .on_member(&link.user)

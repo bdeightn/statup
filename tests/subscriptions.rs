@@ -16,9 +16,7 @@ use common::{MailSink, Options, TestApp, extract_csrf_token};
 use statup::config::{SmtpConfig, SmtpSecurity};
 use statup::i18n::I18n;
 use statup::models::{Choices, CreateEventInput, Kind, Role, Severity, Subscriber};
-use statup::services::{
-    EventService, Notifier, SubscribeRequest, SubscriptionService, deliver_to_subscribers,
-};
+use statup::services::{EventService, Notifier, SubscriptionService, deliver_to_subscribers};
 
 const PUBLIC_URL: &str = "http://status.test";
 const EMAIL: &str = "ana@example.com";
@@ -162,7 +160,7 @@ async fn capture_everything(app: &TestApp) {
 /// A confirmation link as the page would have emailed it, without the email.
 async fn pending_token(app: &TestApp, email: &str, choices: Choices) -> String {
     match SubscriptionService::request(&app.pool, email, "en", choices).await {
-        Ok(SubscribeRequest::Issued(link)) => link.token,
+        Ok(Some(token)) => token,
         _ => panic!("no link issued for {email}"),
     }
 }

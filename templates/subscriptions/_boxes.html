@@ -1,9 +1,9 @@
-<fieldset class="choice-group"{% if card.boxes_wrong() %} aria-describedby="subscribe-error"{% endif %}>
+<fieldset class="choice-group"{% if card.boxes_error.is_some() %} aria-describedby="subscribe-error"{% endif %}>
     <legend class="sr-only">{{ i18n.t("subscribe.receive") }}</legend>
     <div class="subscribe-boxes">
         <label class="check-row"><input type="checkbox" name="on_incidents" value="on" class="checkbox"{% if card.choices.incidents %} checked{% endif %}><span>{{ i18n.t("notifications.box_incidents") }}</span></label>
         <label class="check-row"><input type="checkbox" name="on_maintenances" value="on" class="checkbox"{% if card.choices.maintenances %} checked{% endif %}><span>{{ i18n.t("notifications.box_maintenances") }}</span></label>
         <label class="check-row"><input type="checkbox" name="on_publications" value="on" class="checkbox"{% if card.choices.publications %} checked{% endif %}><span>{{ i18n.t("notifications.box_publications") }}</span></label>
     </div>
-    {% if card.boxes_wrong() %}{% if let Some(error) = card.error_text() %}<p id="subscribe-error" class="field-error subscribe-error">{{ error }}</p>{% endif %}{% endif %}
+    {% if let Some(error) = card.boxes_error %}<p id="subscribe-error" class="field-error subscribe-error">{{ error }}</p>{% endif %}
 </fieldset>

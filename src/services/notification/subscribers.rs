@@ -52,21 +52,6 @@ const KEEP_HISTORY: chrono::Duration = chrono::Duration::days(30);
 const CLOSED: &str = "closed";
 const INACTIVE: &str = "inactive";
 const HIDDEN: &str = "hidden";
-/// Why every waiting email was given up: no address to link back to.
-const NO_PAGE_ADDRESS: &str = "no_page_address";
-/// Why an email was given up: it waited too long.
-const EXPIRED: &str = "expired";
-
-/// The words for why an email to a subscriber was given up, when the reason
-/// is not one the mail server gave.
-pub fn given_up_key(code: &str) -> Option<&'static str> {
-    match code {
-        EXPIRED => Some("notifications.failure_expired"),
-        NO_PAGE_ADDRESS => Some("notifications.failure_no_page_address"),
-        _ => None,
-    }
-}
-
 /// What a round did.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Round {
@@ -123,12 +108,23 @@ pub async fn deliver_to_subscribers<S: SubscriberSender + Send + Sync + 'static>
     if !SubscriberDeliveryRepository::any_waiting(pool).await? {
         return Ok(round);
     }
-    let ready = Readers::ready(pool, sender.as_ref(), public_url, public_page);
-    if let Some(mut readers) = ready.await? {
-        expire(pool, now, &mut round).await?;
-        send_due(pool, sender, &mut readers, now, &mut round).await?;
-    } else {
-        give_up_all(pool, sender.as_ref(), now, &mut round).await?;
+    match Readers::ready(pool, sender.as_ref(), public_url, public_page).await? {
+        Ok(mut readers) => {
+            give_up(
+                pool,
+                Failure::Expired,
+                Some(now - KEEP_WAITING),
+                now,
+                &mut round,
+            )
+            .await?;
+            if readers.visitor_scope.is_none() {
+                SubscriberDeliveryRepository::skip_visitors(pool, CLOSED, now).await?;
+            }
+            send_due(pool, sender, &mut readers, now, &mut round).await?;
+        }
+        // Nothing can be sent at all: every waiting email is given up.
+        Err(failure) => give_up(pool, failure, None, now, &mut round).await?,
     }
     record_given_up(pool, &round).await;
     Ok(round)
@@ -158,29 +154,18 @@ async fn send_due<S: SubscriberSender + Send + Sync + 'static>(
     Ok(())
 }
 
-/// Gives up the news that waited too long: that late, it would mislead more
-/// than it informs.
-async fn expire(pool: &DbPool, now: DateTime<Utc>, round: &mut Round) -> Result<(), AppError> {
-    let expired =
-        SubscriberDeliveryRepository::expire(pool, now - KEEP_WAITING, EXPIRED, now).await?;
-    round.give_up(EXPIRED, expired);
-    Ok(())
-}
-
-/// Nothing can be sent without a mail server, nor without the page's
-/// address to link back to: every waiting email is given up then.
-async fn give_up_all<S: SubscriberSender>(
+/// Gives up the waiting emails queued before `queued_before`, or all of them,
+/// and counts them for the journal.
+async fn give_up(
     pool: &DbPool,
-    sender: &S,
+    failure: Failure,
+    queued_before: Option<DateTime<Utc>>,
     now: DateTime<Utc>,
     round: &mut Round,
 ) -> Result<(), AppError> {
-    let code = if sender.mail_ready() {
-        NO_PAGE_ADDRESS.to_string()
-    } else {
-        Failure::NoMailServer.code()
-    };
-    let given_up = SubscriberDeliveryRepository::fail_all_waiting(pool, &code, now).await?;
+    let code = failure.code();
+    let given_up =
+        SubscriberDeliveryRepository::give_up_waiting(pool, &code, queued_before, now).await?;
     round.give_up(&code, given_up);
     Ok(())
 }
@@ -190,7 +175,7 @@ async fn give_up_all<S: SubscriberSender>(
 struct Readers {
     origin: Origin,
     page: String,
-    visitors_welcome: bool,
+    /// What every visitor sees, or `None` while visitors may not receive.
     visitor_scope: Option<Scope>,
     members: HashMap<i64, Option<Member>>,
     notices: HashMap<NoticeKey, Option<(Notice, Facts)>>,
@@ -201,13 +186,6 @@ struct Member {
     email: String,
     locale: Option<String>,
     scope: Scope,
-}
-
-/// Who reads an email: every visitor sees the same page.
-#[derive(Clone, Copy)]
-enum Viewer {
-    Visitor,
-    Member(i64),
 }
 
 /// The emails of one piece of news read alike by readers who see the same
@@ -224,29 +202,32 @@ struct NoticeKey {
 }
 
 impl Readers {
-    /// The page and who may read it, or `None` when nothing can be sent: no
-    /// mail server, or no page address to link back to.
+    /// The page and who may read it, or why nothing can be sent: no mail
+    /// server, or no page address to link back to.
     async fn ready<S: SubscriberSender>(
         pool: &DbPool,
         sender: &S,
         public_url: Option<&str>,
         public_page: bool,
-    ) -> Result<Option<Self>, AppError> {
+    ) -> Result<Result<Self, Failure>, AppError> {
         if !sender.mail_ready() {
-            return Ok(None);
+            return Ok(Err(Failure::NoMailServer));
         }
         let Some(page) = page_address(pool, public_url).await? else {
-            return Ok(None);
+            return Ok(Err(Failure::NoPageAddress));
         };
-        let visitors_welcome = public_page && SubscriptionService::visitors_open(pool).await?;
-        Ok(Some(Self {
+        let visitor_scope = if SubscriptionService::visitors_welcome(pool, public_page).await? {
+            Some(scope_of(pool, None).await?)
+        } else {
+            None
+        };
+        Ok(Ok(Self {
             origin: Origin {
                 instance: crate::brand_name(),
                 page: Some(page.clone()),
             },
             page,
-            visitors_welcome,
-            visitor_scope: None,
+            visitor_scope,
             members: HashMap::new(),
             notices: HashMap::new(),
         }))
@@ -278,7 +259,7 @@ impl Readers {
         pool: &DbPool,
         message: &SubscriberMessage,
     ) -> Result<Result<Outgoing, &'static str>, AppError> {
-        let (viewer, to, locale) = match (message.user_id, &message.email) {
+        let (scope, to, locale) = match (message.user_id, &message.email) {
             (Some(user_id), _) => {
                 let Some(member) = self.member(pool, user_id).await? else {
                     return Ok(Err(INACTIVE));
@@ -287,14 +268,15 @@ impl Readers {
                     .locale
                     .clone()
                     .unwrap_or_else(|| message.locale.clone());
-                (Viewer::Member(user_id), member.email.clone(), locale)
+                (member.scope.clone(), member.email.clone(), locale)
             }
-            (None, Some(email)) if self.visitors_welcome => {
-                (Viewer::Visitor, email.clone(), message.locale.clone())
-            }
-            (None, _) => return Ok(Err(CLOSED)),
+            (None, Some(email)) => match &self.visitor_scope {
+                Some(scope) => (scope.clone(), email.clone(), message.locale.clone()),
+                None => return Ok(Err(CLOSED)),
+            },
+            (None, None) => return Ok(Err(CLOSED)),
         };
-        let Some((notice, facts)) = self.notice(pool, message, viewer, &locale).await? else {
+        let Some((notice, facts)) = self.notice(pool, message, scope, &locale).await? else {
             return Ok(Err(HIDDEN));
         };
         let i18n = I18n::new(&locale);
@@ -333,16 +315,15 @@ impl Readers {
         Ok(self.members.get(&user_id).and_then(Option::as_ref))
     }
 
-    /// The news as this reader sees it, written once for all who see it
-    /// alike, or `None` when it is not theirs to see.
+    /// The news as a reader who sees `scope` reads it, written once for all
+    /// who see it alike, or `None` when it is not theirs to see.
     async fn notice(
         &mut self,
         pool: &DbPool,
         message: &SubscriberMessage,
-        viewer: Viewer,
+        scope: Scope,
         locale: &str,
     ) -> Result<Option<(Notice, Facts)>, AppError> {
-        let scope = self.scope(pool, viewer).await?;
         let key = NoticeKey {
             event_id: message.event_id,
             update_id: message.update_id,
@@ -372,26 +353,6 @@ impl Readers {
             });
         self.notices.insert(key, written.clone());
         Ok(written)
-    }
-
-    /// What this reader may see: the public services for every visitor.
-    async fn scope(&mut self, pool: &DbPool, viewer: Viewer) -> Result<Scope, AppError> {
-        match viewer {
-            Viewer::Member(user_id) => Ok(self
-                .members
-                .get(&user_id)
-                .and_then(Option::as_ref)
-                .map_or_else(|| Scope::Visible(Vec::new()), |member| member.scope.clone())),
-            Viewer::Visitor => {
-                if self.visitor_scope.is_none() {
-                    self.visitor_scope = Some(scope_of(pool, None).await?);
-                }
-                Ok(self
-                    .visitor_scope
-                    .clone()
-                    .unwrap_or_else(|| Scope::Visible(Vec::new())))
-            }
-        }
     }
 }
 
@@ -459,12 +420,7 @@ async fn settle(
         round.server_failure = Some(failure);
         return Ok(());
     }
-    let retry = if failure.is_permanent() {
-        None
-    } else {
-        retry_at(email.attempts, failure, now)
-    };
-    if let Some(at) = retry {
+    if let Some(at) = retry_at(email.attempts, failure, now) {
         SubscriberDeliveryRepository::retry_later(pool, email.id, &code, at).await?;
     } else {
         SubscriberDeliveryRepository::fail(pool, email.id, &code, now).await?;
@@ -973,7 +929,7 @@ mod tests {
         assert_eq!(
             rows(&pool).await,
             [
-                row("ana@example.com", "failed", 0, Some(NO_PAGE_ADDRESS)),
+                row("ana@example.com", "failed", 0, Some("no_page_address")),
                 row("ana@example.com", "failed", 0, Some("no_mail_server")),
             ]
         );
@@ -995,10 +951,10 @@ mod tests {
         assert_eq!(script.sent_to(), Vec::<String>::new());
         assert_eq!(
             rows(&pool).await,
-            [row("ana@example.com", "failed", 0, Some(EXPIRED))]
+            [row("ana@example.com", "failed", 0, Some("expired"))]
         );
-        assert_eq!(done.given_up, BTreeMap::from([(EXPIRED.to_string(), 1)]));
-        assert_eq!(given_up_key(EXPIRED), Some("notifications.failure_expired"));
+        assert_eq!(done.given_up, BTreeMap::from([("expired".to_string(), 1)]));
+        assert_eq!(Failure::from_code("expired"), Some(Failure::Expired));
     }
 
     #[tokio::test]

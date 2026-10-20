@@ -78,13 +78,14 @@ pub async fn list(
 ) -> Result<Response, AppError> {
     let rows = SubscriberRepository::list_for_admin(&state.pool).await?;
     let has_visitors = rows.iter().any(|row| row.user_id.is_none());
-    let open = SubscriptionService::visitors_open(&state.pool).await?;
+    let welcome =
+        SubscriptionService::visitors_welcome(&state.pool, state.is_public_mode()).await?;
     let frame = Frame::load(&state.pool, Some(&user), csrf_token, &i18n).await?;
     render(&SubscribersTemplate {
         frame,
         lines: rows.iter().map(|row| line_of(row, &i18n)).collect(),
         removed: query.done.as_deref() == Some("removed"),
-        visitors_paused: has_visitors && !(open && state.is_public_mode()),
+        visitors_paused: has_visitors && !welcome,
         i18n,
     })
 }

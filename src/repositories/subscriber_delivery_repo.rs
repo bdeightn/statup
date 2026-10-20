@@ -9,9 +9,10 @@ use crate::models::SubscriberMessage;
 const MESSAGE_COLUMNS: &str = "d.id, d.subscriber_id, d.happening, d.event_id, d.update_id, \
      d.lifecycle, d.attempts, d.created_at, s.user_id, s.email, s.locale, s.unsubscribe_secret";
 
-/// The newest finished email of each subscriber.
+/// The newest email of each subscriber that was sent or given up, which the
+/// list of subscribers shows: a skipped one says nothing of the address.
 const LATEST_OUTCOMES: &str = "SELECT MAX(id) FROM subscriber_deliveries \
-     WHERE status != 'pending' GROUP BY subscriber_id";
+     WHERE status IN ('sent', 'failed') GROUP BY subscriber_id";
 
 pub struct SubscriberDeliveryRepository;
 
@@ -132,42 +133,47 @@ impl SubscriberDeliveryRepository {
         Ok(())
     }
 
-    /// Gives up on every waiting email, for a reason that holds for all of
-    /// them, such as no mail server.
-    pub async fn fail_all_waiting(
+    /// Leaves out every waiting email of every visitor: visitors may not
+    /// receive any now, and none is sent later.
+    pub async fn skip_visitors(
         pool: &DbPool,
-        failure: &str,
+        reason: &str,
         now: DateTime<Utc>,
     ) -> Result<u64, sqlx::Error> {
         let result = sqlx::query(
-            "UPDATE subscriber_deliveries SET status = 'failed', failure = ?, \
-             next_attempt_at = ? WHERE status = 'pending'",
+            "UPDATE subscriber_deliveries SET status = 'skipped', attempts = attempts + 1, \
+             failure = ?, next_attempt_at = ? WHERE status = 'pending' \
+             AND subscriber_id IN (SELECT id FROM subscribers WHERE user_id IS NULL)",
         )
-        .bind(failure)
+        .bind(reason)
         .bind(clock::db(now))
         .execute(pool)
         .await?;
         Ok(result.rows_affected())
     }
 
-    /// Gives up on the emails still waiting since before `before`, for
-    /// `failure`: news that late would mislead more than it informs.
-    pub async fn expire(
+    /// Gives up on the waiting emails queued before `queued_before`, or on
+    /// all of them, for `failure`: news that late would mislead more than it
+    /// informs, and without a mail server none can leave.
+    pub async fn give_up_waiting(
         pool: &DbPool,
-        before: DateTime<Utc>,
         failure: &str,
+        queued_before: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
     ) -> Result<u64, sqlx::Error> {
-        let result = sqlx::query(
+        let mut sql = String::from(
             "UPDATE subscriber_deliveries SET status = 'failed', failure = ?, \
-             next_attempt_at = ? WHERE status = 'pending' AND created_at < ?",
-        )
-        .bind(failure)
-        .bind(clock::db(now))
-        .bind(clock::db(before))
-        .execute(pool)
-        .await?;
-        Ok(result.rows_affected())
+             next_attempt_at = ? WHERE status = 'pending'",
+        );
+        if queued_before.is_some() {
+            sql.push_str(" AND created_at < ?");
+        }
+        let query = sqlx::query(&sql).bind(failure).bind(clock::db(now));
+        let query = match queued_before {
+            Some(before) => query.bind(clock::db(before)),
+            None => query,
+        };
+        Ok(query.execute(pool).await?.rows_affected())
     }
 
     /// Forgets the finished emails queued before `before`, except the last
@@ -368,13 +374,13 @@ mod tests {
         let now = Utc::now();
         assert!(Repo::any_waiting(&pool).await.unwrap());
 
-        let expired = Repo::expire(&pool, now - Duration::hours(48), "expired", now)
+        let expired = Repo::give_up_waiting(&pool, "expired", Some(now - Duration::hours(48)), now)
             .await
             .unwrap();
         assert_eq!(expired, 1);
         assert_eq!(ids(&Repo::due(&pool, now, 100).await.unwrap()), [recent]);
 
-        let failed = Repo::fail_all_waiting(&pool, "no_mail_server", now)
+        let failed = Repo::give_up_waiting(&pool, "no_mail_server", None, now)
             .await
             .unwrap();
         assert_eq!(failed, 1);

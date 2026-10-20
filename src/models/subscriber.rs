@@ -41,8 +41,6 @@ pub struct Subscriber {
     #[sqlx(flatten)]
     pub choices: Choices,
     pub unsubscribe_secret: String,
-    /// The latest consent.
-    pub confirmed_at: DateTime<Utc>,
     /// The first consent.
     pub created_at: DateTime<Utc>,
 }
@@ -70,7 +68,6 @@ pub struct SubscriberRow {
 /// A visitor's subscription until they open the link sent to the address.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct SubscriptionRequest {
-    pub id: i64,
     pub email: String,
     pub secret_hash: String,
     pub locale: String,

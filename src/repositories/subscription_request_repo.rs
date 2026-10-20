@@ -6,6 +6,13 @@ use crate::models::{Choices, SubscriptionRequest};
 /// How long a link confirms its request, as an `SQLite` date modifier.
 const LINK_LIFETIME: &str = "+1 day";
 
+/// Whether the last hour leaves room for one more request, for the address
+/// and for the whole page. Binds the address, then the two limits.
+const UNDER_LIMITS: &str = "(SELECT COUNT(*) FROM subscription_requests \
+     WHERE email = ? AND created_at > datetime('now', '-1 hour')) < ? \
+     AND (SELECT COUNT(*) FROM subscription_requests \
+     WHERE created_at > datetime('now', '-1 hour')) < ?";
+
 /// What a visitor asked for, with the hash of the secret their link carries.
 pub struct NewSubscriptionRequest<'a> {
     pub email: &'a str,
@@ -33,16 +40,11 @@ impl SubscriptionRequestRepository {
         request: &NewSubscriptionRequest<'_>,
         limits: RequestLimits,
     ) -> Result<Option<i64>, sqlx::Error> {
-        sqlx::query_scalar(
+        sqlx::query_scalar(&format!(
             "INSERT INTO subscription_requests (email, secret_hash, locale, on_incidents, \
              on_maintenances, on_publications, expires_at) \
-             SELECT ?, ?, ?, ?, ?, ?, datetime('now', ?) \
-             WHERE (SELECT COUNT(*) FROM subscription_requests \
-                    WHERE email = ? AND created_at > datetime('now', '-1 hour')) < ? \
-               AND (SELECT COUNT(*) FROM subscription_requests \
-                    WHERE created_at > datetime('now', '-1 hour')) < ? \
-             RETURNING id",
-        )
+             SELECT ?, ?, ?, ?, ?, ?, datetime('now', ?) WHERE {UNDER_LIMITS} RETURNING id"
+        ))
         .bind(request.email)
         .bind(request.secret_hash)
         .bind(request.locale)
@@ -65,17 +67,12 @@ impl SubscriptionRequestRepository {
         email: &str,
         limits: RequestLimits,
     ) -> Result<bool, sqlx::Error> {
-        sqlx::query_scalar(
-            "SELECT (SELECT COUNT(*) FROM subscription_requests \
-                     WHERE email = ? AND created_at > datetime('now', '-1 hour')) < ? \
-                AND (SELECT COUNT(*) FROM subscription_requests \
-                     WHERE created_at > datetime('now', '-1 hour')) < ?",
-        )
-        .bind(email)
-        .bind(limits.per_address)
-        .bind(limits.per_instance)
-        .fetch_one(pool)
-        .await
+        sqlx::query_scalar(&format!("SELECT {UNDER_LIMITS}"))
+            .bind(email)
+            .bind(limits.per_address)
+            .bind(limits.per_instance)
+            .fetch_one(pool)
+            .await
     }
 
     /// The request with this id, if its link still confirms it. A newer
@@ -85,7 +82,7 @@ impl SubscriptionRequestRepository {
         id: i64,
     ) -> Result<Option<SubscriptionRequest>, sqlx::Error> {
         sqlx::query_as::<_, SubscriptionRequest>(
-            "SELECT r.id, r.email, r.secret_hash, r.locale, r.on_incidents, \
+            "SELECT r.email, r.secret_hash, r.locale, r.on_incidents, \
              r.on_maintenances, r.on_publications FROM subscription_requests r \
              WHERE r.id = ? AND r.expires_at > datetime('now') \
                AND NOT EXISTS (SELECT 1 FROM subscription_requests newer \

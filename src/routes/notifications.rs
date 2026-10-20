@@ -24,7 +24,7 @@ use crate::models::{
 use crate::repositories::{NewJournalEntry, NotificationRepository, SettingsRepository};
 use crate::services::{
     Facts, Failure, Finding, Notice, Origin, PAGE_ADDRESS_SETTING, Sender, Subject, channel_detail,
-    destination_allowed, destination_name_refusal, email_addresses, given_up_key, page_address,
+    destination_allowed, destination_name_refusal, email_addresses, page_address,
 };
 use crate::state::AppState;
 
@@ -448,9 +448,6 @@ pub(super) fn outcome_line(
 }
 
 pub(crate) fn reason_of(code: Option<&str>, i18n: &I18n) -> String {
-    if let Some(key) = code.and_then(given_up_key) {
-        return i18n.t(key).to_string();
-    }
     code.and_then(Failure::from_code).map_or_else(
         || i18n.t("notifications.failure_unknown").to_string(),
         |failure| failure_text(failure, i18n),
@@ -474,6 +471,8 @@ fn failure_text(failure: Failure, i18n: &I18n) -> String {
         Failure::MailBusy(status) => ("notifications.failure_mail_busy", status),
         Failure::MailUnreachable => ("notifications.failure_mail_unreachable", None),
         Failure::NoMailServer => ("notifications.failure_no_mail_server", None),
+        Failure::Expired => ("notifications.failure_expired", None),
+        Failure::NoPageAddress => ("notifications.failure_no_page_address", None),
     };
     let text = i18n.t(key);
     status.map_or_else(|| text.to_string(), |status| format!("{text} ({status})"))

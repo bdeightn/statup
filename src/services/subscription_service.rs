@@ -18,7 +18,7 @@ use crate::error::AppError;
 use crate::models::{Choices, Subscriber, SubscriptionRequest};
 use crate::repositories::{
     NewSubscriptionRequest, RequestLimits, SettingsRepository, SubscriberRepository,
-    SubscriptionRequestRepository,
+    SubscriptionRequestRepository, VISITORS_SETTING,
 };
 
 /// Requests an address can make in an hour, so the form cannot flood an inbox.
@@ -26,50 +26,40 @@ const REQUESTS_PER_ADDRESS: i64 = 3;
 /// Requests the whole page takes in an hour. High on purpose: many visitors
 /// sign up during an outage, and none should be refused for it.
 const REQUESTS_PER_INSTANCE: i64 = 500;
-/// Setting that opens the page to visitors' subscriptions. Absent means closed.
-const VISITORS_SETTING: &str = "visitor_subscriptions";
-
-/// A confirmation link to send to a visitor.
-pub struct ConfirmLink {
-    pub email: String,
-    pub token: String,
-}
-
-/// What a visitor's request came to. They are told the same thing either way.
-pub enum SubscribeRequest {
-    LimitReached,
-    Issued(ConfirmLink),
-}
 
 pub struct SubscriptionService;
 
 impl SubscriptionService {
     pub async fn visitors_open(pool: &DbPool) -> Result<bool, AppError> {
         let value = SettingsRepository::get(pool, VISITORS_SETTING).await?;
-        Ok(value.as_deref() == Some("1"))
+        Ok(value.as_deref() == Some("true"))
     }
 
     pub async fn set_visitors_open(pool: &DbPool, open: bool) -> Result<(), AppError> {
-        let value = if open { "1" } else { "0" };
-        Ok(SettingsRepository::set(pool, VISITORS_SETTING, value).await?)
+        Ok(SettingsRepository::set(pool, VISITORS_SETTING, &open.to_string()).await?)
     }
 
-    /// A confirmation link for this address, already normalized by the
-    /// caller, unless its hour of requests is used up.
+    /// Visitors may subscribe and receive: the page is open to everyone
+    /// (`public_mode`) and an administrator opened it to their subscriptions.
+    pub async fn visitors_welcome(pool: &DbPool, public_mode: bool) -> Result<bool, AppError> {
+        Ok(public_mode && Self::visitors_open(pool).await?)
+    }
+
+    /// The token of a confirmation link for this address, already normalized
+    /// by the caller, or `None` when its hour of requests is used up.
     pub async fn request(
         pool: &DbPool,
         email: &str,
         locale: &str,
         choices: Choices,
-    ) -> Result<SubscribeRequest, AppError> {
+    ) -> Result<Option<String>, AppError> {
         let limits = RequestLimits {
             per_address: REQUESTS_PER_ADDRESS,
             per_instance: REQUESTS_PER_INSTANCE,
         };
-        SubscriptionRequestRepository::delete_stale(pool).await?;
         // Asked first so that a refused request costs no Argon2 hash.
         if !SubscriptionRequestRepository::within_limits(pool, email, limits).await? {
-            return Ok(SubscribeRequest::LimitReached);
+            return Ok(None);
         }
         let secret = new_secret();
         let secret_hash = AuthService::hash_password(&secret).await?;
@@ -80,13 +70,7 @@ impl SubscriptionService {
             choices,
         };
         let stored = SubscriptionRequestRepository::insert_within_limits(pool, &new, limits);
-        let Some(id) = stored.await? else {
-            return Ok(SubscribeRequest::LimitReached);
-        };
-        Ok(SubscribeRequest::Issued(ConfirmLink {
-            email: email.to_owned(),
-            token: token(id, &secret),
-        }))
+        Ok(stored.await?.map(|id| token(id, &secret)))
     }
 
     /// The request this link would confirm, if it still confirms one. Lets
@@ -183,18 +167,14 @@ mod tests {
         publications: false,
     };
 
-    async fn ask(pool: &DbPool, email: &str, choices: Choices) -> Option<ConfirmLink> {
-        match SubscriptionService::request(pool, email, "fr", choices)
+    async fn ask(pool: &DbPool, email: &str, choices: Choices) -> Option<String> {
+        SubscriptionService::request(pool, email, "fr", choices)
             .await
             .unwrap()
-        {
-            SubscribeRequest::Issued(link) => Some(link),
-            SubscribeRequest::LimitReached => None,
-        }
     }
 
     async fn link(pool: &DbPool, email: &str, choices: Choices) -> String {
-        ask(pool, email, choices).await.unwrap().token
+        ask(pool, email, choices).await.unwrap()
     }
 
     async fn subscribed(pool: &DbPool, email: &str, choices: Choices) -> Subscriber {

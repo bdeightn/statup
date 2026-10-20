@@ -9,11 +9,10 @@ use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, RETRY_AFTER};
 
+use super::link_mail::link_email;
 use super::mail::{email, recipients};
 use super::reminder_mail::reminder_email;
-use super::reset_mail::reset_email;
-use super::subscribe_mail::confirm_email;
-use super::{ConfirmEmail, Facts, Notice, ReminderEmail, ResetEmail, Unsubscribe, post};
+use super::{Facts, LinkEmail, Notice, ReminderEmail, Unsubscribe, post};
 use crate::config::{SmtpConfig, SmtpSecurity};
 use crate::models::{Channel, ChannelKind};
 use crate::services::Finding;
@@ -49,6 +48,11 @@ pub enum Failure {
     NoMailServer,
     /// The event or service the message is about no longer exists.
     Gone,
+    /// An email to a subscriber waited so long that it would mislead.
+    Expired,
+    /// No page address to link back to, so no email to a subscriber can
+    /// carry its way out.
+    NoPageAddress,
 }
 
 impl Failure {
@@ -64,6 +68,8 @@ impl Failure {
             Self::MailBusy(status) => with_status("mail_busy", status),
             Self::MailUnreachable => "mail_unreachable".to_string(),
             Self::NoMailServer => "no_mail_server".to_string(),
+            Self::Expired => "expired".to_string(),
+            Self::NoPageAddress => "no_page_address".to_string(),
         }
     }
 
@@ -91,6 +97,8 @@ impl Failure {
             "gone" => Self::Gone,
             "mail_unreachable" => Self::MailUnreachable,
             "no_mail_server" => Self::NoMailServer,
+            "expired" => Self::Expired,
+            "no_page_address" => Self::NoPageAddress,
             _ => return None,
         };
         Some(failure)
@@ -109,7 +117,9 @@ impl Failure {
             | Self::Unsupported
             | Self::Gone
             | Self::MailRefused(_)
-            | Self::NoMailServer => true,
+            | Self::NoMailServer
+            | Self::Expired
+            | Self::NoPageAddress => true,
             Self::TooManyRequests(_)
             | Self::Transport(_)
             | Self::MailBusy(_)
@@ -216,20 +226,11 @@ impl Notifier {
         self.mailer.is_some()
     }
 
-    /// Sends a password reset link to the member who asked for it.
-    pub async fn send_password_reset(&self, mail: &ResetEmail<'_>) -> Result<(), Failure> {
+    /// Sends a link to the person who asked for it: a password reset, or the
+    /// confirmation of a subscription.
+    pub async fn send_link(&self, mail: &LinkEmail<'_>) -> Result<(), Failure> {
         let mailer = self.mailer.as_ref().ok_or(Failure::NoMailServer)?;
-        let message = reset_email(&mailer.from, mail).ok_or(Failure::MailRefused(None))?;
-        mailer.deliver(message).await
-    }
-
-    /// Sends a visitor the link that confirms their subscription.
-    pub async fn send_subscription_confirmation(
-        &self,
-        mail: &ConfirmEmail<'_>,
-    ) -> Result<(), Failure> {
-        let mailer = self.mailer.as_ref().ok_or(Failure::NoMailServer)?;
-        let message = confirm_email(&mailer.from, mail).ok_or(Failure::MailRefused(None))?;
+        let message = link_email(&mailer.from, mail).ok_or(Failure::MailRefused(None))?;
         mailer.deliver(message).await
     }
 
@@ -251,7 +252,10 @@ impl Notifier {
         let mut first_failure = None;
         let mut delivered = 0;
         for recipient in &recipients {
-            match mailer.send(recipient, notice, facts, &channel.locale).await {
+            match mailer
+                .send(recipient, notice, facts, &channel.locale, None)
+                .await
+            {
                 Ok(()) => delivered += 1,
                 Err(failure) => {
                     first_failure.get_or_insert(failure);
@@ -303,14 +307,16 @@ impl Notifier {
 }
 
 impl Mailer {
+    /// Sends a notice to one address; a subscriber's copy carries its way out.
     async fn send(
         &self,
         to: &Mailbox,
         notice: &Notice,
         facts: &Facts,
         locale: &str,
+        unsubscribe: Option<&Unsubscribe>,
     ) -> Result<(), Failure> {
-        let message = email(&self.from, to, notice, facts, locale, None)
+        let message = email(&self.from, to, notice, facts, locale, unsubscribe)
             .map_err(|_| Failure::MailRefused(None))?;
         self.deliver(message).await
     }
@@ -365,16 +371,10 @@ impl SubscriberSender for Notifier {
     async fn send_to_subscriber(&self, mail: &SubscriberEmail<'_>) -> Result<(), Failure> {
         let mailer = self.mailer.as_ref().ok_or(Failure::NoMailServer)?;
         let to: Mailbox = mail.to.parse().map_err(|_| Failure::MailRefused(None))?;
-        let message = email(
-            &mailer.from,
-            &to,
-            mail.notice,
-            mail.facts,
-            mail.locale,
-            Some(mail.unsubscribe),
-        )
-        .map_err(|_| Failure::MailRefused(None))?;
-        mailer.deliver(message).await
+        let way_out = Some(mail.unsubscribe);
+        mailer
+            .send(&to, mail.notice, mail.facts, mail.locale, way_out)
+            .await
     }
 }
 
@@ -420,7 +420,7 @@ mod tests {
     use super::*;
     use crate::i18n::I18n;
     use crate::models::{ChannelKind, Happening};
-    use crate::services::{Origin, Subject};
+    use crate::services::{LinkPurpose, Origin, Subject};
 
     /// Answers every request with the same raw response and keeps what it
     /// received.
@@ -836,7 +836,8 @@ mod tests {
         let i18n = I18n::new("en");
 
         notifier_with_mail(addr)
-            .send_subscription_confirmation(&ConfirmEmail {
+            .send_link(&LinkEmail {
+                purpose: LinkPurpose::Subscription,
                 to: "ana@example.com",
                 url: "https://status.example/subscribe/confirm?token=7.abc",
                 instance: "ACME",

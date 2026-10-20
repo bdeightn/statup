@@ -8,8 +8,12 @@ use crate::models::{
     Audience, Choices, Notification, Subscriber, SubscriberRow, SubscriptionRequest,
 };
 
+/// Setting that opens the page to visitors' subscriptions, `true` when open.
+/// Absent means closed.
+pub const VISITORS_SETTING: &str = "visitor_subscriptions";
+
 const SUBSCRIBER_COLUMNS: &str = "id, user_id, email, locale, on_incidents, on_maintenances, \
-     on_publications, unsubscribe_secret, confirmed_at, created_at";
+     on_publications, unsubscribe_secret, created_at";
 
 pub struct SubscriberRepository;
 
@@ -132,12 +136,10 @@ impl SubscriberRepository {
         now: DateTime<Utc>,
         send_at: DateTime<Utc>,
     ) -> Result<u64, sqlx::Error> {
-        let column = match notification.audience {
-            Audience::Incidents => "on_incidents",
-            Audience::Maintenances => "on_maintenances",
-            Audience::Publications => "on_publications",
-            Audience::DetectedOutages => return Ok(0),
-        };
+        if notification.audience == Audience::DetectedOutages {
+            return Ok(0);
+        }
+        let column = notification.audience.column();
         let Some(event_id) = notification.event_id else {
             return Ok(0);
         };
@@ -149,7 +151,7 @@ impl SubscriberRepository {
              WHERE s.{column} = 1 AND (\
                (s.user_id IS NOT NULL AND u.is_active = 1) \
                OR (s.user_id IS NULL \
-                   AND (SELECT value FROM settings WHERE key = 'visitor_subscriptions') = '1' \
+                   AND (SELECT value FROM settings WHERE key = ?) = 'true' \
                    AND NOT EXISTS (SELECT 1 FROM subscribers m \
                                    JOIN users mu ON mu.id = m.user_id \
                                    WHERE mu.is_active = 1 AND m.{column} = 1 \
@@ -162,6 +164,7 @@ impl SubscriberRepository {
             .bind(notification.lifecycle)
             .bind(clock::db(send_at))
             .bind(clock::db(now))
+            .bind(VISITORS_SETTING)
             .execute(pool)
             .await?;
         Ok(queued.rows_affected())
