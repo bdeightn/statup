@@ -55,10 +55,9 @@
           postInstall = ''
             mkdir -p "$out/share/statup"
 
+            # Templates, translations and migrations are compiled into the
+            # binary: only the static files are read from disk.
             cp -r static "$out/share/statup/"
-            cp -r templates "$out/share/statup/"
-            cp -r locales "$out/share/statup/"
-            cp -r migrations "$out/share/statup/"
 
             install -Dm644 LICENSE \
               "$out/share/licenses/statup/LICENSE"
