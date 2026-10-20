@@ -7,13 +7,17 @@
 
   outputs = { self, nixpkgs, ... }:
     let
-      systems = [
-        "aarch64-darwin" # Apple silicon
+      linuxSystems = [
         "x86_64-linux"
         "aarch64-linux"
       ];
 
+      systems = linuxSystems ++ [
+        "aarch64-darwin" # Apple silicon
+      ];
+
       forAllSystems = nixpkgs.lib.genAttrs systems;
+      forLinuxSystems = nixpkgs.lib.genAttrs linuxSystems;
 
       packageFor = system:
         let
@@ -208,5 +212,43 @@
             networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.settings.PORT ];
           };
         };
+
+      # Boots a NixOS machine with the service, as the documentation sets it
+      # up, and runs the commands the documentation gives.
+      checks = forLinuxSystems (system: {
+        nixos = nixpkgs.legacyPackages.${system}.testers.runNixOSTest {
+          name = "statup";
+
+          nodes.machine = { pkgs, ... }: {
+            imports = [ self.nixosModules.default ];
+
+            services.statup = {
+              enable = true;
+              settings.TZ = "Europe/Dublin";
+              environmentFile = "/etc/statup.env";
+            };
+
+            # A throwaway administrator for the check, created at first start.
+            environment.etc."statup.env".text = ''
+              ADMIN_EMAIL=admin@example.com
+              ADMIN_PASSWORD=nixos-check-password-0001
+            '';
+
+            environment.systemPackages = [ pkgs.curl ];
+          };
+
+          testScript = ''
+            machine.wait_for_unit("statup.service")
+            machine.wait_for_open_port(3000)
+            machine.succeed("curl --fail http://127.0.0.1:3000/health")
+            machine.succeed("curl --fail http://127.0.0.1:3000/login")
+            machine.succeed("curl --fail http://127.0.0.1:3000/static/css/style.css")
+            machine.succeed(
+                "sudo -u statup env DATABASE_URL=/var/lib/statup/statup.db"
+                " statup reset-password admin@example.com"
+            )
+          '';
+        };
+      });
     };
 }
