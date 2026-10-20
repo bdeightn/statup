@@ -180,7 +180,7 @@ pub struct ChannelInput {
 }
 
 /// What a message says happened.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, sqlx::Type)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 pub enum Happening {
     /// An incident declared, or a maintenance announced ahead.

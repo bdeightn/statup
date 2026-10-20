@@ -154,6 +154,10 @@ pub enum JournalKind {
     AlertRetrying,
     /// A message was given up.
     AlertAbandoned,
+    /// Emails to subscribers given up in one round, for one reason.
+    SubscriberMailsAbandoned,
+    /// The mail server failed as a whole: emails to subscribers wait for it.
+    SubscriberMailsPaused,
 }
 
 /// Everything a kind says about itself: one line per kind in
@@ -260,6 +264,8 @@ impl JournalKind {
             Self::AlertSent => row(Cat::Alerts, false, Level::DEBUG, Tone::Neutral, "Alert sent", "journal.alert_sent"),
             Self::AlertRetrying => row(Cat::Alerts, false, Level::WARN, Tone::Minor, "Alert not sent, will try again", "journal.alert_retrying"),
             Self::AlertAbandoned => row(Cat::Alerts, true, Level::WARN, Tone::Crit, "Alert given up", "journal.alert_abandoned"),
+            Self::SubscriberMailsAbandoned => row(Cat::Alerts, true, Level::WARN, Tone::Crit, "Emails to subscribers given up", "journal.subscriber_mails_abandoned"),
+            Self::SubscriberMailsPaused => row(Cat::Alerts, true, Level::WARN, Tone::Minor, "Emails to subscribers on hold: the mail server failed", "journal.subscriber_mails_paused"),
         }
     }
 

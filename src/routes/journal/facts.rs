@@ -106,7 +106,9 @@ fn detail_facts(kind: JournalKind, detail: &str, i18n: &I18n) -> Vec<String> {
         | K::PasswordCheckBlocked
         | K::PasswordResetBlocked
         | K::DashboardArranged => Vec::new(),
-        K::PasswordResetNotSent => vec![reason_of(Some(detail), i18n)],
+        K::PasswordResetNotSent | K::SubscriberMailsAbandoned | K::SubscriberMailsPaused => {
+            vec![reason_of(Some(detail), i18n)]
+        }
         K::MemberAdded | K::MemberRoleChanged => detail
             .parse::<Role>()
             .ok()

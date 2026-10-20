@@ -116,6 +116,21 @@ impl Failure {
             | Self::MailUnreachable => false,
         }
     }
+
+    /// The mail server failed as a whole, not one address: out of reach,
+    /// closing the connection (421), or refusing the sign-in (530, 534, 535,
+    /// 538). Every other email would fail the same way, so none should spend
+    /// an attempt on it.
+    pub fn is_server_wide(self) -> bool {
+        matches!(
+            self,
+            Self::NoMailServer
+                | Self::MailUnreachable
+                | Self::Transport(_)
+                | Self::MailBusy(Some(421))
+                | Self::MailRefused(Some(530 | 534 | 535 | 538))
+        )
+    }
 }
 
 /// `mail_refused_535`, or `mail_refused` when the server gave no code.

@@ -735,6 +735,8 @@
   "journal.alert_sent": "Nachricht an „{subject}“ gesendet",
   "journal.alert_retrying": "Nachricht an „{subject}“ nicht gesendet, neuer Versuch geplant",
   "journal.alert_abandoned": "Nachricht an „{subject}“ aufgegeben",
+  "journal.subscriber_mails_abandoned": "Aufgegebene E-Mails an Abonnenten: {subject}",
+  "journal.subscriber_mails_paused": "E-Mails an Abonnenten angehalten: Der Mailserver antwortet nicht",
   "notifications.title": "Alarmierung",
   "notifications.manage": "Alarmierung verwalten",
   "notifications.destinations.one": "{n} Kanal",

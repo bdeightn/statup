@@ -11,6 +11,7 @@ mod reminders;
 mod reset_mail;
 mod sender;
 mod subscribe_mail;
+mod subscribers;
 
 pub(crate) use deliver::{PAGE_ADDRESS_SETTING, channel_detail};
 pub use deliver::{deliver_due, page_address, spawn_notifications};
@@ -24,3 +25,4 @@ pub use reminders::remind_overdue;
 pub use reset_mail::ResetEmail;
 pub use sender::{Failure, Notifier, SEND_TIMEOUT, Sender, SubscriberEmail, SubscriberSender};
 pub use subscribe_mail::ConfirmEmail;
+pub use subscribers::{Round, deliver_to_subscribers, spawn_subscriber_mail};

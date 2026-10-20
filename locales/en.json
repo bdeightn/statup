@@ -735,6 +735,8 @@
   "journal.alert_sent": "Message sent to “{subject}”",
   "journal.alert_retrying": "Message to “{subject}” not sent, will try again",
   "journal.alert_abandoned": "Message given up for “{subject}”",
+  "journal.subscriber_mails_abandoned": "Emails to subscribers given up: {subject}",
+  "journal.subscriber_mails_paused": "Emails to subscribers on hold: the mail server is not answering",
   "notifications.title": "Alerts",
   "notifications.manage": "Manage alerts",
   "notifications.destinations.one": "{n} channel",

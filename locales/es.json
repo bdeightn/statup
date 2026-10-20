@@ -735,6 +735,8 @@
   "journal.alert_sent": "Mensaje enviado a «{subject}»",
   "journal.alert_retrying": "El mensaje a «{subject}» no salió, nuevo intento previsto",
   "journal.alert_abandoned": "Mensaje abandonado para «{subject}»",
+  "journal.subscriber_mails_abandoned": "Correos a suscriptores abandonados: {subject}",
+  "journal.subscriber_mails_paused": "Correos a suscriptores en espera: el servidor de correo no responde",
   "notifications.title": "Alertas",
   "notifications.manage": "Gestionar las alertas",
   "notifications.destinations.one": "{n} canal",

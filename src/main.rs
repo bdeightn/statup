@@ -19,7 +19,8 @@ use statup::middleware::rate_limit::RateLimit;
 use statup::routes::create_router;
 use statup::services::{
     AuthService, DashboardLayoutService, LoginRateLimiter, Notifier, SEND_TIMEOUT, SettingsService,
-    spawn_maintenance_schedule, spawn_monitoring, spawn_notifications, spawn_update_check,
+    spawn_maintenance_schedule, spawn_monitoring, spawn_notifications, spawn_subscriber_mail,
+    spawn_update_check,
 };
 use statup::session;
 use statup::state::AppState;
@@ -174,6 +175,12 @@ fn spawn_background_tasks(
             pool.clone(),
             Arc::clone(&state.notifier),
             state.public_url.clone(),
+        ),
+        spawn_subscriber_mail(
+            pool.clone(),
+            Arc::clone(&state.notifier),
+            state.public_url.clone(),
+            Arc::clone(&state.public_mode),
         ),
     ]
 }

@@ -28,7 +28,7 @@ const PURGE_INTERVAL: Duration = Duration::from_secs(3600);
 const REMINDER_INTERVAL: Duration = Duration::from_secs(60);
 const KEEP_HISTORY: chrono::Duration = chrono::Duration::days(30);
 /// The wait before each new attempt, after a failure that waiting may fix.
-const RETRY_DELAYS: [Duration; 4] = [
+pub(super) const RETRY_DELAYS: [Duration; 4] = [
     Duration::from_secs(30),
     Duration::from_secs(120),
     Duration::from_secs(600),
@@ -194,7 +194,12 @@ async fn load_subject(
     wave: &[Delivery],
 ) -> Result<Option<Subject>, AppError> {
     if let Some(event_id) = delivery.event_id {
-        return load_event(pool, event_id, delivery).await;
+        let reading = Reading {
+            happening: delivery.happening,
+            update_id: delivery.update_id,
+            scope: &Scope::All,
+        };
+        return load_event(pool, event_id, &reading).await;
     }
     if delivery.service_id.is_none() {
         return Ok(Some(Subject::Test));
@@ -216,19 +221,28 @@ async fn load_subject(
     Ok((!states.is_empty()).then_some(Subject::Service(states)))
 }
 
+/// What a message tells of an event, and who reads it.
+pub(super) struct Reading<'a> {
+    pub happening: Happening,
+    pub update_id: Option<i64>,
+    /// The services its reader may see: all of them for the destinations.
+    pub scope: &'a Scope,
+}
+
 /// The event as it stands, with the text that goes with the message: the
-/// update posted, or the review published. A review removed before its
-/// message left, or an incident opened again since, sends nothing.
-async fn load_event(
+/// update posted, or the review published, and only the services the reader
+/// may see. An event they may not see, a review removed before its message
+/// left, or an incident opened again since, sends nothing.
+pub(super) async fn load_event(
     pool: &DbPool,
     event_id: i64,
-    delivery: &Delivery,
+    reading: &Reading<'_>,
 ) -> Result<Option<Subject>, AppError> {
-    let Some(found) = EventRepository::find_with_services(pool, event_id, &Scope::All).await?
+    let Some(found) = EventRepository::find_with_services(pool, event_id, reading.scope).await?
     else {
         return Ok(None);
     };
-    let message = match (delivery.happening, delivery.update_id) {
+    let message = match (reading.happening, reading.update_id) {
         (Happening::Reviewed, _) => match EventReviewRepository::find(pool, event_id).await? {
             Some(review) if found.event.takes_review() => Some(sanitize_markdown(&review.body)),
             _ => return Ok(None),
@@ -320,7 +334,11 @@ pub(crate) fn channel_detail(kind: ChannelKind, outcome: &str) -> String {
 }
 
 /// When to try again after `attempts` attempts, or `None` once they are used.
-fn retry_at(attempts: i64, failure: Failure, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+pub(super) fn retry_at(
+    attempts: i64,
+    failure: Failure,
+    now: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
     let delay = *RETRY_DELAYS.get(usize::try_from(attempts).ok()?)?;
     let asked = match failure {
         Failure::TooManyRequests(Some(asked)) => asked.min(LONGEST_ASKED_WAIT),

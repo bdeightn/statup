@@ -2,6 +2,8 @@
 
 use chrono::{DateTime, Utc};
 
+use super::{Happening, Lifecycle};
+
 /// The kinds of events a subscriber receives, one box each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::FromRow)]
 pub struct Choices {
@@ -40,4 +42,24 @@ pub struct SubscriptionRequest {
     pub locale: String,
     #[sqlx(flatten)]
     pub choices: Choices,
+}
+
+/// The next email a subscriber is waiting for, with what it takes to write
+/// and address it. Not `Debug`: it holds the unsubscribe secret.
+#[derive(Clone, sqlx::FromRow)]
+pub struct SubscriberMessage {
+    pub id: i64,
+    pub subscriber_id: i64,
+    pub happening: Happening,
+    pub event_id: i64,
+    pub update_id: Option<i64>,
+    /// The state the event moved to, when it moved.
+    pub lifecycle: Option<Lifecycle>,
+    pub attempts: i64,
+    /// When it happened, which the email tells.
+    pub created_at: DateTime<Utc>,
+    pub user_id: Option<i64>,
+    pub email: Option<String>,
+    pub locale: String,
+    pub unsubscribe_secret: String,
 }
