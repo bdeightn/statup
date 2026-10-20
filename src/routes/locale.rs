@@ -99,6 +99,8 @@ fn canonical_page(path: &str) -> String {
     let page = match segments.as_slice() {
         ["admin", "users", ..] => "/admin/users",
         ["admin", "settings", ..] => "/admin/settings",
+        ["admin", "notifications", "subscribers", ..] => "/admin/notifications/subscribers",
+        ["admin", "notifications", ..] => "/admin/notifications",
         ["profile", ..] => "/profile",
         ["icons", ..] => "/icons",
         ["events", "templates", ..] => "/events/new",
@@ -122,7 +124,8 @@ fn is_page(segments: &[&str]) -> bool {
             | "register" | "profile",
         ]
         | ["events" | "services" | "password", "new"]
-        | ["admin", "settings" | "users"]
+        | ["admin", "settings" | "users" | "notifications"]
+        | ["admin", "notifications", "subscribers"]
         | ["subscribe", "confirm"]
         | ["setup", "page" | "services" | "done"] => true,
         ["events", id] | ["events" | "services", id, "edit"] => is_id(id),
@@ -147,6 +150,15 @@ mod tests {
             ("/admin/users/7/reset-password", "/admin/users"),
             ("/admin/settings/general", "/admin/settings"),
             ("/admin/settings/logo/remove", "/admin/settings"),
+            (
+                "/admin/notifications/visitor-subscriptions",
+                "/admin/notifications",
+            ),
+            ("/admin/notifications/7/delete", "/admin/notifications"),
+            (
+                "/admin/notifications/subscribers/7/remove",
+                "/admin/notifications/subscribers",
+            ),
             ("/profile/password", "/profile"),
             ("/icons/upload", "/icons"),
             ("/icons/upload-picker", "/icons"),
@@ -199,6 +211,8 @@ mod tests {
             "/subscribe",
             "/admin/users",
             "/admin/settings",
+            "/admin/notifications",
+            "/admin/notifications/subscribers",
             "/setup/page",
             "/setup/services",
             "/setup/done",

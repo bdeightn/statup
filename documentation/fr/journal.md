@@ -11,7 +11,7 @@ Le Journal liste ce qui s'est passé sur l'instance, jour par jour. Les administ
 
 **Essentiel**, par défaut, garde les gros changements et les problèmes :
 
-- les services ajoutés, modifiés ou supprimés, les paramètres, les canaux d'alerte ;
+- les services ajoutés, modifiés ou supprimés, les paramètres, les canaux d'alerte, les abonnés par courriel retirés et les abonnements des visiteurs ouverts ou fermés ;
 - les membres ajoutés, un changement de rôle ou de compte, un événement supprimé ;
 - les groupes et les dossiers créés, renommés ou supprimés, les membres d'un groupe, les services d'un dossier, et qui voit un service ou un dossier ;
 - une panne détectée et sa fin, un message abandonné vers un canal d'alerte ;

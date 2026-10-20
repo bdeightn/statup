@@ -480,7 +480,7 @@ fn dead_link(i18n: I18n) -> LinkTemplate {
 }
 
 /// "incidents, maintenances": the boxes ticked, in words.
-fn choice_words(choices: Choices, i18n: &I18n) -> String {
+pub(super) fn choice_words(choices: Choices, i18n: &I18n) -> String {
     [
         (choices.incidents, "notifications.receives_incidents"),
         (choices.maintenances, "notifications.receives_maintenances"),
@@ -551,7 +551,7 @@ async fn record_ended(pool: &DbPool, subscriber: &Subscriber) -> Result<(), AppE
 
 /// Where a subscriber's emails go: the address they confirmed, or their
 /// account's.
-async fn address_of(pool: &DbPool, subscriber: &Subscriber) -> Result<String, AppError> {
+pub(super) async fn address_of(pool: &DbPool, subscriber: &Subscriber) -> Result<String, AppError> {
     if let Some(email) = &subscriber.email {
         return Ok(email.clone());
     }

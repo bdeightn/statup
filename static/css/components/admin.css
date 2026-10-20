@@ -686,8 +686,43 @@
         margin-top: 4px;
     }
 
-    .page-address {
+    /* The two short settings under the channels: side by side from a wide
+       screen, each card as tall as the other. */
+    .alerts-cards {
+        align-items: stretch;
         margin-top: 32px;
+    }
+
+    .alerts-card {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 16px 20px 20px;
+    }
+
+    .alerts-card-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+    }
+
+    .alerts-card-head .link {
+        font-size: var(--text-sm);
+    }
+
+    .alerts-card-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 16px;
+        margin-top: auto;
+        padding-top: 10px;
+    }
+
+    .alerts-card-field {
+        flex: 1 1 240px;
+        min-width: 0;
     }
 
     .page-address-value {

@@ -162,6 +162,10 @@ pub enum JournalKind {
     SubscriptionConfirmed,
     /// A subscriber left, by the link of an email or from the page.
     SubscriptionEnded,
+    /// An administrator removed a subscriber.
+    SubscriberRemoved,
+    /// An administrator opened or closed subscriptions to visitors.
+    VisitorSubscriptionsChanged,
 }
 
 /// Everything a kind says about itself: one line per kind in
@@ -272,6 +276,8 @@ impl JournalKind {
             Self::SubscriberMailsPaused => row(Cat::Alerts, true, Level::WARN, Tone::Minor, "Emails to subscribers on hold: the mail server failed", "journal.subscriber_mails_paused"),
             Self::SubscriptionConfirmed => row(Cat::Alerts, false, Level::INFO, Tone::Neutral, "Email subscription confirmed", "journal.subscription_confirmed"),
             Self::SubscriptionEnded => row(Cat::Alerts, false, Level::INFO, Tone::Neutral, "Email subscription ended", "journal.subscription_ended"),
+            Self::SubscriberRemoved => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Email subscriber removed", "journal.subscriber_removed"),
+            Self::VisitorSubscriptionsChanged => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Visitor subscriptions changed", "journal.visitor_subscriptions_changed"),
         }
     }
 

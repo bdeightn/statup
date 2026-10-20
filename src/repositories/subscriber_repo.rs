@@ -4,7 +4,9 @@ use chrono::{DateTime, Utc};
 
 use crate::clock;
 use crate::db::DbPool;
-use crate::models::{Audience, Choices, Notification, Subscriber, SubscriptionRequest};
+use crate::models::{
+    Audience, Choices, Notification, Subscriber, SubscriberRow, SubscriptionRequest,
+};
 
 const SUBSCRIBER_COLUMNS: &str = "id, user_id, email, locale, on_incidents, on_maintenances, \
      on_publications, unsubscribe_secret, confirmed_at, created_at";
@@ -163,6 +165,37 @@ impl SubscriberRepository {
             .execute(pool)
             .await?;
         Ok(queued.rows_affected())
+    }
+
+    /// How many members and how many visitors are subscribed.
+    pub async fn counts(pool: &DbPool) -> Result<(i64, i64), sqlx::Error> {
+        sqlx::query_as(
+            "SELECT COALESCE(SUM(user_id IS NOT NULL), 0), COALESCE(SUM(user_id IS NULL), 0) \
+             FROM subscribers",
+        )
+        .fetch_one(pool)
+        .await
+    }
+
+    /// Every subscriber, members first, each group by address, with how
+    /// their latest sent or failed email went.
+    pub async fn list_for_admin(pool: &DbPool) -> Result<Vec<SubscriberRow>, sqlx::Error> {
+        sqlx::query_as(
+            "SELECT s.id, s.user_id, u.display_name AS name, \
+                    COALESCE(u.email, s.email) AS email, \
+                    s.on_incidents, s.on_maintenances, s.on_publications, s.created_at, \
+                    d.status AS last_status, d.failure AS last_failure, \
+                    CASE d.status WHEN 'sent' THEN d.sent_at ELSE d.next_attempt_at END \
+                      AS last_at \
+             FROM subscribers s \
+             LEFT JOIN users u ON u.id = s.user_id \
+             LEFT JOIN subscriber_deliveries d ON d.id = (\
+               SELECT MAX(l.id) FROM subscriber_deliveries l \
+               WHERE l.subscriber_id = s.id AND l.status IN ('sent', 'failed')) \
+             ORDER BY s.user_id IS NULL, email",
+        )
+        .fetch_all(pool)
+        .await
     }
 
     /// Ends a subscription, and with it the emails it still had to receive.
@@ -410,6 +443,122 @@ mod tests {
 
         assert_eq!(count(&pool, "subscriber_deliveries").await, 0);
         assert_eq!(count(&pool, "subscribers").await, 1, "the visitor stays");
+    }
+
+    async fn finish(
+        pool: &DbPool,
+        subscriber_id: i64,
+        event_id: i64,
+        status: &str,
+        failure: Option<&str>,
+        at: &str,
+    ) {
+        sqlx::query(
+            "INSERT INTO subscriber_deliveries (subscriber_id, happening, event_id, status, \
+             failure, sent_at, next_attempt_at) VALUES (?, 'opened', ?, ?, ?, ?, ?)",
+        )
+        .bind(subscriber_id)
+        .bind(event_id)
+        .bind(status)
+        .bind(failure)
+        .bind(at)
+        .bind(at)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn subscribers_are_counted_by_kind() {
+        let pool = test_pool().await;
+        assert_eq!(SubscriberRepository::counts(&pool).await.unwrap(), (0, 0));
+        let ana = member(&pool, "ana@example.com").await;
+        SubscriberRepository::save_member(&pool, ana, "fr", EVERYTHING, "s")
+            .await
+            .unwrap();
+        confirmed(&pool, "ben@example.com", EVERYTHING, "s").await;
+        confirmed(&pool, "cat@example.com", ONLY_INCIDENTS, "s").await;
+
+        assert_eq!(SubscriberRepository::counts(&pool).await.unwrap(), (1, 2));
+    }
+
+    #[tokio::test]
+    async fn the_list_shows_members_first_then_visitors_by_address() {
+        let pool = test_pool().await;
+        confirmed(&pool, "zed@example.com", ONLY_INCIDENTS, "s").await;
+        confirmed(&pool, "ben@example.com", EVERYTHING, "s").await;
+        let ana = member(&pool, "ana@example.com").await;
+        SubscriberRepository::save_member(&pool, ana, "fr", EVERYTHING, "s")
+            .await
+            .unwrap();
+
+        let rows = SubscriberRepository::list_for_admin(&pool).await.unwrap();
+
+        let listed: Vec<_> = rows.iter().map(|r| r.email.as_str()).collect();
+        assert_eq!(
+            listed,
+            ["ana@example.com", "ben@example.com", "zed@example.com"]
+        );
+        assert_eq!(rows[0].user_id, Some(ana));
+        assert_eq!(rows[0].name.as_deref(), Some("Someone"));
+        assert_eq!(rows[1].name, None);
+        assert_eq!(rows[2].choices, ONLY_INCIDENTS);
+    }
+
+    #[tokio::test]
+    async fn the_list_shows_the_latest_email_that_was_sent_or_failed() {
+        let pool = test_pool().await;
+        let event_id = incident(&pool).await;
+        let ana = confirmed(&pool, "ana@example.com", EVERYTHING, "s").await;
+        let ben = confirmed(&pool, "ben@example.com", EVERYTHING, "s").await;
+        confirmed(&pool, "cat@example.com", EVERYTHING, "s").await;
+        finish(
+            &pool,
+            ana,
+            event_id,
+            "failed",
+            Some("status_550"),
+            "2026-10-01 08:00:00",
+        )
+        .await;
+        finish(&pool, ana, event_id, "sent", None, "2026-10-02 08:00:00").await;
+        finish(
+            &pool,
+            ana,
+            event_id,
+            "skipped",
+            Some("hidden"),
+            "2026-10-03 08:00:00",
+        )
+        .await;
+        finish(&pool, ben, event_id, "sent", None, "2026-10-02 08:00:00").await;
+        finish(
+            &pool,
+            ben,
+            event_id,
+            "failed",
+            Some("status_550"),
+            "2026-10-04 08:00:00",
+        )
+        .await;
+        assert!(queue_for(&pool, ben, event_id, "closed").await);
+
+        let rows = SubscriberRepository::list_for_admin(&pool).await.unwrap();
+
+        assert_eq!(rows[0].last_status.as_deref(), Some("sent"));
+        assert_eq!(rows[0].last_failure, None);
+        assert_eq!(
+            rows[0].last_at.map(|at| at.to_rfc3339()),
+            Some("2026-10-02T08:00:00+00:00".to_string())
+        );
+        assert_eq!(rows[1].last_status.as_deref(), Some("failed"));
+        assert_eq!(rows[1].last_failure.as_deref(), Some("status_550"));
+        assert_eq!(
+            rows[1].last_at.map(|at| at.to_rfc3339()),
+            Some("2026-10-04T08:00:00+00:00".to_string())
+        );
+        assert_eq!(rows[2].last_status, None);
+        assert_eq!(rows[2].last_at, None);
     }
 
     #[tokio::test]

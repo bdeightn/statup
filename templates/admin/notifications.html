@@ -27,6 +27,8 @@
             {% when ListNotice::Saved with (name) %}{{ i18n.t("notifications.notice_saved") }} <q>{{ name }}</q>.
             {% when ListNotice::Deleted %}{{ i18n.t("notifications.notice_deleted") }}
             {% when ListNotice::AddressSaved %}{{ i18n.t("notifications.notice_address") }}
+            {% when ListNotice::VisitorsOpened %}{{ i18n.t("notifications.notice_visitors_open") }}
+            {% when ListNotice::VisitorsClosed %}{{ i18n.t("notifications.notice_visitors_closed") }}
             {% endmatch %}
         </p>
     </div>
@@ -62,18 +64,33 @@
     </ul>
     {% endif %}
 
-    <section class="card page-address" aria-labelledby="address-title">
-        <div class="set-row">
-            <div>
-                <label for="page-address" id="address-title" class="set-label">{{ i18n.t("notifications.page_address_label") }}</label>
-                <p class="set-help">{% if page.fixed %}{{ i18n.t("notifications.page_address_fixed") }}{% else %}{{ i18n.t("notifications.page_address_help") }}{% endif %}</p>
+    <div class="card-grid card-grid-2 alerts-cards">
+        <section class="card alerts-card" aria-labelledby="subscribers-title">
+            <div class="alerts-card-head">
+                <h2 id="subscribers-title" class="set-label">{{ i18n.t("notifications.subscribers_title") }}</h2>
+                {% if subscribers.has_any %}<a href="/admin/notifications/subscribers" class="link">{{ i18n.t("notifications.subscribers_see") }}</a>{% endif %}
             </div>
+            <p class="set-help">{{ subscribers.label }}</p>
+            {% if email_ready %}
+            <form method="post" action="/admin/notifications/visitor-subscriptions" class="alerts-card-row">
+                <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                <label class="check-row"><input type="checkbox" name="open" value="on" class="checkbox"{% if subscribers.visitors_open %} checked{% endif %}><span>{{ i18n.t("notifications.visitors_open") }}</span></label>
+                <button type="submit" class="btn btn-ghost">{{ i18n.t("common.save") }}</button>
+            </form>
+            {% else %}
+            <p class="set-help">{{ i18n.t("notifications.subscribers_no_mail") }} <a class="link" href="{{ crate::docs_url(i18n.locale(), crate::Doc::MailServer) }}">{{ i18n.t("notifications.email_server_link") }}</a></p>
+            {% endif %}
+        </section>
+
+        <section class="card alerts-card page-address" aria-labelledby="address-title">
+            <label for="page-address" id="address-title" class="set-label">{{ i18n.t("notifications.page_address_label") }}</label>
+            <p class="set-help">{% if page.fixed %}{{ i18n.t("notifications.page_address_fixed") }}{% else %}{{ i18n.t("notifications.page_address_help") }}{% endif %}</p>
             {% if page.fixed %}
             <p id="page-address" class="page-address-value">{{ page.value }}</p>
             {% else %}
-            <form method="post" action="/admin/notifications/page-address" class="set-inline-form">
+            <form method="post" action="/admin/notifications/page-address" class="alerts-card-row">
                 <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                <div class="set-field">
+                <div class="set-field alerts-card-field">
                     <input id="page-address" type="text" name="page_address" class="input" inputmode="url" maxlength="2000" autocomplete="off" spellcheck="false"
                            value="{{ page.value }}" placeholder="https://status.example.com"
                            {% if page.error.is_some() %}aria-invalid="true" aria-describedby="address-error" autofocus{% endif %}>
@@ -84,7 +101,7 @@
                 <button type="submit" class="btn btn-primary">{{ i18n.t("common.save") }}</button>
             </form>
             {% endif %}
-        </div>
-    </section>
+        </section>
+    </div>
 </div>
 {% endblock %}

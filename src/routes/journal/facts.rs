@@ -118,7 +118,7 @@ fn detail_facts(kind: JournalKind, detail: &str, i18n: &I18n) -> Vec<String> {
         K::GroupRenamed | K::FolderRenamed => {
             vec![i18n.tf("journal.fact_formerly", &[("name", detail)])]
         }
-        K::ProblemsFirstChanged => match detail {
+        K::ProblemsFirstChanged | K::VisitorSubscriptionsChanged => match detail {
             "on" => said("journal.fact_on"),
             _ => said("journal.fact_off"),
         },

@@ -47,6 +47,26 @@ pub struct Subscriber {
     pub created_at: DateTime<Utc>,
 }
 
+/// A subscriber as the administrators list them, with the outcome of their
+/// latest email. Holds no secret.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct SubscriberRow {
+    pub id: i64,
+    pub user_id: Option<i64>,
+    /// The member's display name; none for a visitor.
+    pub name: Option<String>,
+    /// The visitor's address, or the account address of the member.
+    pub email: String,
+    #[sqlx(flatten)]
+    pub choices: Choices,
+    pub created_at: DateTime<Utc>,
+    /// `sent` or `failed`: a skipped email says nothing of the address.
+    pub last_status: Option<String>,
+    pub last_failure: Option<String>,
+    /// When it left, or when it was given up.
+    pub last_at: Option<DateTime<Utc>>,
+}
+
 /// A visitor's subscription until they open the link sent to the address.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct SubscriptionRequest {

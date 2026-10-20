@@ -27,6 +27,7 @@ mod password_reset;
 mod profile;
 mod services;
 mod setup;
+mod subscribers;
 mod subscriptions;
 mod timeline;
 
@@ -331,6 +332,15 @@ fn notification_routes() -> Router<AppState> {
             get(notifications::list).post(notifications::create),
         )
         .route("/admin/notifications/test", post(notifications::test))
+        .route("/admin/notifications/subscribers", get(subscribers::list))
+        .route(
+            "/admin/notifications/subscribers/{id}/remove",
+            post(subscribers::remove),
+        )
+        .route(
+            "/admin/notifications/visitor-subscriptions",
+            post(subscribers::set_visitors),
+        )
         .route(
             "/admin/notifications/page-address",
             post(notifications::save_page_address),
