@@ -1,0 +1,21 @@
+{# A page an email links to: what the link does, and the button that does
+   it. Opening the page changes nothing. #}
+{% extends "auth/_shell.html" %}
+
+{% block title %}{{ title }} | {{ instance }}{% endblock %}
+
+{% block auth_head %}
+<h1 class="auth-title">{{ title }}</h1>
+<p class="auth-intro">{{ intro }}</p>
+{% endblock %}
+
+{% block auth_body %}
+{% if let Some((url, submit)) = action %}
+<form method="post" action="{{ url }}" class="auth-form">
+    <button type="submit" class="btn btn-primary">{{ submit }}</button>
+</form>
+{% endif %}
+{% if let Some((href, label)) = next %}
+<p class="auth-alt"><a href="{{ href }}" class="link">{{ label }}</a></p>
+{% endif %}
+{% endblock %}

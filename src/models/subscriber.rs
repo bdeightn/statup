@@ -15,6 +15,20 @@ pub struct Choices {
     pub publications: bool,
 }
 
+impl Choices {
+    /// Every box, as the form offers them first.
+    pub const EVERYTHING: Self = Self {
+        incidents: true,
+        maintenances: true,
+        publications: true,
+    };
+
+    /// At least one box: a subscription to nothing is none.
+    pub fn any(self) -> bool {
+        self.incidents || self.maintenances || self.publications
+    }
+}
+
 /// A member, at the address of their account, or a visitor, at the address
 /// they confirmed. Not `Debug`: it holds the unsubscribe secret in clear.
 #[derive(Clone, sqlx::FromRow)]

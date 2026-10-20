@@ -49,13 +49,16 @@ Signed-in members see on **Events** how many incidents and maintenance were publ
 
 ## Get notified
 
-**Get notified**, at the foot of every page and on the **Recent activity** block, gives three ways to follow without opening the page:
+**Get notified**, at the foot of every page and on the **Recent activity** block, gives the ways to follow without opening the page:
 
+- **By email**: a visitor types their address, ticks what they want to receive (**Incidents**, **Maintenance**, **Announcements**) and confirms through the link sent to them, which works for one day. A signed-in member subscribes at the address of their account, with no link to confirm, and changes their boxes or stops in the same place.
 - **With a feed reader**: the address of the Atom feed, to copy.
-- **In Teams, Slack or by email**: through the channels an administrator sets in [Alerts](alerts.md).
+- **In Teams or Slack**: through the channels an administrator sets in [Alerts](alerts.md).
 - **Or this page**: kept open, it updates itself every minute.
 
-A visitor cannot yet subscribe with their own email address.
+Each email tells one piece of news: an incident opened, an update posted, its end and its review, a maintenance announced, moved, started or finished, an announcement. It names only the services its reader may see: a visitor never reads the name of a service kept for members. Every email ends with **Unsubscribe**, and mail clients can offer their own unsubscribe button.
+
+**By email** shows only when the instance can send email ([`SMTP_HOST`](configuration.md#smtp_host)) and knows its own address ([`PUBLIC_URL`](configuration.md#public_url), or the **Link in the messages** of [Alerts](alerts.md#link-in-the-messages)). For visitors, the page must also be open to everyone, and an administrator must open subscriptions to them in [Alerts](alerts.md): they are closed on a new instance.
 
 ## The Atom feed
 

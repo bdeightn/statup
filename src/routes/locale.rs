@@ -107,6 +107,7 @@ fn canonical_page(path: &str) -> String {
         }
         ["events", ..] => "/events",
         ["services", ..] => "/services",
+        ["subscribe", ..] => "/subscribe",
         ["logout"] => "/login",
         _ => "/",
     };
@@ -116,9 +117,13 @@ fn canonical_page(path: &str) -> String {
 /// The paths that answer a GET with a page of their own.
 fn is_page(segments: &[&str]) -> bool {
     match segments {
-        ["" | "events" | "services" | "icons" | "subscribe" | "login" | "register" | "profile"]
+        [
+            "" | "events" | "services" | "icons" | "subscribe" | "unsubscribe" | "login"
+            | "register" | "profile",
+        ]
         | ["events" | "services" | "password", "new"]
         | ["admin", "settings" | "users"]
+        | ["subscribe", "confirm"]
         | ["setup", "page" | "services" | "done"] => true,
         ["events", id] | ["events" | "services", id, "edit"] => is_id(id),
         _ => false,

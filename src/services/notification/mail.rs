@@ -132,7 +132,8 @@ fn plain_text(notice: &Notice, unsubscribe: Option<&Unsubscribe>) -> String {
         lines.extend([
             String::new(),
             way_out.reason.clone(),
-            format!("{}: {}", way_out.label, way_out.url),
+            way_out.label.clone(),
+            way_out.url.clone(),
         ]);
     }
     lines.join("\n")
@@ -367,7 +368,7 @@ mod tests {
         let url = &way_out.url;
 
         let plain = plain_text(&notice(), Some(&way_out));
-        assert!(plain.ends_with(&format!("\n\n{}\nUnsubscribe: {url}", way_out.reason)));
+        assert!(plain.ends_with(&format!("\n\n{}\nUnsubscribe\n{url}", way_out.reason)));
         let page = html(&notice(), "en", Some(&way_out));
         assert!(page.contains(&way_out.reason));
         assert!(page.contains(&format!("<a href=\"{url}\">Unsubscribe</a>")));

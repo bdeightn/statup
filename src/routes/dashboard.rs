@@ -15,7 +15,7 @@ use crate::clock;
 use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::is_htmx;
-use crate::middleware::{CsrfToken, OptionalUser, Viewer};
+use crate::middleware::{CsrfToken, Viewer};
 use crate::modules::{ColumnWidth, ModuleOption, ModuleRenderContext};
 use crate::repositories::{ServiceRepository, UserRepository};
 use crate::services::DashboardLayoutService;
@@ -204,35 +204,6 @@ fn live_response(live: LiveModules, i18n: I18n) -> Result<Response, AppError> {
     headers.insert(HeaderName::from_static("x-live-version"), version);
     headers.insert(HeaderName::from_static("x-clock-offset"), offset);
     Ok(response)
-}
-
-#[derive(Template)]
-#[template(path = "subscribe.html")]
-struct SubscribeTemplate {
-    frame: Frame,
-    feed_url: String,
-    feed_readable: bool,
-    i18n: I18n,
-}
-
-/// How to follow updates without opening the page: the feed address and
-/// where to paste it.
-pub async fn subscribe(
-    OptionalUser(user): OptionalUser,
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    csrf_token: CsrfToken,
-    Locale(i18n): Locale,
-) -> Result<Response, AppError> {
-    if let Some(redirect) = members_only(&state, user.as_ref(), &headers) {
-        return Ok(redirect);
-    }
-    render(&SubscribeTemplate {
-        frame: Frame::load(&state.pool, user.as_ref(), csrf_token.0, &i18n).await?,
-        feed_url: format!("{}/feed", origin(&state, &headers)),
-        feed_readable: state.is_public_mode(),
-        i18n,
-    })
 }
 
 /// Address visitors use: `PUBLIC_URL`, or the host they asked for.

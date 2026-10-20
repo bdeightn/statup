@@ -1089,7 +1089,107 @@
         align-self: flex-start;
     }
 
-    /* Subscribe page. */
+    /* Subscribe page. The email band leads it, one row on a wide screen:
+       its title, the boxes, then the address and its button at the far
+       end, as the feed card pairs its address with its button. */
+    .subscribe-band {
+        margin-bottom: 24px;
+        padding: 16px 20px;
+    }
+
+    .subscribe-row {
+        display: grid;
+        align-items: start;
+        gap: 14px;
+    }
+
+    /* From a tablet, the title and the boxes share the first row and the
+       address keeps its button beside it; from a wide screen, all of it is
+       one row, the address at the far end. */
+    @media (min-width: 640px) {
+        .subscribe-row {
+            grid-template-columns: auto minmax(0, 1fr);
+            column-gap: 40px;
+        }
+
+        .subscribe-end {
+            grid-column: 1 / -1;
+        }
+
+        .subscribe-control {
+            flex-wrap: nowrap;
+        }
+    }
+
+    @media (min-width: 1200px) {
+        .subscribe-row {
+            grid-template-columns: auto auto minmax(0, 1fr);
+            column-gap: 48px;
+        }
+
+        .subscribe-end {
+            grid-column: auto;
+            justify-self: end;
+        }
+    }
+
+    .subscribe-head {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 2px;
+        min-height: 34px;
+    }
+
+    .subscribe-boxes {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 24px;
+        min-height: 34px;
+    }
+
+    .subscribe-control {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 16px;
+    }
+
+    .subscribe-control .input {
+        width: 280px;
+        max-width: 100%;
+    }
+
+    a.subscribe-end {
+        align-self: center;
+    }
+
+    .subscribe-sent {
+        align-self: center;
+        margin: 0;
+        font-size: var(--text-md);
+        color: var(--ink);
+    }
+
+    .subscribe-meta {
+        margin: 0;
+        font-size: var(--text-xs);
+        color: var(--muted);
+        overflow-wrap: anywhere;
+    }
+
+    .subscribe-error {
+        margin: 8px 0 0;
+    }
+
+    @media (max-width: 639px) {
+        .subscribe-control .input {
+            flex: 1 1 100%;
+            width: auto;
+        }
+    }
+
     .copy-field {
         display: flex;
         flex-wrap: wrap;

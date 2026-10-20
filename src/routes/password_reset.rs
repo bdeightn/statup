@@ -83,7 +83,7 @@ pub struct ResetInput {
 
 /// The address the links lead to, when the instance can send them. Never
 /// taken from the request, which anyone can word.
-async fn link_base(state: &AppState) -> Result<Option<String>, AppError> {
+pub(super) async fn link_base(state: &AppState) -> Result<Option<String>, AppError> {
     if !state.notifier.mail_ready() {
         return Ok(None);
     }
