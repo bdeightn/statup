@@ -2,7 +2,7 @@
 
 All notable changes to Statup are listed here. The project is pre-v1: until 1.0, a minor version may change the interface or the database, and the README asks you to back up before upgrading.
 
-## Unreleased
+## 0.7.1, 2026-10-20
 
 - Statup runs on NixOS: a flake in the repository builds the package and provides a `services.statup` module, with every setting under `settings`, secrets in an `environmentFile`, the data in `/var/lib/statup` and the firewall closed unless `openFirewall` is set. Contributed by @bdeightn, built and booted on a NixOS machine by the checks of each change, and described on a new NixOS page of the documentation.
 - The Docker image runs on Alpine 3.24, supported until June 2028: Alpine 3.21 stops receiving security fixes on November 1, 2026.
