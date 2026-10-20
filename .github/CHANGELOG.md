@@ -2,6 +2,10 @@
 
 All notable changes to Statup are listed here. The project is pre-v1: until 1.0, a minor version may change the interface or the database, and the README asks you to back up before upgrading.
 
+## Unreleased
+
+- Statup runs on NixOS: a flake in the repository builds the package and provides a `services.statup` module, with every setting under `settings`, secrets in an `environmentFile`, the data in `/var/lib/statup` and the firewall closed unless `openFirewall` is set. Contributed by @bdeightn, built and booted on a NixOS machine by the checks of each change, and described on a new NixOS page of the documentation.
+
 ## 0.7.0, 2026-10-19
 
 - Groups of users decide who sees each service. Administrators create groups in Settings → Team, add or remove readers from each group's own page, and open restricted folders and services to the group from there or take them away; opening never hides a service from anyone. A service's form sets its visibility: Public (the default), Members (signed-in members, when the page is open to everyone) or Restricted to chosen groups and members, shown as tags with a search when there are many, and a sentence saying how many members will see it. Incidents, maintenance and announcements follow their services; editors and administrators see everything; someone who may not see a service finds no trace of it, and the feed always shows what a visitor without an account sees. The journal records group changes and who sees a service. The database is upgraded on start, and every service stays visible to everyone until you choose otherwise.

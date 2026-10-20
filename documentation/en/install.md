@@ -8,6 +8,8 @@ description: "Run Statup with Docker Compose on an x86-64 or ARM server, then cr
 - Docker with Docker Compose 2.24 or newer.
 - A 64-bit server, x86-64 or ARM: the image is published for both.
 
+On NixOS, Statup also runs as a service from its flake: see [NixOS](nixos.md).
+
 ## Start Statup
 
 ```bash

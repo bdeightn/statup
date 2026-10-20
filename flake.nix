@@ -97,6 +97,8 @@
         let
           cfg = config.services.statup;
           statupPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+          stateDir = "/var/lib/statup";
+          toEnv = value: if builtins.isBool value then lib.boolToString value else toString value;
         in
         {
           options.services.statup = {
@@ -105,19 +107,55 @@
             package = lib.mkOption {
               type = lib.types.package;
               default = statupPackage;
+              defaultText = lib.literalExpression "statup.packages.\${system}.default";
               description = "Statup application package.";
             };
 
-            port = lib.mkOption {
-              type = lib.types.port;
-              default = 3000;
-              description = "HTTP port for Statup.";
+            settings = lib.mkOption {
+              type = lib.types.submodule {
+                freeformType = with lib.types; attrsOf (oneOf [ str int bool ]);
+
+                options = {
+                  HOST = lib.mkOption {
+                    type = lib.types.str;
+                    default = "0.0.0.0";
+                    description = "Address on which Statup listens.";
+                  };
+
+                  PORT = lib.mkOption {
+                    type = lib.types.port;
+                    default = 3000;
+                    description = "HTTP port for Statup.";
+                  };
+                };
+              };
+              default = { };
+              example = {
+                PUBLIC_URL = "https://status.example.com";
+                TZ = "Europe/Dublin";
+              };
+              description = ''
+                Settings of Statup, passed as environment variables, as listed
+                at https://statup.dev/docs/configuration/. The database and the
+                uploads stay in ${stateDir}. Secrets go in environmentFile, out
+                of the Nix store.
+              '';
             };
 
-            host = lib.mkOption {
-              type = lib.types.str;
-              default = "0.0.0.0";
-              description = "Address on which Statup listens.";
+            environmentFile = lib.mkOption {
+              type = lib.types.nullOr lib.types.path;
+              default = null;
+              example = "/run/secrets/statup.env";
+              description = ''
+                A file of KEY=value lines read by systemd when the service
+                starts, for secrets such as SMTP_PASSWORD.
+              '';
+            };
+
+            openFirewall = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Open the port of Statup in the firewall.";
             };
           };
 
@@ -130,20 +168,22 @@
               isSystemUser = true;
               uid = 10001;
               group = "statup";
-              home = "/var/lib/statup";
+              home = stateDir;
               createHome = true;
             };
+
+            # For the maintenance commands, such as reset-password.
+            environment.systemPackages = [ cfg.package ];
 
             systemd.services.statup = {
               description = "Statup web application";
               wantedBy = [ "multi-user.target" ];
               after = [ "network.target" ];
 
-              environment = {
-                DATABASE_URL = "/var/lib/statup/statup.db";
-                UPLOAD_DIR = "/var/lib/statup/uploads";
-                HOST = cfg.host;
-                PORT = toString cfg.port;
+              # The only paths the hardening below leaves writable.
+              environment = lib.mapAttrs (_: toEnv) cfg.settings // {
+                DATABASE_URL = "${stateDir}/statup.db";
+                UPLOAD_DIR = "${stateDir}/uploads";
               };
 
               serviceConfig = {
@@ -153,6 +193,7 @@
                 StateDirectory = "statup";
                 WorkingDirectory = "${cfg.package}/share/statup";
                 ExecStart = "${cfg.package}/libexec/statup";
+                EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
                 Restart = "on-failure";
                 RestartSec = "5s";
 
@@ -160,11 +201,11 @@
                 PrivateTmp = true;
                 ProtectSystem = "strict";
                 ProtectHome = true;
-                ReadWritePaths = [ "/var/lib/statup" ];
+                ReadWritePaths = [ stateDir ];
               };
             };
 
-            networking.firewall.allowedTCPPorts = [ cfg.port ];
+            networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.settings.PORT ];
           };
         };
     };
