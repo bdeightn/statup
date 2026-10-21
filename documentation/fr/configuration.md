@@ -47,7 +47,7 @@ L'en-tête dans lequel votre proxy écrit l'adresse du client. Seule sa dernièr
 - Par défaut : `false`
 - Valeurs : `true`, `false`
 
-Qui peut voir la page tant qu'un administrateur n'a pas choisi : `true` pour tout le monde, `false` pour les membres seulement. Une fois le choix fait, au premier lancement ou dans les Paramètres, c'est lui qui prime, et il est conservé d'un redémarrage à l'autre.
+L'accès à la page tant qu'un administrateur n'a pas choisi : `true` pour tout le monde, `false` pour les membres seulement. Une fois le choix fait, au premier lancement ou dans les Paramètres, c'est lui qui prime, et il est conservé d'un redémarrage à l'autre.
 
 ### `ADMIN_EMAIL`
 

@@ -23,7 +23,7 @@ An incident sets the state of the services it names while it is investigated or 
 
 ## People
 
-- **Readers** read the page and the events. When the page is open to **Everyone**, visitors read it without an account.
+- **Readers** read the page and the events. When the page is **Public**, visitors read it without an account.
 - **Editors** publish events and set the state of services.
 - **Administrators** also run the settings, the team, the alerts and the layout of the page.
 

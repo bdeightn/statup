@@ -23,7 +23,7 @@ Un incident fixe l'état des services qu'il cite tant qu'il est en analyse ou en
 
 ## Les personnes
 
-- Les **lecteurs** lisent la page et les événements. Quand la page est ouverte à **Tout le monde**, les visiteurs la lisent sans compte.
+- Les **lecteurs** lisent la page et les événements. Quand la page est **Publique**, les visiteurs la lisent sans compte.
 - Les **éditeurs** publient les événements et fixent l'état des services.
 - Les **administrateurs** gèrent en plus les paramètres, l'équipe, les alertes et l'organisation de la page.
 

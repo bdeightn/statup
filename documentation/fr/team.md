@@ -11,12 +11,12 @@ description: "Lecteurs, éditeurs et administrateurs, comment leurs comptes sont
 | **Éditeur** | Tout ce que peut un lecteur, plus publier incidents, maintenances et annonces, régler l'état des services, et gérer les services, les dossiers, les modèles et les icônes. |
 | **Administrateur** | Tout, plus les paramètres, l'équipe et ses groupes, les alertes, le Journal, l'organisation du tableau de bord, et la modification ou la suppression des événements clos. |
 
-## Qui peut voir la page
+## Accès à la page
 
-Se choisit au [premier lancement](install.md#first-launch), puis dans **Paramètres**, sous **Qui peut voir la page** :
+Se choisit au [premier lancement](install.md#first-launch), puis dans **Paramètres**, sous **Accès à la page** :
 
 - **Membres seulement** : il faut se connecter, et les lecteurs de flux ne peuvent plus lire le flux.
-- **Tout le monde** : les visiteurs lisent la page et le flux sans compte.
+- **Publique** : les visiteurs lisent la page et le flux sans compte.
 
 ## Ajouter un membre
 

@@ -11,12 +11,12 @@ description: "Readers, editors and administrators, how their accounts are made, 
 | **Editor** | Everything a reader can, plus publish incidents, maintenance and announcements, set service states, and manage services, folders, templates and icons. |
 | **Administrator** | Everything, plus the settings, the team and its groups, the alerts, the Journal, the layout of the dashboard, and changing or deleting closed events. |
 
-## Who can see the page
+## Page access
 
-Chosen at the [first launch](install.md#first-launch), then in **Settings**, under **Who can see the page**:
+Chosen at the [first launch](install.md#first-launch), then in **Settings**, under **Page access**:
 
 - **Members only**: signing in is required, and feed readers can no longer read the feed.
-- **Everyone**: visitors read the page and the feed without an account.
+- **Public**: visitors read the page and the feed without an account.
 
 ## Add a member
 

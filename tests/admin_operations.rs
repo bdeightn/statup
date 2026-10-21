@@ -625,7 +625,7 @@ async fn instance_name_too_long_is_refused_in_the_page() {
     );
 }
 
-/// Who can see the page is saved with the rest of the card, and only then.
+/// Page access is saved with the rest of the card, and only then.
 #[tokio::test]
 async fn public_access_is_saved_with_the_card() {
     // Saves the general settings, which the brand tests read.

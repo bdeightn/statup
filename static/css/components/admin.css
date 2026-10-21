@@ -15,16 +15,12 @@
         border-top: 1px solid var(--hairline);
     }
 
-    /* The one save of a card of settings, part of its last row rather
-       than a row of its own. */
-    .set-row:has(+ .set-foot) {
-        padding-bottom: 0;
-    }
-
+    /* The one save of a card of settings, in a foot band of its own. */
     .set-foot {
         display: flex;
         justify-content: flex-end;
-        padding: 12px 16px 16px;
+        padding: 16px;
+        border-top: 1px solid var(--line);
     }
 
     .set-row > * {

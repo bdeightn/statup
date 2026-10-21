@@ -47,7 +47,7 @@ The header your proxy writes the client address in. Only its last entry counts, 
 - Default: `false`
 - Values: `true`, `false`
 
-Who can see the page until an administrator chooses: `true` for everyone, `false` for members only. Once the choice is made, at the first launch or in Settings, it takes precedence and is kept across restarts.
+Page access until an administrator chooses: `true` for everyone, `false` for members only. Once the choice is made, at the first launch or in Settings, it takes precedence and is kept across restarts.
 
 ### `ADMIN_EMAIL`
 

@@ -374,7 +374,7 @@ mod tests {
         assert_eq!(said(JournalKind::MemberAdded, "publisher"), ["Éditeur"]);
         assert_eq!(
             said(JournalKind::SettingsSaved, "name, access"),
-            ["Nom de la page, Qui peut voir la page"]
+            ["Nom de la page, Accès à la page"]
         );
         assert_eq!(
             said(

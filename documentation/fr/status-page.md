@@ -3,7 +3,7 @@ title: La page d'état
 description: "Ce que lisent les collègues et les visiteurs : le bandeau, les services, l'activité récente, les événements et le flux."
 ---
 
-Ce que tout le monde lit, depuis un poste ou un téléphone. Avec **Qui peut voir la page** sur **Tout le monde**, les visiteurs la lisent sans compte ; avec **Membres seulement**, ils doivent se connecter. Les noms des membres de l'équipe ne sont montrés qu'aux membres connectés.
+Ce que tout le monde lit, depuis un poste ou un téléphone. Avec **Accès à la page** sur **Publique**, les visiteurs la lisent sans compte ; avec **Membres seulement**, ils doivent se connecter. Les noms des membres de l'équipe ne sont montrés qu'aux membres connectés.
 
 Chaque lecteur ne voit que les services que leur [visibilité](services.md#visibility) lui permet, et les événements qui les citent.
 

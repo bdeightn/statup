@@ -3,7 +3,7 @@ title: The status page
 description: "What colleagues and visitors read: the banner, the services, the recent activity, the events and the feed."
 ---
 
-What everyone reads, from a desk or a phone. With **Who can see the page** set to **Everyone**, visitors read it without an account; with **Members only**, they are asked to sign in. The names of the team are shown to signed-in members only.
+What everyone reads, from a desk or a phone. With **Page access** set to **Public**, visitors read it without an account; with **Members only**, they are asked to sign in. The names of the team are shown to signed-in members only.
 
 Each reader sees only the services their [visibility](services.md#visibility) allows, and the events that name them.
 
