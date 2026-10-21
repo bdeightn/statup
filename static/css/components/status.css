@@ -949,6 +949,11 @@
             position: relative;
         }
 
+        /* Beside the title it would push its panel off the screen. */
+        .page-head > .journal-summary {
+            flex-basis: 100%;
+        }
+
         .journal-summary > .journal-menu {
             position: static;
         }

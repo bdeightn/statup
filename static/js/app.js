@@ -522,10 +522,11 @@
         if (!composer) return true;
         const open = !composer.classList.contains("is-open");
         composer.classList.toggle("is-open", open);
-        document.querySelectorAll(`[data-composer-toggle][aria-controls="${composer.id}"]`).forEach((toggle) => {
-            toggle.setAttribute("aria-expanded", String(open));
-        });
+        const toggles = [...document.querySelectorAll(`[data-composer-toggle][aria-controls="${composer.id}"]`)];
+        toggles.forEach((toggle) => toggle.setAttribute("aria-expanded", String(open)));
         if (open) composer.querySelector("textarea, input:not([type=hidden])")?.focus();
+        // Cancel hides itself: the keyboard goes back to what opened the form.
+        else if (composer.contains(button)) toggles.find((toggle) => !composer.contains(toggle))?.focus();
         return true;
     }
 

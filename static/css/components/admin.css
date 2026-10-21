@@ -489,6 +489,11 @@
             grid-column: 1 / -1;
         }
 
+        /* The rows' 20px between columns, so the role starts on their edge. */
+        .members-card > .member-add {
+            column-gap: 20px;
+        }
+
     }
 
     /* A member's action asks first in a panel under the row's actions, as
@@ -529,9 +534,11 @@
         margin-top: 12px;
     }
 
-    /* Adding a member: only the chosen role says what it allows. */
+    /* Adding a member: only the chosen role says what it allows. Its
+       sentence wraps in its column rather than widen the rows' columns. */
     .role-descs {
         margin-top: 8px;
+        contain: inline-size;
     }
 
     .role-descs > [data-role-hint] {
@@ -629,7 +636,7 @@
     }
 
     .js .card-add:not(.is-open),
-    html:not(.js) .card-add [data-composer-toggle] {
+    html:not(.js) [data-composer-toggle] {
         display: none;
     }
 
@@ -740,8 +747,10 @@
         gap: 16px;
     }
 
+    /* An empty result takes no room, in the column or in the grid; it stays
+       in the page so that what a test says is read out. */
     .channel-add > [data-test-result]:empty {
-        margin-top: -16px;
+        position: absolute;
     }
 
     .channel-add > .card-add-foot {
@@ -992,12 +1001,16 @@
             grid-template-columns: repeat(8, 44px);
             justify-content: space-between;
         }
+
+        /* Spread on its column, no wider than at the width it was drawn. */
+        .icon-choices-body {
+            max-width: 520px;
+        }
     }
 
     /* The way to the icon library, where icons are sent and removed. */
     .icon-group-link {
         margin-right: -2px;
-        white-space: nowrap;
     }
 
     /* A cell is a radio: the chosen one shows an ink edge and a check in
@@ -1752,8 +1765,16 @@
 
     html:not(.js) [data-swap-to-form],
     .js .new-menu-panel:not(.is-form) > .new-menu-form,
-    .new-menu-panel.is-form > .new-menu-list {
+    .js .new-menu-panel.is-form > .new-menu-list {
         display: none;
+    }
+
+    /* On a phone the actions wrap under the title: at the right of their
+       line, so the folder form under "New" stays on the screen. */
+    @media (max-width: 639px) {
+        .page-actions:has(> .new-menu) {
+            margin-left: auto;
+        }
     }
 
     @media (prefers-reduced-motion: reduce) {
