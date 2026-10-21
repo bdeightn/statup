@@ -196,7 +196,7 @@
 
                     {% if edit_id.is_none() || (form.kind_is("publication") && !maintenances.is_empty()) %}
                     <details class="more-options"{% if form.options_in_use() %} open{% endif %}>
-                        <summary>{{ i18n.t("events.more_options") }}</summary>
+                        <summary>{{ i18n.t("events.more_options") }}{% call ui::caret_icon() %}{% endcall %}</summary>
                         {% if edit_id.is_none() %}
                         <div class="reveal-row form-grid{% if form.kind_is("incident") %} is-open{% endif %}" data-for-kind="incident">
                             <fieldset class="choice-group">

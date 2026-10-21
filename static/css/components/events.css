@@ -333,7 +333,7 @@
     /* An announcement reads as an article: a dateline, then the text a size
        up in full ink, on a reading measure. Its updates follow. */
     .article-body {
-        padding: 22px 20px 28px;
+        padding: 22px 16px 28px;
     }
 
     .article-dateline {
@@ -484,6 +484,11 @@
         margin: 0;
         padding: 0;
         list-style: none;
+    }
+
+    /* In a card, the dots sit on the card's inner edge. */
+    .event-story .timeline {
+        padding-left: 4px;
     }
 
     .moment {
@@ -1240,6 +1245,9 @@
     }
 
     .more-options > summary {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
         width: fit-content;
         font-size: var(--text-sm);
         font-weight: 500;
@@ -1253,12 +1261,10 @@
         display: none;
     }
 
-    .more-options > summary::after {
-        content: " +";
-    }
-
-    .more-options[open] > summary::after {
-        content: " \2212";
+    /* The caret of every menu that opens, as on the Journal's "Modifier". */
+    .more-options > summary svg {
+        width: 16px;
+        height: 16px;
     }
 
     .more-options > summary:hover {
@@ -1442,7 +1448,7 @@
         justify-content: space-between;
         gap: 16px 24px;
         margin-top: 32px;
-        padding: 20px 24px;
+        padding: 20px 16px;
     }
 
     .danger-zone-text {
