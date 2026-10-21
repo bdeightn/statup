@@ -62,8 +62,7 @@ On the Services page, each folder is a card with its name, its number of service
 
 ### A folder's page
 
-- **Rename**, beside its name.
-- "Visibility: Restricted, Accounting", with **Change**, opens the folder's visibility, the same setting as a service's, then **Save**.
+- "Restricted, Accounting", at the right of its name, with **Change**, opens its **Folder name** and its visibility, the same setting as a service's, then **Save**.
 - **Add services** lists the services not in this folder, with a search past eight; tick them, then **Add**. A service in another folder moves here.
 - **Remove**, on a service's row, takes it out of the folder.
 

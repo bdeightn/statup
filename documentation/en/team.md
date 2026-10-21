@@ -54,7 +54,7 @@ Administrators manage groups from **Settings**, **Team**, in the **Groups** card
 
 ### Create a group
 
-**New group**, then a **Group name** of up to 100 characters, unique, and **Create the group**. The group's page opens. **Rename** beside its name changes it.
+**New group**, then a **Group name** of up to 100 characters, unique, and **Create the group**. The group's page opens. **Rename**, at the right of its name, changes it.
 
 ### Members of a group
 

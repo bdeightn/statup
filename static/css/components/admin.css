@@ -1293,38 +1293,8 @@
         margin-top: 16px;
     }
 
-    .more-actions > summary.card-action,
-    .group-rename > summary {
+    .more-actions > summary.card-action {
         cursor: pointer;
-    }
-
-    /* A group's page: its name with "Rename" beside it. */
-    .group-title-row {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: baseline;
-        gap: 4px 16px;
-    }
-
-    .group-rename > summary {
-        font-size: var(--text-sm);
-    }
-
-    .group-rename > .group-panel {
-        right: auto;
-        left: 0;
-    }
-
-    /* On a phone the panel opens from the start of the title line, so it
-       stays on the screen. */
-    @media (max-width: 639px) {
-        .group-title-row {
-            position: relative;
-        }
-
-        .group-title-row > .group-rename {
-            position: static;
-        }
     }
 
     /* Who sees a service or a folder: three choices as buttons, the groups
@@ -1341,6 +1311,10 @@
         margin-bottom: 8px;
         font-size: var(--text-xs);
         color: var(--muted);
+    }
+
+    .more-actions-menu .field {
+        gap: 0;
     }
 
     .access-inherit {
@@ -1616,9 +1590,9 @@
         border-top: 0;
     }
 
-    /* A folder's page: who sees it, in a panel under "Change" as for the
-       journal's settings, wide enough for a few tags. The panel to add
-       groups and members opens under the tags, across the panel. */
+    /* A folder's page: its name and who sees it, in one panel under "Edit"
+       as for the journal's settings, wide enough for a few tags. The panel
+       to add groups and members opens under the tags, across the panel. */
     .folder-menu > .folder-panel {
         display: flex;
         flex-direction: column;
@@ -1631,6 +1605,16 @@
 
     .folder-panel > .access-field {
         margin-top: 0;
+    }
+
+    .folder-name-field {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 16px;
+    }
+
+    .folder-name-field > .field-error {
+        margin-top: 6px;
     }
 
     .folder-panel .access-grants {

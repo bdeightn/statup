@@ -227,12 +227,8 @@ fn publisher_routes() -> Router<AppState> {
         .route("/services/folders/order", post(folders::save_order))
         .route("/services/folders/{id}", get(folders::folder_page))
         .route(
-            "/services/folders/{id}/rename",
-            post(folders::rename_folder),
-        )
-        .route(
-            "/services/folders/{id}/visibility",
-            post(folders::save_visibility),
+            "/services/folders/{id}/settings",
+            post(folders::save_settings),
         )
         .route(
             "/services/folders/{id}/services",

@@ -152,12 +152,11 @@ fn folder_posts(folder: i64, service: i64) -> Vec<(String, Vec<(&'static str, St
             vec![("name", "Another".to_string())],
         ),
         (
-            format!("{base}/rename"),
-            vec![("name", "Renamed".to_string())],
-        ),
-        (
-            format!("{base}/visibility"),
-            vec![("visibility", "members".to_string())],
+            format!("{base}/settings"),
+            vec![
+                ("name", "Renamed".to_string()),
+                ("visibility", "members".to_string()),
+            ],
         ),
         (
             format!("{base}/services"),
@@ -294,15 +293,15 @@ async fn renaming_a_folder_keeps_the_new_name_and_the_old_one_in_the_journal() {
 
     let (status, _, location) = post(
         &app,
-        &format!("/services/folders/{folder}/rename"),
-        &[("name", "Lyon office")],
+        &format!("/services/folders/{folder}/settings"),
+        &[("name", "Lyon office"), ("visibility", "everyone")],
     )
     .await;
 
     assert_eq!(status, StatusCode::SEE_OTHER);
     assert_eq!(
         location.as_deref(),
-        Some(format!("/services/folders/{folder}?renamed=1").as_str())
+        Some(format!("/services/folders/{folder}?saved=1").as_str())
     );
     assert_eq!(folder_names(&app).await, ["Lyon office"]);
     assert_eq!(
@@ -310,7 +309,60 @@ async fn renaming_a_folder_keeps_the_new_name_and_the_old_one_in_the_journal() {
         [line("folder_renamed", "Lyon office", Some("Network"))]
     );
     let body = page_after(&app, location).await;
-    assert!(body.contains(&text("folders.notice_renamed")));
+    assert!(body.contains(&text("folders.notice_saved")));
+}
+
+#[tokio::test]
+async fn renaming_and_restricting_a_folder_at_once_leaves_both_lines() {
+    let app = spawn_with_publisher().await;
+    let folder = create_folder(&app, "Network").await;
+
+    let (status, _, _) = post(
+        &app,
+        &format!("/services/folders/{folder}/settings"),
+        &[("name", "Lyon office"), ("visibility", "members")],
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(folder_names(&app).await, ["Lyon office"]);
+    assert_eq!(
+        lines(&app).await,
+        [
+            line("folder_renamed", "Lyon office", Some("Network")),
+            line("folder_visibility_changed", "Lyon office", Some("members")),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_refused_name_saves_nothing_not_even_the_visibility() {
+    let app = spawn_with_publisher().await;
+    create_folder(&app, "Network").await;
+    let apps = create_folder(&app, "Apps").await;
+
+    let (status, body, _) = post(
+        &app,
+        &format!("/services/folders/{apps}/settings"),
+        &[("name", "network"), ("visibility", "members")],
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains(&text("validation.folder_name_taken")));
+    assert!(
+        body.contains(r#"value="network""#),
+        "the typed name is kept"
+    );
+    let saved = FolderRepository::find(&app.pool, apps)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (saved.name.as_str(), saved.visibility),
+        ("Apps", Visibility::Everyone)
+    );
+    assert!(lines(&app).await.is_empty());
 }
 
 #[tokio::test]
@@ -320,8 +372,8 @@ async fn renaming_a_folder_to_its_own_name_leaves_no_line() {
 
     let (status, _, _) = post(
         &app,
-        &format!("/services/folders/{folder}/rename"),
-        &[("name", "Network")],
+        &format!("/services/folders/{folder}/settings"),
+        &[("name", "Network"), ("visibility", "everyone")],
     )
     .await;
 
@@ -338,8 +390,8 @@ async fn renaming_a_folder_to_another_ones_name_is_refused() {
 
     let (status, body, _) = post(
         &app,
-        &format!("/services/folders/{apps}/rename"),
-        &[("name", "NETWORK")],
+        &format!("/services/folders/{apps}/settings"),
+        &[("name", "NETWORK"), ("visibility", "everyone")],
     )
     .await;
 
@@ -513,8 +565,12 @@ async fn a_folder_visibility_reaches_the_services_that_inherit_it_only() {
 
     let (status, _, location) = post(
         &app,
-        &format!("/services/folders/{folder}/visibility"),
-        &[("visibility", "groups"), ("group_ids", &g1.to_string())],
+        &format!("/services/folders/{folder}/settings"),
+        &[
+            ("name", "Network"),
+            ("visibility", "groups"),
+            ("group_ids", &g1.to_string()),
+        ],
     )
     .await;
 
@@ -552,8 +608,8 @@ async fn an_unknown_visibility_is_refused_and_nothing_changes() {
 
     let (status, _, _) = post(
         &app,
-        &format!("/services/folders/{folder}/visibility"),
-        &[("visibility", "anyone")],
+        &format!("/services/folders/{folder}/settings"),
+        &[("name", "Network"), ("visibility", "anyone")],
     )
     .await;
 
@@ -574,10 +630,11 @@ async fn an_unknown_visibility_is_refused_and_nothing_changes() {
 async fn saving_the_same_visibility_again_leaves_no_second_line() {
     let app = spawn_with_publisher().await;
     let folder = create_folder(&app, "Network").await;
-    let path = format!("/services/folders/{folder}/visibility");
-    post(&app, &path, &[("visibility", "members")]).await;
+    let path = format!("/services/folders/{folder}/settings");
+    let fields = [("name", "Network"), ("visibility", "members")];
+    post(&app, &path, &fields).await;
 
-    let (status, _, _) = post(&app, &path, &[("visibility", "members")]).await;
+    let (status, _, _) = post(&app, &path, &fields).await;
 
     assert_eq!(status, StatusCode::SEE_OTHER);
     assert_eq!(

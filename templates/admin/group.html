@@ -13,23 +13,25 @@
     <header class="page-head">
         <div>
             <a href="/admin/users#groups" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("admin.users_heading") }}</a>
-            <div class="group-title-row">
-                <h1 class="page-title wrap-anywhere">{{ group.name }}</h1>
-                <details class="more-actions group-rename" data-more-actions{% if rename.error.is_some() %} open{% endif %}>
-                    <summary class="link">{{ i18n.t("admin.rename") }}</summary>
-                    <form class="more-actions-menu group-panel" method="post" action="/admin/groups/{{ group.id }}/rename">
-                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                        <label for="group-name" class="field-label">{{ i18n.t("admin.group_name") }}</label>
-                        <input id="group-name" name="name" type="text" class="input" required maxlength="{{ crate::models::GROUP_NAME_MAX_CHARS }}" autocomplete="off"
-                               value="{% match rename.value %}{% when Some with (typed) %}{{ typed }}{% when None %}{{ group.name }}{% endmatch %}"
-                               {% if rename.error.is_some() %}aria-invalid="true" aria-describedby="group-name-error" autofocus{% endif %}>
-                        {% if let Some(message) = rename.error %}
-                        <p id="group-name-error" class="field-error" role="alert">{{ message }}</p>
-                        {% endif %}
-                        <button type="submit" class="btn btn-primary group-panel-submit">{{ i18n.t("common.save") }}</button>
-                    </form>
-                </details>
-            </div>
+            <h1 class="page-title wrap-anywhere">{{ group.name }}</h1>
+        </div>
+        {# The group's one setting is its name: "Rename" at the right of the
+           title, as "Edit" on the Journal, in a panel over the page. #}
+        <div class="journal-summary">
+            <details class="more-actions journal-menu group-rename" data-more-actions{% if rename.error.is_some() %} open{% endif %}>
+                <summary class="journal-edit">{{ i18n.t("admin.rename") }}{% call ui::caret_icon() %}{% endcall %}</summary>
+                <form class="more-actions-menu journal-panel" method="post" action="/admin/groups/{{ group.id }}/rename">
+                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                    <label for="group-name" class="field-label">{{ i18n.t("admin.group_name") }}</label>
+                    <input id="group-name" name="name" type="text" class="input" required maxlength="{{ crate::models::GROUP_NAME_MAX_CHARS }}" autocomplete="off"
+                           value="{% match rename.value %}{% when Some with (typed) %}{{ typed }}{% when None %}{{ group.name }}{% endmatch %}"
+                           {% if rename.error.is_some() %}aria-invalid="true" aria-describedby="group-name-error" autofocus{% endif %}>
+                    {% if let Some(message) = rename.error %}
+                    <p id="group-name-error" class="field-error" role="alert">{{ message }}</p>
+                    {% endif %}
+                    <button type="submit" class="btn btn-primary journal-save">{{ i18n.t("common.save") }}</button>
+                </form>
+            </details>
         </div>
     </header>
 

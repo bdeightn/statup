@@ -54,16 +54,6 @@ impl FolderRepository {
             .any(|(id, taken)| Some(*id) != except && taken.to_lowercase() == wanted))
     }
 
-    /// Returns false when no such folder exists.
-    pub async fn rename(pool: &DbPool, id: i64, name: &str) -> Result<bool, sqlx::Error> {
-        let result = sqlx::query("UPDATE service_folders SET name = ? WHERE id = ?")
-            .bind(name)
-            .bind(id)
-            .execute(pool)
-            .await?;
-        Ok(result.rows_affected() == 1)
-    }
-
     pub async fn find(pool: &DbPool, id: i64) -> Result<Option<ServiceFolder>, sqlx::Error> {
         sqlx::query_as::<_, ServiceFolder>(&format!("{FOLDER_COLUMNS} WHERE f.id = ?"))
             .bind(id)
@@ -127,14 +117,40 @@ impl FolderRepository {
         visibility: Visibility,
         grants: Grants<'_>,
     ) -> Result<bool, sqlx::Error> {
+        Self::write_settings(pool, folder_id, None, visibility, grants).await
+    }
+
+    /// The name and who sees the folder, saved together from its panel, so
+    /// that one is never written without the other. Returns false when no
+    /// such folder exists.
+    pub async fn save_settings(
+        pool: &DbPool,
+        folder_id: i64,
+        name: &str,
+        visibility: Visibility,
+        grants: Grants<'_>,
+    ) -> Result<bool, sqlx::Error> {
+        Self::write_settings(pool, folder_id, Some(name), visibility, grants).await
+    }
+
+    async fn write_settings(
+        pool: &DbPool,
+        folder_id: i64,
+        name: Option<&str>,
+        visibility: Visibility,
+        grants: Grants<'_>,
+    ) -> Result<bool, sqlx::Error> {
         // The write comes first: a deferred transaction that read first
         // could copy a value another writer has changed since.
         let mut tx = pool.begin().await?;
-        let updated = sqlx::query("UPDATE service_folders SET visibility = ? WHERE id = ?")
-            .bind(visibility)
-            .bind(folder_id)
-            .execute(&mut *tx)
-            .await?;
+        let updated = sqlx::query(
+            "UPDATE service_folders SET name = COALESCE(?, name), visibility = ? WHERE id = ?",
+        )
+        .bind(name)
+        .bind(visibility)
+        .bind(folder_id)
+        .execute(&mut *tx)
+        .await?;
         if updated.rows_affected() == 0 {
             return Ok(false);
         }
@@ -435,7 +451,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(first, 1), (second, 2)]
         );
-        assert!(FolderRepository::rename(&pool, first, "Net").await.unwrap());
+        let everyone = (Visibility::Everyone, Grants::default());
+        assert!(
+            FolderRepository::save_settings(&pool, first, "Net", everyone.0, everyone.1)
+                .await
+                .unwrap()
+        );
         assert_eq!(
             FolderRepository::find(&pool, first)
                 .await
@@ -444,7 +465,11 @@ mod tests {
                 .name,
             "Net"
         );
-        assert!(!FolderRepository::rename(&pool, 999, "Nope").await.unwrap());
+        assert!(
+            !FolderRepository::save_settings(&pool, 999, "Nope", everyone.0, Grants::default())
+                .await
+                .unwrap()
+        );
         assert!(FolderRepository::find(&pool, 999).await.unwrap().is_none());
         assert_followers_match(&pool).await;
     }

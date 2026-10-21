@@ -54,7 +54,7 @@ Les administrateurs gèrent les groupes depuis **Paramètres**, **Équipe**, dan
 
 ### Créer un groupe
 
-**Nouveau groupe**, puis un **Nom du groupe** de 100 caractères au plus, unique, et **Créer le groupe**. La page du groupe s'ouvre. **Renommer**, à côté de son nom, le change.
+**Nouveau groupe**, puis un **Nom du groupe** de 100 caractères au plus, unique, et **Créer le groupe**. La page du groupe s'ouvre. **Renommer**, à droite de son nom, le change.
 
 ### Membres d'un groupe
 

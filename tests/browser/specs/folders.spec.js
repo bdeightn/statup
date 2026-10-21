@@ -60,7 +60,7 @@ async function openToReaderOnly(page) {
     await page.locator("[data-grant-add]").click();
     await expect(page.locator("[data-access-field] [data-grant]:not([hidden])")).toHaveText(/Reader/);
     await page.locator(".folder-panel").getByRole("button", { name: "Enregistrer" }).click();
-    await expect(page.getByText("Visibilité enregistrée.")).toBeVisible();
+    await expect(page.getByText("Dossier enregistré.")).toBeVisible();
 }
 
 async function deleteAll(page, folderUrl, serviceId) {

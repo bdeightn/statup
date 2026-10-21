@@ -62,8 +62,7 @@ Sur la page Services, chaque dossier est une carte avec son nom, son nombre de s
 
 ### Page d'un dossier
 
-- **Renommer**, à côté de son nom.
-- « Visibilité : Restreinte, Compta », avec **Modifier**, ouvre la visibilité du dossier, le même réglage que celui d'un service, puis **Enregistrer**.
+- « Restreinte, Compta », à droite de son nom, avec **Modifier**, ouvre son **Nom du dossier** et sa visibilité, le même réglage que celui d'un service, puis **Enregistrer**.
 - **Ajouter des services** liste les services qui ne sont pas dans ce dossier, avec une recherche au-delà de huit ; cochez-les, puis **Ajouter**. Un service rangé dans un autre dossier passe dans celui-ci.
 - **Retirer**, sur la ligne d'un service, le sort du dossier.
 
