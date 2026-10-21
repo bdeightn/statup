@@ -1,5 +1,5 @@
 @layer components {
-    /* Settings rows inside a card: label and help on the left, the control
+    /* Settings rows inside a card: the label on the left, the control
        on the right in a column of the same width on every row, so every
        control starts and ends on the same lines. On a phone the control goes
        under its label. */
@@ -250,13 +250,10 @@
     }
 
     /* Admin lists that reflow: identity first, then status, then actions. */
-    /* A managed list sits on a card, like every block of the dashboard. */
     .admin-list {
         margin: 0;
         padding: 0;
         list-style: none;
-        background: var(--card);
-        border: 1px solid var(--line);
     }
 
     .admin-row {
@@ -489,11 +486,6 @@
             grid-column: 1 / -1;
         }
 
-        /* The rows' 20px between columns, so the role starts on their edge. */
-        .members-card > .member-add {
-            column-gap: 20px;
-        }
-
     }
 
     /* A member's action asks first in a panel under the row's actions, as
@@ -631,6 +623,9 @@
        of the card, without a frame of its own, its buttons at the foot on
        the right. Without a script it stays open. */
     .card-add {
+        display: flex;
+        flex-direction: column;
+        gap: 16px 20px;
         padding: 16px 16px 20px;
         border-bottom: 1px solid var(--line);
     }
@@ -640,13 +635,14 @@
         display: none;
     }
 
+    /* The foot keeps 20px under the fields, the gap between them included. */
     .card-add-foot {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
         justify-content: flex-end;
         gap: 12px 16px;
-        margin-top: 20px;
+        margin-top: 4px;
     }
 
     .card-action[aria-expanded="true"] {
@@ -655,27 +651,12 @@
         text-underline-offset: 3px;
     }
 
-    .member-add {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-    }
-
     .member-add-who {
         display: grid;
         gap: 16px 20px;
     }
 
-    /* The foot keeps 20px under the fields, the gap between them included. */
-    .member-add > .card-add-foot {
-        margin-top: 4px;
-    }
 
-    /* A list inside a card takes the card's frame. */
-    .card > .admin-list {
-        background: none;
-        border: 0;
-    }
 
     /* A notification destination: its page keeps the width of a reading
        column, the four boxes on one or two lines. */
@@ -739,29 +720,19 @@
         margin-top: 10px;
     }
 
-    /* The channel form at the head of its card: tool, name and language on
-       one line, the address across under them. */
-    .channel-add {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-    }
-
     /* An empty result takes no room, in the column or in the grid; it stays
        in the page so that what a test says is read out. */
     .channel-add > [data-test-result]:empty {
         position: absolute;
     }
 
-    .channel-add > .card-add-foot {
-        margin-top: 4px;
-    }
 
+    /* The channel form at the head of its card: tool, name and language on
+       one line, the address across under them. */
     @media (min-width: 720px) {
         .channel-add {
             display: grid;
             grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr);
-            column-gap: 20px;
         }
 
         .channel-add > * {
@@ -1390,8 +1361,7 @@
     }
 
     /* Inside a panel a field is named small and grey, as in the Journal's. */
-    .more-actions-menu .field-label,
-    .more-actions-menu .access-field > .field-label {
+    .more-actions-menu .field-label {
         margin-bottom: 8px;
         font-size: var(--text-xs);
         color: var(--muted);
@@ -1674,7 +1644,7 @@
         border-top: 0;
     }
 
-    /* A folder's page: its name and who sees it, in one panel under "Edit"
+    /* A folder's page: its name and who sees it, in one panel under "Change"
        as for the journal's settings, wide enough for a few tags. The panel
        to add groups and members opens under the tags, across the panel. */
     .folder-menu > .folder-panel {

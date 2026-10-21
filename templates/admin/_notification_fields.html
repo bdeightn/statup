@@ -60,12 +60,3 @@
         <label class="check-row"><input type="checkbox" name="on_detected" value="on" class="checkbox"{% if form.on_detected.is_some() %} checked{% endif %}><span>{{ i18n.t("notifications.box_detected") }}</span></label>
     </div>
 </fieldset>
-
-{# On a channel's page the test follows the fields; the list's add form
-   puts it in its foot, beside the other buttons. #}
-{% if test_inline %}
-<div class="destination-test">
-    {% include "admin/_notification_test_button.html" %}
-    <div id="destination-test-result" aria-live="polite" data-test-result></div>
-</div>
-{% endif %}

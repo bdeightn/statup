@@ -72,8 +72,7 @@ struct NameField {
 /// A refused save, shown again in its open panel: what was typed and
 /// chosen, and why each part was refused.
 struct Posted {
-    name: String,
-    name_error: Option<String>,
+    name: NameField,
     audience: Audience,
     access_error: Option<String>,
 }
@@ -276,14 +275,7 @@ async fn render_folder(
     let saved = Audience::of_folder(&state.pool, id).await?;
     let settings_open = shown.posted.is_some();
     let (name, audience, error) = match shown.posted {
-        Some(posted) => (
-            NameField {
-                value: posted.name,
-                error: posted.name_error,
-            },
-            posted.audience,
-            posted.access_error,
-        ),
+        Some(posted) => (posted.name, posted.audience, posted.access_error),
         None => (
             NameField {
                 value: folder.name.clone(),
@@ -370,10 +362,12 @@ pub async fn save_settings(
         (Ok(name), Ok(audience)) => (name, audience),
         (name, audience) => {
             let posted = Posted {
-                name_error: name.err(),
                 access_error: audience.as_ref().err().cloned(),
                 audience: audience.unwrap_or_else(|_| input.audience().unwrap_or(before)),
-                name: input.name,
+                name: NameField {
+                    value: input.name,
+                    error: name.err(),
+                },
             };
             let shown = Shown {
                 posted: Some(posted),

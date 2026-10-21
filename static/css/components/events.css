@@ -344,10 +344,6 @@
         max-width: none;
     }
 
-    /* A card body's spacing, so the review starts level with the details. */
-    .review-card > .article-body {
-        padding-block: 18px 22px;
-    }
 
     /* Corrected in place: while its form is open, the form holds the text. */
     .review-card:has(.review-form:target, .review-form.is-open) .review {

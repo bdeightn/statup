@@ -451,11 +451,16 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(first, 1), (second, 2)]
         );
-        let everyone = (Visibility::Everyone, Grants::default());
         assert!(
-            FolderRepository::save_settings(&pool, first, "Net", everyone.0, everyone.1)
-                .await
-                .unwrap()
+            FolderRepository::save_settings(
+                &pool,
+                first,
+                "Net",
+                Visibility::Everyone,
+                Grants::default()
+            )
+            .await
+            .unwrap()
         );
         assert_eq!(
             FolderRepository::find(&pool, first)
@@ -466,9 +471,15 @@ mod tests {
             "Net"
         );
         assert!(
-            !FolderRepository::save_settings(&pool, 999, "Nope", everyone.0, Grants::default())
-                .await
-                .unwrap()
+            !FolderRepository::save_settings(
+                &pool,
+                999,
+                "Nope",
+                Visibility::Everyone,
+                Grants::default()
+            )
+            .await
+            .unwrap()
         );
         assert!(FolderRepository::find(&pool, 999).await.unwrap().is_none());
         assert_followers_match(&pool).await;

@@ -55,7 +55,7 @@
     <section class="card members-card" aria-labelledby="members-title">
         <header class="card-head">
             <h2 id="members-title" class="card-title">{{ i18n.t("admin.group_members_title") }} <span class="count">{{ users.len() }}</span></h2>
-            <button type="button" class="card-action card-follow" aria-controls="add-member" aria-expanded="{% if add_open %}true{% else %}false{% endif %}" data-composer-toggle>{% call ui::plus() %}{% endcall %}{{ i18n.t("admin.add_member") }}</button>
+            <button type="button" class="card-action card-follow" aria-controls="add-member" aria-expanded="{{ add_open }}" data-composer-toggle>{% call ui::plus() %}{% endcall %}{{ i18n.t("admin.add_member") }}</button>
         </header>
         <form id="add-member" method="post" action="/admin/users/new" class="card-add member-add{% if add_open %} is-open{% endif %}">
             <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">

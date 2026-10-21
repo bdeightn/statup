@@ -36,14 +36,13 @@
 
     {# The channels on a card with their count; "New channel" opens the form
        at the head of the card, closed on arrival. #}
-    <section class="card channels-card" aria-labelledby="channels-title">
+    <section class="card" aria-labelledby="channels-title">
         <header class="card-head">
             <h2 id="channels-title" class="card-title">{{ i18n.t("notifications.channels_title") }} <span class="count">{{ rows.len() }}</span></h2>
-            <button type="button" class="card-action card-follow" aria-controls="add-channel" aria-expanded="{% if add_open %}true{% else %}false{% endif %}" data-composer-toggle>{% call ui::plus() %}{% endcall %}{{ i18n.t("notifications.add") }}</button>
+            <button type="button" class="card-action card-follow" aria-controls="add-channel" aria-expanded="{{ add_open }}" data-composer-toggle>{% call ui::plus() %}{% endcall %}{{ i18n.t("notifications.add") }}</button>
         </header>
         <form id="add-channel" method="post" action="/admin/notifications" class="card-add channel-add{% if add_open %} is-open{% endif %}" data-destination-form>
             <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-            {% let test_inline = false %}
             {% include "admin/_notification_fields.html" %}
             <div id="destination-test-result" aria-live="polite" data-test-result></div>
             <div class="card-add-foot">

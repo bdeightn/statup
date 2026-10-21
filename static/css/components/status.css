@@ -945,12 +945,9 @@
     /* On a phone the line sits under the title, at the left: the panel
        opens from its start rather than from "Change". */
     @media (max-width: 639px) {
+        /* Beside the title it would push its panel off the screen. */
         .journal-summary {
             position: relative;
-        }
-
-        /* Beside the title it would push its panel off the screen. */
-        .page-head > .journal-summary {
             flex-basis: 100%;
         }
 

@@ -85,7 +85,7 @@
         {% for group in groups %}
         {% match group.folder %}
         {% when Some with (folder) %}
-        <section class="card svc-group" data-folder-id="{{ folder.id }}" data-folder-name="{{ folder.name }}" aria-labelledby="folder-{{ folder.id }}">
+        <section class="card" data-folder-id="{{ folder.id }}" data-folder-name="{{ folder.name }}" aria-labelledby="folder-{{ folder.id }}">
             <header class="card-head">
                 <h2 id="folder-{{ folder.id }}" class="card-title wrap-anywhere">{{ folder.name }} <span class="count">{{ group.services.len() }}</span></h2>
                 <a href="/services/folders/{{ folder.id }}" class="card-action svc-group-manage">{{ i18n.t("folders.manage") }}</a>
@@ -95,7 +95,7 @@
                 </div>
             </header>
         {% when None %}
-        <section class="card svc-group">
+        <section class="card">
         {% endmatch %}
             {% if group.services.is_empty() %}
             <p class="groups-empty">{{ i18n.t("folders.no_service") }}</p>
