@@ -12,8 +12,8 @@ mod reminders;
 mod sender;
 mod subscribers;
 
+pub use deliver::{KEEP_HISTORY, deliver_due, page_address, spawn_notifications};
 pub(crate) use deliver::{PAGE_ADDRESS_SETTING, channel_detail};
-pub use deliver::{deliver_due, page_address, spawn_notifications};
 pub use destinations::{destination_allowed, destination_name_refusal, email_addresses};
 pub use format::*;
 pub use link_mail::{LinkEmail, LinkPurpose};

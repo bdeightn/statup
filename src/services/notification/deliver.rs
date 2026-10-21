@@ -26,7 +26,8 @@ pub(crate) const PAGE_ADDRESS_SETTING: &str = "page_address";
 const DELIVERY_INTERVAL: Duration = Duration::from_secs(5);
 const PURGE_INTERVAL: Duration = Duration::from_secs(3600);
 const REMINDER_INTERVAL: Duration = Duration::from_secs(60);
-const KEEP_HISTORY: chrono::Duration = chrono::Duration::days(30);
+/// How long sent notifications and member notices are kept.
+pub const KEEP_HISTORY: chrono::Duration = chrono::Duration::days(30);
 /// The wait before each new attempt, after a failure that waiting may fix.
 pub(super) const RETRY_DELAYS: [Duration; 4] = [
     Duration::from_secs(30),

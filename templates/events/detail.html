@@ -10,36 +10,34 @@
 
 {% block content %}
 <div class="page">
-    <p><a href="/events" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("events.back_to_events") }}</a></p>
-
-    {% if published_notice %}
-    <div class="form-notice mt-4" role="status"><p>{{ i18n.t("events.published_notice") }}</p></div>
-    {% endif %}
-
-    <header class="event-head mt-6">
-        <h1 class="event-title">{{ view.event.title }}</h1>
-        {% if can_edit || follow_up != FollowUp::None %}
+    <header class="page-head">
+        <div>
+            <a href="/events" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("events.heading") }}</a>
+            <h1 class="page-title event-title">{{ view.event.title }}</h1>
+        </div>
+        {% if self.has_head_actions() %}
         <div class="event-actions">
+            {% if can_edit %}
+            <a href="/events/{{ view.event.id }}/edit" class="btn btn-ghost">{{ i18n.t("events.edit") }}</a>
+            {% endif %}
             {% if follow_up.is_changelog() %}
             <a href="/events/new?kind=publication&amp;after={{ view.event.id }}" class="btn btn-primary">{{ i18n.t("events.publish_changelog") }}</a>
             {% endif %}
-            {% if follow_up.is_review() %}
-            {% if view.review.is_some() %}
-            <a href="#review" class="btn btn-ghost" data-composer-open>{{ i18n.t("events.edit_review") }}</a>
-            {% else %}
+            {% if follow_up.is_review() && view.review.is_none() %}
             <a href="#review" class="btn btn-primary" data-composer-open>{{ i18n.t("events.write_review") }}</a>
             {% endif %}
-            {% endif %}
-            {% if can_edit %}
-            {# Once an incident is resolved its review comes first. #}
-            <a href="#composer" class="btn {% if follow_up != FollowUp::None %}btn-ghost{% else %}btn-primary{% endif %}" data-composer-open>{{ i18n.t("events.publish_update") }}</a>
-            <a href="/events/{{ view.event.id }}/edit" class="btn btn-ghost">{{ i18n.t("events.edit") }}</a>
+            {% if can_edit && follow_up == FollowUp::None %}
+            <a href="#composer" class="btn btn-primary" data-composer-open>{{ i18n.t("events.publish_update") }}</a>
             {% endif %}
         </div>
         {% endif %}
     </header>
+
+    {% if published_notice %}
+    <div class="form-notice mb-6" role="status"><p>{{ i18n.t("events.published_notice") }}</p></div>
+    {% endif %}
     {% if frame.can_publish && !can_edit %}
-    <p class="field-hint mt-2">{{ i18n.t("validation.event_closed_admin_only") }}</p>
+    <p class="field-hint mb-6">{{ i18n.t("validation.event_closed_admin_only") }}</p>
     {% endif %}
 
     <div class="event-layout">
@@ -50,6 +48,9 @@
         <section class="card review-card" aria-labelledby="review-title">
             <header class="card-head">
                 <h2 id="review-title" class="card-title">{{ i18n.t("events.review_title") }}</h2>
+                {% if follow_up.is_review() && view.review.is_some() %}
+                <a href="#review" class="card-action" aria-label="{{ i18n.t("events.edit_review") }}" data-composer-open>{{ i18n.t("events.edit") }}</a>
+                {% endif %}
             </header>
             <div class="card-body article-body">
                 {% if let Some(review) = view.review %}
@@ -87,6 +88,9 @@
             {% else %}
             <header class="card-head">
                 <h2 id="updates-title" class="card-title">{{ i18n.t("timeline.title") }}</h2>
+                {% if can_edit && follow_up != FollowUp::None %}
+                <a href="#composer" class="card-action card-follow" data-composer-open>{% call ui::plus() %}{% endcall %}{{ i18n.t("events.publish_update") }}</a>
+                {% endif %}
             </header>
             <div class="card-body">
             {% endif %}

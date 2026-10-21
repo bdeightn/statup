@@ -13,8 +13,8 @@
         <div>
             <a href="/" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("profile.back") }}</a>
             <h1 class="page-title">{{ i18n.t("profile.heading") }}</h1>
-            <p class="page-lede">{{ role_label }}</p>
         </div>
+        <div class="journal-summary"><span>{{ role_label }}</span></div>
     </header>
 
     <div class="card-grid card-grid-2">

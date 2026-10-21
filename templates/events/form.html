@@ -22,7 +22,7 @@
             <a href="/events/{{ id }}" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("events.back_to_event") }}</a>
             <h1 class="page-title">{{ i18n.t("events.edit_heading") }}</h1>
             {% when None %}
-            <a href="/events" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("events.back_to_events") }}</a>
+            <a href="/events" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("events.heading") }}</a>
             <h1 class="page-title">{{ i18n.t("events.new_heading") }}</h1>
             {% endmatch %}
         </div>

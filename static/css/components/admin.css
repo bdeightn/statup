@@ -1115,7 +1115,12 @@
     }
 
     .stack > .btn {
-        align-self: flex-start;
+        align-self: flex-end;
+    }
+
+    /* The submit sits at the card's foot, 16px from the border like the sides. */
+    .card-body:has(> .stack) {
+        padding-bottom: 16px;
     }
 
     /* Subscribe page. The email band leads it, one row on a wide screen:

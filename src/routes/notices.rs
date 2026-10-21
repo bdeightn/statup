@@ -14,6 +14,7 @@ use crate::middleware::{CsrfToken, RequirePublisher};
 use crate::models::{MemberNotice, NoticeKind, SEPARATOR, User};
 use crate::repositories::MemberNoticeRepository;
 use crate::routes::{Frame, render};
+use crate::services::KEEP_HISTORY;
 use crate::state::AppState;
 
 /// How many notices the bell's menu lists.
@@ -141,6 +142,8 @@ fn href(notice: &MemberNotice) -> String {
 struct NoticesTemplate {
     frame: Frame,
     rows: Vec<NoticeRow>,
+    /// "30 derniers jours": how far back the list goes.
+    period: String,
     i18n: I18n,
 }
 
@@ -153,7 +156,14 @@ pub async fn index(
     let notices = MemberNoticeRepository::list_for(&state.pool, user.id, PAGE_ROWS).await?;
     let rows = notices.iter().map(|notice| row(notice, &i18n)).collect();
     let frame = Frame::load(&state.pool, Some(&user), csrf_token.0, &i18n).await?;
-    render(&NoticesTemplate { frame, rows, i18n })
+    let days = KEEP_HISTORY.num_days().to_string();
+    let period = i18n.tf("availability.legend", &[("n", &days)]);
+    render(&NoticesTemplate {
+        frame,
+        rows,
+        period,
+        i18n,
+    })
 }
 
 /// The bell was opened: what it lists is seen.
