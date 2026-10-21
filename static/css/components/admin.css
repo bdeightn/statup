@@ -757,73 +757,45 @@
         color: var(--muted);
     }
 
-    .icon-cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
-        gap: 12px;
-        margin: 24px 0 0;
-        padding: 0;
-        list-style: none;
-    }
-
-    .icon-card {
-        display: flex;
-        flex-direction: column;
-        padding: 14px 14px 12px;
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 6px;
-    }
-
-    .icon-card-figure {
-        display: flex;
+    /* The library page: an icon, its file name and where it is used in grey,
+       then its action at the right edge. */
+    .icon-row-figure {
+        display: inline-flex;
+        flex: none;
         align-items: center;
         justify-content: center;
-        height: 56px;
+        width: 32px;
+        height: 32px;
         color: var(--muted);
     }
 
-    .icon-card-figure img {
-        width: 48px;
-        height: 48px;
+    .icon-row-figure img,
+    .icon-row-figure svg {
+        width: 32px;
+        height: 32px;
         object-fit: contain;
     }
 
-    .icon-card-figure svg {
-        width: 32px;
-        height: 32px;
-    }
-
-    .icon-card-name {
-        margin: 10px 0 0;
+    .icon-row-use {
         font-size: var(--text-sm);
-        font-weight: 600;
-        color: var(--ink);
-        overflow-wrap: anywhere;
-    }
-
-    .icon-card-use {
-        margin: 2px 0 0;
-        font-size: var(--text-xs);
-        line-height: 1.5;
+        font-weight: 400;
         color: var(--muted);
     }
 
-    .icon-card-use strong {
+    .icon-row-use strong {
         font-weight: 500;
         color: var(--ink);
     }
 
-    .icon-card-actions {
-        margin-top: auto;
-        padding-top: 10px;
-        font-size: var(--text-xs);
+    .icon-row-hint {
+        font-size: var(--text-sm);
         color: var(--muted);
     }
 
-    .icon-card .confirm {
-        gap: 2px 12px;
-        font-size: var(--text-xs);
+    /* The text action keeps 2px of padding: pull it back so its word ends on
+       the same 16px edge as the hint of an icon in use. */
+    .icon-row-actions .text-action {
+        margin-right: -2px;
     }
 
     .icon-picker {
