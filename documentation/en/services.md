@@ -26,7 +26,7 @@ To change a service later, open it by its name or by its pencil on the Services 
 ## Icons
 
 - 24 built-in icons, from Server to Printing.
-- **+ Upload an icon**, in the head of the **Your icons** card on the icon library page: PNG, JPG, WebP or SVG, up to 256 KB. Images larger than 128 pixels are reduced; an SVG is cleaned of anything that could run or load something.
+- **Upload an icon**, in the head of the **Your icons** card on the icon library page: PNG, JPG, WebP or SVG, up to 256 KB. Images larger than 128 pixels are reduced; an SVG is cleaned of anything that could run or load something.
 - Uploaded icons form one library, shared by services, events and templates, reached by **Manage your icons** in a service's icon choice. An icon still in use cannot be deleted.
 
 ## Visibility
@@ -129,7 +129,7 @@ There is no percentage: the caption counts the days with an incident.
 
 A service that no event ever named can be deleted from its form, under **Delete the service**. It leaves without a trace, its detected outages included.
 
-A service that events name is kept, so their history stays whole. To stop showing it on the dashboard, an administrator leaves it out in **Arrange**: see [Settings](settings.md#arrange-the-dashboard). A service left out comes back as soon as it is not **Operational**.
+A service that events name is kept, so their history stays whole. To stop showing it on the dashboard, an administrator leaves it out in **Arrange** on the dashboard: see [Settings](settings.md#arrange-the-dashboard). A service left out comes back as soon as it is not **Operational**.
 
 ## Who can do what
 

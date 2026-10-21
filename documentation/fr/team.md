@@ -22,7 +22,7 @@ Se choisit au [premier lancement](install.md#first-launch), puis dans **Paramèt
 
 Les comptes sont créés par un administrateur : personne d'autre ne peut s'inscrire, sauf sur une instance vide, pour en devenir le premier administrateur.
 
-**Paramètres**, **Équipe**, puis **Nouveau membre** en tête de la carte Membres : **Nom**, **Adresse e-mail** et **Rôle**, **Lecteur** par défaut. **Créer le compte** affiche une seule fois un mot de passe provisoire, avec **Copier**.
+**Paramètres**, **Équipe**, puis **Nouveau membre** en tête de la carte **Membres** : **Nom**, **Adresse e-mail** et **Rôle**, **Lecteur** par défaut. **Créer le compte** affiche une seule fois un mot de passe provisoire, avec **Copier**.
 
 - Aucun courriel n'est envoyé : transmettez vous-même le mot de passe. Il n'est affiché que cette fois-là et n'est conservé nulle part.
 - Il reste valable sept jours. À sa première connexion, le membre doit choisir le sien, sur **Choisissez votre mot de passe**.

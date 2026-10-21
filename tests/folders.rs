@@ -9,10 +9,12 @@ use reqwest::StatusCode;
 use common::TestApp;
 use statup::i18n::{I18n, LANGUAGES};
 use statup::models::{Grants, Role, Visibility};
-use statup::repositories::{FolderRepository, GroupRepository, ServiceRepository};
+use statup::repositories::{FolderRepository, GroupRepository, ServiceRepository, UserRepository};
 
 const PUBLISHER_EMAIL: &str = "editor@test.com";
 const PUBLISHER_PASSWORD: &str = "editor_password_12";
+const ADMIN_EMAIL: &str = "admin@test.com";
+const ADMIN_PASSWORD: &str = "admin_password_123";
 const READER_EMAIL: &str = "reader@test.com";
 const READER_PASSWORD: &str = "reader_password_12";
 
@@ -361,6 +363,125 @@ async fn a_refused_name_saves_nothing_not_even_the_visibility() {
     assert_eq!(
         (saved.name.as_str(), saved.visibility),
         ("Apps", Visibility::Everyone)
+    );
+    assert!(lines(&app).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_folder_restricted_to_nobody_can_still_be_renamed() {
+    let app = TestApp::spawn().await;
+    app.create_user(ADMIN_EMAIL, ADMIN_PASSWORD, "Admin", Role::Admin)
+        .await;
+    app.login(ADMIN_EMAIL, ADMIN_PASSWORD).await;
+    let group = create_group(&app, "Compta").await;
+    let folder = create_guarded_folder(&app, "Network", &[group]).await;
+    let removal = format!("/admin/groups/{group}/folders/{folder}/remove");
+    let (status, _, _) = post(&app, &removal, &[]).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let after_removal = lines(&app).await;
+
+    let (status, _, location) = post(
+        &app,
+        &format!("/services/folders/{folder}/settings"),
+        &[("name", "Lyon office"), ("visibility", "groups")],
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        location.as_deref(),
+        Some(format!("/services/folders/{folder}?saved=1").as_str())
+    );
+    let saved = FolderRepository::find(&app.pool, folder)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (saved.name.as_str(), saved.visibility),
+        ("Lyon office", Visibility::Groups)
+    );
+    assert!(
+        FolderRepository::group_ids_of(&app.pool, folder)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let mut expected = after_removal;
+    expected.push(line("folder_renamed", "Lyon office", Some("Network")));
+    assert_eq!(lines(&app).await, expected, "only the rename is added");
+}
+
+#[tokio::test]
+async fn a_member_who_is_no_longer_a_reader_does_not_make_a_rename_a_visibility_change() {
+    let app = spawn_with_publisher().await;
+    let group = create_group(&app, "Compta").await;
+    let ann = app
+        .create_user(READER_EMAIL, READER_PASSWORD, "Ann", Role::Reader)
+        .await;
+    let folder = create_folder(&app, "Network").await;
+    FolderRepository::set_visibility(
+        &app.pool,
+        folder,
+        Visibility::Groups,
+        Grants {
+            groups: &[group],
+            members: &[ann],
+        },
+    )
+    .await
+    .unwrap();
+    UserRepository::update_role(&app.pool, ann, Role::Publisher)
+        .await
+        .unwrap();
+
+    let group_id = group.to_string();
+    let (status, _, _) = post(
+        &app,
+        &format!("/services/folders/{folder}/settings"),
+        &[
+            ("name", "Lyon office"),
+            ("visibility", "groups"),
+            ("group_ids", group_id.as_str()),
+        ],
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        lines(&app).await,
+        [line("folder_renamed", "Lyon office", Some("Network"))]
+    );
+}
+
+#[tokio::test]
+async fn a_refused_visibility_with_a_new_name_saves_nothing() {
+    let app = spawn_with_publisher().await;
+    let folder = create_folder(&app, "Network").await;
+
+    let (status, body, _) = post(
+        &app,
+        &format!("/services/folders/{folder}/settings"),
+        &[("name", "Lyon office"), ("visibility", "groups")],
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains(&text("validation.visibility_required")));
+    assert!(
+        body.contains(r#"value="Lyon office""#),
+        "the typed name is kept"
+    );
+    assert!(
+        body.contains(r#"folder-menu" data-more-actions open"#),
+        "the panel stays open"
+    );
+    let saved = FolderRepository::find(&app.pool, folder)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (saved.name.as_str(), saved.visibility),
+        ("Network", Visibility::Everyone)
     );
     assert!(lines(&app).await.is_empty());
 }

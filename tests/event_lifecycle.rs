@@ -2618,6 +2618,51 @@ async fn an_editor_writes_the_report_of_a_resolved_incident() {
 }
 
 #[tokio::test]
+async fn the_composer_link_is_a_card_action_once_the_incident_is_resolved() {
+    let app = TestApp::spawn().await;
+    app.create_user("admin@example.com", "admin_pass_1234", "Admin", Role::Admin)
+        .await;
+    app.login("admin@example.com", "admin_pass_1234").await;
+    let (path, _) = resolved_incident(&app).await;
+
+    let (_, page) = app.get(&path).await;
+
+    let link = r##"href="#composer""##;
+    assert_eq!(page.matches(link).count(), 1);
+    let timeline_head = page
+        .find(r#"id="updates-title""#)
+        .expect("the timeline card");
+    assert!(
+        page.find(link).expect("the link") > timeline_head,
+        "the link sits in the timeline card, not in the page head"
+    );
+    assert!(!page.contains(r##"href="#composer" class="btn btn-primary""##));
+}
+
+#[tokio::test]
+async fn the_composer_link_is_the_primary_button_of_an_ongoing_incident() {
+    let app = TestApp::spawn().await;
+    app.create_user("admin@example.com", "admin_pass_1234", "Admin", Role::Admin)
+        .await;
+    app.login("admin@example.com", "admin_pass_1234").await;
+    let service = app.create_service("Paie").await;
+    let path = app
+        .create_incident(
+            "Panne de la paie",
+            "La paie ne répond plus.",
+            "critical",
+            &[service],
+        )
+        .await;
+
+    let (_, page) = app.get(&path).await;
+
+    assert!(page.contains(
+        r##"<a href="#composer" class="btn btn-primary" data-composer-open>Publier une mise à jour</a>"##
+    ));
+}
+
+#[tokio::test]
 async fn a_correction_replaces_the_report() {
     let app = TestApp::spawn().await;
     app.setup_publisher().await;

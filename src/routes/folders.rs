@@ -17,7 +17,7 @@ use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
 use crate::models::{JournalKind, Service, ServiceFolder, User, Visibility, check_folder_name};
-use crate::repositories::{FolderRepository, NewJournalEntry, ServiceRepository};
+use crate::repositories::{FolderRepository, NewJournalEntry, ServiceRepository, UserRepository};
 use crate::state::AppState;
 
 /// Past this many, the names in the grey line fold behind "and N more".
@@ -124,10 +124,30 @@ impl FolderSettingsInput {
     }
 }
 
-/// The posted setting, refused when restricted to nobody.
-async fn checked(pool: &DbPool, input: &FolderSettingsInput) -> Result<Audience, AppError> {
+/// The posted setting, refused when it would restrict the folder to nobody.
+/// A folder already restricted to nobody (its last group removed, its only
+/// reader deactivated) keeps the setting, so it can still be renamed.
+async fn checked(
+    pool: &DbPool,
+    input: &FolderSettingsInput,
+    before: &Audience,
+) -> Result<Audience, AppError> {
     let audience = input.audience()?;
-    audience.check(pool, false).await?;
+    if before.check(pool, false).await.is_ok() {
+        audience.check(pool, false).await?;
+    }
+    Ok(audience)
+}
+
+/// Who sees the folder, as the panel can show it: the members it names who
+/// are no longer active readers are left out, so a rename alone never counts
+/// as dropping them.
+async fn shown_audience(pool: &DbPool, id: i64) -> Result<Audience, AppError> {
+    let mut audience = Audience::of_folder(pool, id).await?;
+    let readers = UserRepository::active_readers(pool).await?;
+    audience
+        .member_ids
+        .retain(|member| readers.iter().any(|reader| reader.id == *member));
     Ok(audience)
 }
 
@@ -343,9 +363,9 @@ pub async fn save_settings(
     HtmlForm(input): HtmlForm<FolderSettingsInput>,
 ) -> Result<Response, AppError> {
     let folder = find(&state.pool, id).await?;
-    let before = Audience::of_folder(&state.pool, id).await?;
+    let before = shown_audience(&state.pool, id).await?;
     let name = refusal(free_name(&state.pool, &input.name, Some(id)).await, &i18n)?;
-    let audience = refusal(checked(&state.pool, &input).await, &i18n)?;
+    let audience = refusal(checked(&state.pool, &input, &before).await, &i18n)?;
     let (name, audience) = match (name, audience) {
         (Ok(name), Ok(audience)) => (name, audience),
         (name, audience) => {
@@ -372,7 +392,7 @@ pub async fn save_settings(
             .record(&state.pool)
             .await;
     }
-    let after = Audience::of_folder(&state.pool, id).await?;
+    let after = shown_audience(&state.pool, id).await?;
     if after != before {
         NewJournalEntry::new(JournalKind::FolderVisibilityChanged)
             .by(&user)

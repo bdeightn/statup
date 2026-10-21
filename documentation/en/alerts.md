@@ -9,7 +9,7 @@ In the app, **Notifications** is the bell in the header; **Alerts** are the mess
 
 ## Add a channel
 
-**New channel**, at the head of the Channels card, opens the form:
+**New channel**, at the head of the **Channels** card, opens the form:
 
 | Field | Description |
 |---|---|

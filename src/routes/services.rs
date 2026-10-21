@@ -293,7 +293,6 @@ struct ServiceFormTemplate {
 }
 
 impl ServiceFormTemplate {
-    /// "Currently Operational." under the title of an edited service.
     /// The monitoring fields, as the shared block reads them.
     fn check(&self) -> &CheckFields {
         &self.form.check

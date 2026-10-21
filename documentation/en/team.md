@@ -22,7 +22,7 @@ Chosen at the [first launch](install.md#first-launch), then in **Settings**, und
 
 Accounts are created by an administrator: anyone else can only sign up on an empty instance, to become its first administrator.
 
-**Settings**, **Team**, then **New member** at the head of the Members card: **Name**, **Email address** and **Role**, **Reader** by default. **Create the account** shows a temporary password once, with **Copy**.
+**Settings**, **Team**, then **New member** at the head of the **Members** card: **Name**, **Email address** and **Role**, **Reader** by default. **Create the account** shows a temporary password once, with **Copy**.
 
 - No email is sent: hand the password over yourself. It is shown only this once and kept nowhere.
 - It works for seven days. At the first sign-in, the member is asked to choose their own, on **Choose your password**.

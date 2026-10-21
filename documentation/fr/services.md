@@ -26,7 +26,7 @@ Pour modifier un service par la suite, ouvrez-le par son nom ou par son crayon s
 ## Icônes
 
 - 24 icônes fournies, de Serveur à Impression.
-- **+ Envoyer une icône**, dans l'en-tête de la carte **Vos icônes** de la page de la bibliothèque d'icônes : PNG, JPG, WebP ou SVG, jusqu'à 256 Ko. Les images de plus de 128 pixels sont réduites ; un SVG est débarrassé de tout ce qui pourrait exécuter ou charger quelque chose.
+- **Envoyer une icône**, dans l'en-tête de la carte **Vos icônes** de la page de la bibliothèque d'icônes : PNG, JPG, WebP ou SVG, jusqu'à 256 Ko. Les images de plus de 128 pixels sont réduites ; un SVG est débarrassé de tout ce qui pourrait exécuter ou charger quelque chose.
 - Les icônes envoyées forment une seule bibliothèque, partagée par les services, les événements et les modèles, accessible par **Gérer vos icônes** dans le choix d'icône d'un service. Une icône encore utilisée ne peut pas être supprimée.
 
 ## Visibilité
@@ -129,7 +129,7 @@ Aucun pourcentage : la légende compte les jours avec incident.
 
 Un service qu'aucun événement n'a jamais cité peut être supprimé depuis son formulaire, avec **Supprimer le service**. Il disparaît sans laisser de trace, pannes détectées comprises.
 
-Un service cité par des événements est conservé, pour que leur historique reste complet. Pour ne plus le montrer sur le tableau de bord, un administrateur le décoche dans **Organiser** : voir [Paramètres](settings.md#arrange-the-dashboard). Un service décoché revient dès qu'il n'est plus **Opérationnel**.
+Un service cité par des événements est conservé, pour que leur historique reste complet. Pour ne plus le montrer sur le tableau de bord, un administrateur le décoche dans **Organiser** du tableau de bord : voir [Paramètres](settings.md#arrange-the-dashboard). Un service décoché revient dès qu'il n'est plus **Opérationnel**.
 
 ## Qui peut faire quoi
 
