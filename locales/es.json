@@ -360,6 +360,7 @@
   "common.previous": "Anteriores",
   "common.next": "Siguientes",
   "common.pagination_aria": "Páginas de resultados",
+  "common.results": "Resultados",
   "common.page_n": "Página {n}",
   "common.loading": "Cargando",
   "common.optional": "(opcional)",

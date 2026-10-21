@@ -11,8 +11,10 @@
     <a href="/events" class="btn btn-ghost">{{ i18n.t("events.clear_filters") }}</a>
 </div>
 {% else %}
-<p class="results-count" data-results-count>{{ results.count_label }}</p>
 <div class="card">
+    <header class="card-head">
+        <h2 class="card-title">{{ i18n.t("common.results") }} <span class="count" aria-hidden="true">{{ results.total }}</span><span class="sr-only" data-results-count>{{ results.count_label }}</span></h2>
+    </header>
     {% for group in results.groups %}
     <h2 class="log-day">{{ group.label }}</h2>
     <ul class="log-list">

@@ -360,6 +360,7 @@
   "common.previous": "Précédents",
   "common.next": "Suivants",
   "common.pagination_aria": "Pages de résultats",
+  "common.results": "Résultats",
   "common.page_n": "Page {n}",
   "common.loading": "Chargement",
   "common.optional": "(facultatif)",

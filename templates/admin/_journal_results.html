@@ -11,11 +11,11 @@
     <a href="/admin/journal" class="btn btn-ghost">{{ i18n.t("events.clear_filters") }}</a>
 </div>
 {% else %}
-<div class="results-bar">
-    <p class="results-count" data-results-count>{{ results.count_label }}</p>
-    <a class="results-export" href="{{ results.export_url }}" download>{{ i18n.t("journal.export") }}</a>
-</div>
 <div class="card">
+    <header class="card-head">
+        <h2 class="card-title">{{ i18n.t("common.results") }} <span class="count" aria-hidden="true">{{ results.total }}</span><span class="sr-only" data-results-count>{{ results.count_label }}</span></h2>
+        <a class="card-action" href="{{ results.export_url }}" download>{{ i18n.t("journal.export") }}</a>
+    </header>
     {% for day in results.days %}
     <h2 class="log-day">{{ day.label }}</h2>
     <ul class="log-list">

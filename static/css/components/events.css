@@ -80,13 +80,6 @@
         font-size: var(--text-sm);
     }
 
-    .results-count {
-        margin: 0 0 10px;
-        font-size: var(--text-sm);
-        color: var(--ink-soft);
-        font-feature-settings: 'tnum' 1;
-    }
-
     .pager {
         display: flex;
         align-items: center;
