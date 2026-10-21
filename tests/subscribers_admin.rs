@@ -181,18 +181,18 @@ async fn the_alerts_card_counts_the_subscribers_and_the_switch_starts_off() {
 
     let (_, page) = app.english(ALERTS).await;
     assert!(page.contains("Email subscribers"));
-    assert!(page.contains("No subscribers"));
+    assert!(page.contains(r#"Email subscribers <span class="count">0</span>"#));
     assert!(!page.contains("See the subscribers"));
     assert!(page.contains(UNCHECKED_SWITCH), "off on a new instance");
 
     app.subscribe_member("Ana", "ana@example.com", Choices::EVERYTHING)
         .await;
     let (_, page) = app.english(ALERTS).await;
-    assert!(page.contains("1 subscriber"));
+    assert!(page.contains(r#"Email subscribers <span class="count">1</span>"#));
     app.subscribe_visitor("ben@example.com", Choices::EVERYTHING)
         .await;
     let (_, page) = app.english(ALERTS).await;
-    assert!(page.contains("2 subscribers"));
+    assert!(page.contains(r#"Email subscribers <span class="count">2</span>"#));
     assert!(page.contains(r#"href="/admin/notifications/subscribers""#));
 }
 
@@ -287,7 +287,7 @@ async fn an_empty_list_says_so_and_a_members_only_page_pauses_its_visitors() {
     app.as_admin().await;
 
     let (_, page) = app.english(LIST).await;
-    assert!(page.contains("No subscribers yet."));
+    assert!(page.contains("No subscribers."));
 
     SubscriptionService::set_visitors_open(&app.pool, true)
         .await

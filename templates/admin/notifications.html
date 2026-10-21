@@ -34,73 +34,88 @@
     </div>
     {% endif %}
 
-    <details class="add-member"{% if add_open %} open{% endif %}>
-        <summary class="btn btn-primary">{% call ui::plus() %}{% endcall %}{{ i18n.t("notifications.add") }}</summary>
-        <form method="post" action="/admin/notifications" class="add-member-form stack" data-destination-form>
+    {# The channels on a card with their count; "New channel" opens the form
+       at the head of the card, closed on arrival. #}
+    <section class="card channels-card" aria-labelledby="channels-title">
+        <header class="card-head">
+            <h2 id="channels-title" class="card-title">{{ i18n.t("notifications.channels_title") }} <span class="count">{{ rows.len() }}</span></h2>
+            <button type="button" class="card-action card-follow" aria-controls="add-channel" aria-expanded="{% if add_open %}true{% else %}false{% endif %}" data-composer-toggle>{% call ui::plus() %}{% endcall %}{{ i18n.t("notifications.add") }}</button>
+        </header>
+        <form id="add-channel" method="post" action="/admin/notifications" class="card-add channel-add{% if add_open %} is-open{% endif %}" data-destination-form>
             <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+            {% let test_inline = false %}
             {% include "admin/_notification_fields.html" %}
-            <button type="submit" class="btn btn-primary">{{ i18n.t("notifications.add_submit") }}</button>
-        </form>
-    </details>
-
-    {% if rows.is_empty() %}
-    <p class="text-muted">{{ i18n.t("notifications.empty") }}</p>
-    {% else %}
-    <ul class="admin-list">
-        {% for row in rows %}
-        <li class="admin-row">
-            <div class="min-w-0">
-                <p class="admin-row-name"><a href="/admin/notifications/{{ row.id }}" class="row-link">{{ row.name }}</a></p>
-                <p class="admin-row-sub">{{ row.tool }}&nbsp;<span aria-hidden="true">·</span> {{ row.receives }}</p>
-                {% match row.last %}
-                {% when LastSend::Never %}<p class="destination-last">{{ i18n.t("notifications.never") }}</p>
-                {% when LastSend::Sent with (text) %}<p class="destination-last">{{ text }}</p>
-                {% when LastSend::Trouble with (tone, text) %}<p class="state destination-state" data-tone="{{ tone }}">{{ text }}</p>
-                {% endmatch %}
+            <div id="destination-test-result" aria-live="polite" data-test-result></div>
+            <div class="card-add-foot">
+                <button type="button" class="text-action" aria-controls="add-channel" data-composer-toggle>{{ i18n.t("common.cancel") }}</button>
+                {% include "admin/_notification_test_button.html" %}
+                <button type="submit" class="btn btn-primary">{{ i18n.t("notifications.add_submit") }}</button>
             </div>
-            <a href="/admin/notifications/{{ row.id }}" class="btn btn-ghost btn-icon" title="{{ i18n.t("services.edit") }} {{ row.name }}" aria-label="{{ i18n.t("services.edit") }} {{ row.name }}">{% call ui::pencil_icon() %}{% endcall %}</a>
-        </li>
-        {% endfor %}
-    </ul>
-    {% endif %}
+        </form>
+        {% if rows.is_empty() %}
+        <p class="groups-empty">{{ i18n.t("notifications.empty") }}</p>
+        {% else %}
+        <ul class="admin-list">
+            {% for row in rows %}
+            <li class="admin-row">
+                <div class="min-w-0">
+                    <p class="admin-row-name"><a href="/admin/notifications/{{ row.id }}" class="row-link">{{ row.name }}</a></p>
+                    <p class="admin-row-sub">{{ row.tool }}&nbsp;<span aria-hidden="true">·</span> {{ row.receives }}</p>
+                    {% match row.last %}
+                    {% when LastSend::Never %}<p class="destination-last">{{ i18n.t("notifications.never") }}</p>
+                    {% when LastSend::Sent with (text) %}<p class="destination-last">{{ text }}</p>
+                    {% when LastSend::Trouble with (tone, text) %}<p class="state destination-state" data-tone="{{ tone }}">{{ text }}</p>
+                    {% endmatch %}
+                </div>
+                <a href="/admin/notifications/{{ row.id }}" class="btn btn-ghost btn-icon" title="{{ i18n.t("services.edit") }} {{ row.name }}" aria-label="{{ i18n.t("services.edit") }} {{ row.name }}">{% call ui::pencil_icon() %}{% endcall %}</a>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </section>
 
     <div class="card-grid card-grid-2 alerts-cards">
-        <section class="card alerts-card" aria-labelledby="subscribers-title">
-            <div class="alerts-card-head">
-                <h2 id="subscribers-title" class="set-label">{{ i18n.t("notifications.subscribers_title") }}</h2>
-                {% if subscribers.has_any %}<a href="/admin/notifications/subscribers" class="link">{{ i18n.t("notifications.subscribers_see") }}</a>{% endif %}
+        <section class="card" aria-labelledby="subscribers-title">
+            <header class="card-head">
+                <h2 id="subscribers-title" class="card-title">{{ i18n.t("notifications.subscribers_title") }} <span class="count">{{ subscribers.total }}</span></h2>
+                {% if subscribers.total > 0 %}<a href="/admin/notifications/subscribers" class="card-action">{{ i18n.t("notifications.subscribers_see") }}</a>{% endif %}
+            </header>
+            <div class="card-body">
+                {% if email_ready %}
+                <form method="post" action="/admin/notifications/visitor-subscriptions" class="alerts-card-row">
+                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                    <label class="check-row alerts-card-field"><input type="checkbox" name="open" value="on" class="checkbox"{% if subscribers.visitors_open %} checked{% endif %}><span>{{ i18n.t("notifications.visitors_open") }}</span></label>
+                    <button type="submit" class="btn btn-ghost">{{ i18n.t("common.save") }}</button>
+                </form>
+                {% else %}
+                <p class="set-help">{{ i18n.t("notifications.subscribers_no_mail") }} <a class="link" href="{{ crate::docs_url(i18n.locale(), crate::Doc::MailServer) }}">{{ i18n.t("notifications.email_server_link") }}</a></p>
+                {% endif %}
             </div>
-            <p class="set-help">{{ subscribers.label }}</p>
-            {% if email_ready %}
-            <form method="post" action="/admin/notifications/visitor-subscriptions" class="alerts-card-row">
-                <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                <label class="check-row"><input type="checkbox" name="open" value="on" class="checkbox"{% if subscribers.visitors_open %} checked{% endif %}><span>{{ i18n.t("notifications.visitors_open") }}</span></label>
-                <button type="submit" class="btn btn-ghost">{{ i18n.t("common.save") }}</button>
-            </form>
-            {% else %}
-            <p class="set-help">{{ i18n.t("notifications.subscribers_no_mail") }} <a class="link" href="{{ crate::docs_url(i18n.locale(), crate::Doc::MailServer) }}">{{ i18n.t("notifications.email_server_link") }}</a></p>
-            {% endif %}
         </section>
 
-        <section class="card alerts-card page-address" aria-labelledby="address-title">
-            <label for="page-address" id="address-title" class="set-label">{{ i18n.t("notifications.page_address_label") }}</label>
-            <p class="set-help">{% if page.fixed %}{{ i18n.t("notifications.page_address_fixed") }}{% else %}{{ i18n.t("notifications.page_address_help") }}{% endif %}</p>
-            {% if page.fixed %}
-            <p id="page-address" class="page-address-value">{{ page.value }}</p>
-            {% else %}
-            <form method="post" action="/admin/notifications/page-address" class="alerts-card-row">
-                <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                <div class="set-field alerts-card-field">
-                    <input id="page-address" type="text" name="page_address" class="input" inputmode="url" maxlength="2000" autocomplete="off" spellcheck="false"
-                           value="{{ page.value }}" placeholder="https://status.example.com"
-                           {% if page.error.is_some() %}aria-invalid="true" aria-describedby="address-error" autofocus{% endif %}>
-                    {% if let Some(message) = page.error %}
-                    <p id="address-error" class="field-error" role="alert">{{ message }}</p>
-                    {% endif %}
-                </div>
-                <button type="submit" class="btn btn-primary">{{ i18n.t("common.save") }}</button>
-            </form>
-            {% endif %}
+        <section class="card" aria-labelledby="address-title">
+            <header class="card-head">
+                <h2 class="card-title"><label for="page-address" id="address-title">{{ i18n.t("notifications.page_address_label") }}</label></h2>
+            </header>
+            <div class="card-body">
+                <p class="set-help">{% if page.fixed %}{{ i18n.t("notifications.page_address_fixed") }}{% else %}{{ i18n.t("notifications.page_address_help") }}{% endif %}</p>
+                {% if page.fixed %}
+                <p id="page-address" class="page-address-value">{{ page.value }}</p>
+                {% else %}
+                <form method="post" action="/admin/notifications/page-address" class="alerts-card-row">
+                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                    <div class="set-field alerts-card-field">
+                        <input id="page-address" type="text" name="page_address" class="input" inputmode="url" maxlength="2000" autocomplete="off" spellcheck="false"
+                               value="{{ page.value }}" placeholder="https://status.example.com"
+                               {% if page.error.is_some() %}aria-invalid="true" aria-describedby="address-error" autofocus{% endif %}>
+                        {% if let Some(message) = page.error %}
+                        <p id="address-error" class="field-error" role="alert">{{ message }}</p>
+                        {% endif %}
+                    </div>
+                    <button type="submit" class="btn btn-primary">{{ i18n.t("common.save") }}</button>
+                </form>
+                {% endif %}
+            </div>
         </section>
     </div>
 </div>

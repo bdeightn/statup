@@ -23,6 +23,7 @@
     <form method="post" action="/admin/notifications/{{ id }}" class="mt-6" data-destination-form>
         <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
         <div class="card form-card stack">
+            {% let test_inline = true %}
             {% include "admin/_notification_fields.html" %}
         </div>
 

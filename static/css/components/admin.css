@@ -670,31 +670,10 @@
         margin-top: 4px;
     }
 
-    .members-card > .admin-list {
+    /* A list inside a card takes the card's frame. */
+    .card > .admin-list {
         background: none;
         border: 0;
-    }
-
-    .add-member {
-        margin-bottom: 24px;
-    }
-
-    .add-member > summary {
-        width: fit-content;
-        list-style: none;
-    }
-
-    .add-member > summary::-webkit-details-marker {
-        display: none;
-    }
-
-    .add-member-form {
-        max-width: 720px;
-        margin-top: 16px;
-        padding: 20px;
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 6px;
     }
 
     /* A notification destination: its page keeps the width of a reading
@@ -744,25 +723,7 @@
        screen, each card as tall as the other. */
     .alerts-cards {
         align-items: stretch;
-        margin-top: 32px;
-    }
-
-    .alerts-card {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        padding: 16px 16px 20px;
-    }
-
-    .alerts-card-head {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 16px;
-    }
-
-    .alerts-card-head .link {
-        font-size: var(--text-sm);
+        margin-top: 16px;
     }
 
     .alerts-card-row {
@@ -770,8 +731,49 @@
         flex-wrap: wrap;
         align-items: center;
         gap: 10px 16px;
-        margin-top: auto;
-        padding-top: 10px;
+    }
+
+    .set-help + .alerts-card-row,
+    .set-help + .page-address-value {
+        margin-top: 10px;
+    }
+
+    /* The channel form at the head of its card: tool, name and language on
+       one line, the address across under them. */
+    .channel-add {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .channel-add > [data-test-result]:empty {
+        margin-top: -16px;
+    }
+
+    .channel-add > .card-add-foot {
+        margin-top: 4px;
+    }
+
+    @media (min-width: 720px) {
+        .channel-add {
+            display: grid;
+            grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr);
+            column-gap: 20px;
+        }
+
+        .channel-add > * {
+            grid-column: 1 / -1;
+        }
+
+        .channel-add > .form-grid {
+            grid-column: 1 / 3;
+        }
+
+        .channel-add > .destination-locale {
+            grid-row: 1;
+            grid-column: 3;
+            max-width: none;
+        }
     }
 
     .alerts-card-field {

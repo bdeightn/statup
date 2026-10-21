@@ -61,9 +61,11 @@
     </div>
 </fieldset>
 
-{# hx-sync drops a second click while a test runs, as on the monitoring
-   fields. #}
+{# On a channel's page the test follows the fields; the list's add form
+   puts it in its foot, beside the other buttons. #}
+{% if test_inline %}
 <div class="destination-test">
-    <button type="button" class="btn btn-ghost check-test" hx-post="/admin/notifications/test" hx-target="next [data-test-result]" hx-swap="innerHTML" hx-sync="this:drop"><span class="check-test-idle">{{ i18n.t("notifications.test") }}</span><span class="check-test-busy">{{ i18n.t("notifications.testing") }}</span></button>
-    <div aria-live="polite" data-test-result></div>
+    {% include "admin/_notification_test_button.html" %}
+    <div id="destination-test-result" aria-live="polite" data-test-result></div>
 </div>
+{% endif %}

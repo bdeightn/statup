@@ -20,22 +20,15 @@ use crate::state::AppState;
 
 /// What the Alerts page says of the subscribers.
 pub(super) struct SubscribersCard {
-    pub(super) has_any: bool,
-    /// "12 subscribers", or that there are none.
-    pub(super) label: String,
+    /// How many subscribed, the count in the card's head.
+    pub(super) total: usize,
     pub(super) visitors_open: bool,
 }
 
-pub(super) async fn card(state: &AppState, i18n: &I18n) -> Result<SubscribersCard, AppError> {
+pub(super) async fn card(state: &AppState) -> Result<SubscribersCard, AppError> {
     let total = usize::try_from(SubscriberRepository::count(&state.pool).await?).unwrap_or(0);
-    let label = if total == 0 {
-        i18n.t("notifications.subscribers_none").to_string()
-    } else {
-        i18n.plural("notifications.subscribers_count", total)
-    };
     Ok(SubscribersCard {
-        has_any: total > 0,
-        label,
+        total,
         visitors_open: SubscriptionService::visitors_open(&state.pool).await?,
     })
 }

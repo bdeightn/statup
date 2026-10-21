@@ -329,9 +329,9 @@ async fn render_list(
 ) -> Result<Response, AppError> {
     let channels = NotificationRepository::list_channels(&state.pool).await?;
     let rows = destination_rows(state, channels, &i18n).await?;
-    let add_open = rows.is_empty() || page.form_error.is_some();
+    let add_open = page.form_error.is_some();
     let address = page_address_field(state, headers, page.address_error, &i18n).await?;
-    let subscribers = subscribers::card(state, &i18n).await?;
+    let subscribers = subscribers::card(state).await?;
     let frame = Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?;
     render(&NotificationsTemplate {
         frame,

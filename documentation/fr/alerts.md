@@ -9,7 +9,7 @@ Dans l'application, **Notifications** désigne la cloche de l'en-tête ; les **
 
 ## Ajouter un canal
 
-**Ajouter un canal** ouvre le formulaire :
+**Nouveau canal**, en tête de la carte Canaux, ouvre le formulaire :
 
 | Champ | Description |
 |---|---|
