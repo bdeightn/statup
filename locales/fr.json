@@ -530,7 +530,7 @@
   "admin.disable_consequence": "Le membre ne pourra plus se connecter. Le compte reste réactivable.",
   "admin.enable": "Réactiver",
   "admin.you": "(vous)",
-  "admin.add_member": "Ajouter un membre",
+  "admin.add_member": "Nouveau membre",
   "admin.add_member_submit": "Créer le compte",
   "admin.created_for": "Compte créé pour",
   "admin.created_password": "Mot de passe provisoire :",

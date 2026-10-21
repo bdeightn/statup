@@ -49,11 +49,17 @@
     <div class="form-error mb-5" role="alert"><p>{{ message }}</p></div>
     {% endif %}
 
-    <details class="add-member"{% if add_open %} open{% endif %}>
-        <summary class="btn btn-primary">{% call ui::plus() %}{% endcall %}{{ i18n.t("admin.add_member") }}</summary>
-        <form method="post" action="/admin/users/new" class="add-member-form stack">
+    {# The members on a card with their count, the twin of the groups card
+       under it. "New member" opens the form at the head of the card; its
+       name, address and role sit on the columns of the rows. #}
+    <section class="card members-card" aria-labelledby="members-title">
+        <header class="card-head">
+            <h2 id="members-title" class="card-title">{{ i18n.t("admin.group_members_title") }} <span class="count">{{ users.len() }}</span></h2>
+            <button type="button" class="card-action card-follow" aria-controls="add-member" aria-expanded="{% if add_open %}true{% else %}false{% endif %}" data-composer-toggle>{% call ui::plus() %}{% endcall %}{{ i18n.t("admin.add_member") }}</button>
+        </header>
+        <form id="add-member" method="post" action="/admin/users/new" class="card-add member-add{% if add_open %} is-open{% endif %}">
             <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-            <div class="form-grid form-grid-2">
+            <div class="member-add-who">
                 <div class="field">
                     <label for="member-name" class="field-label">{{ i18n.t("auth.display_name") }}</label>
                     <input id="member-name" name="display_name" type="text" class="input" required maxlength="100" autocomplete="off" value="{{ add_form.display_name }}">
@@ -63,7 +69,7 @@
                     <input id="member-email" name="email" type="email" class="input" required autocomplete="off" value="{{ add_form.email }}">
                 </div>
             </div>
-            <fieldset class="choice-group">
+            <fieldset class="choice-group member-add-role">
                 <legend class="field-label">{{ i18n.t("profile.role") }}</legend>
                 <div class="choice-row">
                     {% for r in crate::models::Role::ALL %}
@@ -77,11 +83,13 @@
                     <p class="field-hint" data-role-hint="admin">{{ i18n.t("role.admin_desc") }}</p>
                 </div>
             </fieldset>
-            <button type="submit" class="btn btn-ghost">{{ i18n.t("admin.add_member_submit") }}</button>
+            <div class="card-add-foot">
+                <button type="button" class="text-action" aria-controls="add-member" data-composer-toggle>{{ i18n.t("common.cancel") }}</button>
+                <button type="submit" class="btn btn-primary">{{ i18n.t("admin.add_member_submit") }}</button>
+            </div>
         </form>
-    </details>
 
-    <ul class="admin-list">
+    <ul class="admin-list member-list">
         {% for u in users %}
         <li class="admin-row member-row">
             <div class="min-w-0">
@@ -124,7 +132,7 @@
             <div class="admin-row-actions">
                 {% if u.id != current_user_id && u.is_active %}
                 <details class="more-actions member-confirm" data-more-actions>
-                    <summary class="btn btn-ghost" aria-label="{{ i18n.t("admin.reset_password") }} {{ u.display_name }}">{{ i18n.t("admin.reset_password") }}</summary>
+                    <summary class="text-action" aria-label="{{ i18n.t("admin.reset_password") }} {{ u.display_name }}">{{ i18n.t("admin.reset_password") }}</summary>
                     <form class="more-actions-menu confirm-panel" method="post" action="/admin/users/{{ u.id }}/reset-password" aria-label="{{ i18n.t("admin.confirm_reset_aria") }}">
                         <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
                         <p class="confirm-panel-text">{{ i18n.t("common.question_open") }}{{ i18n.t("admin.reset_question") }} <q>{{ u.display_name }}</q>{{ i18n.t("common.question_mark") }}</p>
@@ -136,7 +144,7 @@
                 {% if u.id != current_user_id %}
                 {% if u.is_active %}
                 <details class="more-actions member-confirm" data-more-actions>
-                    <summary class="btn btn-danger" aria-label="{{ i18n.t("admin.disable") }} {{ u.display_name }}">{{ i18n.t("admin.disable") }}</summary>
+                    <summary class="text-action text-action-delete" aria-label="{{ i18n.t("admin.disable") }} {{ u.display_name }}">{{ i18n.t("admin.disable") }}</summary>
                     <form class="more-actions-menu confirm-panel" method="post" action="/admin/users/{{ u.id }}/disable" aria-label="{{ i18n.t("admin.confirm_disable_aria") }}">
                         <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
                         <p class="confirm-panel-text">{{ i18n.t("common.question_open") }}{{ i18n.t("admin.disable") }} <q>{{ u.display_name }}</q>{{ i18n.t("common.question_mark") }}</p>
@@ -147,7 +155,7 @@
                 {% else %}
                 <form method="post" action="/admin/users/{{ u.id }}/disable">
                     <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                    <button type="submit" class="btn btn-ghost" aria-label="{{ i18n.t("admin.enable") }} {{ u.display_name }}">{{ i18n.t("admin.enable") }}</button>
+                    <button type="submit" class="text-action" aria-label="{{ i18n.t("admin.enable") }} {{ u.display_name }}">{{ i18n.t("admin.enable") }}</button>
                 </form>
                 {% endif %}
                 {% endif %}
@@ -155,6 +163,7 @@
         </li>
         {% endfor %}
     </ul>
+    </section>
 
     {# The groups: a link to each group's page, where its members are
        added and removed. A new group starts from its name. #}

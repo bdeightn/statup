@@ -530,7 +530,7 @@
   "admin.disable_consequence": "The member will no longer be able to sign in. The account can be enabled again.",
   "admin.enable": "Enable",
   "admin.you": "(you)",
-  "admin.add_member": "Add a member",
+  "admin.add_member": "New member",
   "admin.add_member_submit": "Create the account",
   "admin.created_for": "Account created for",
   "admin.created_password": "Temporary password:",

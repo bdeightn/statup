@@ -530,7 +530,7 @@
   "admin.disable_consequence": "Das Mitglied kann sich nicht mehr anmelden. Das Konto kann wieder aktiviert werden.",
   "admin.enable": "Aktivieren",
   "admin.you": "(Sie)",
-  "admin.add_member": "Mitglied hinzufügen",
+  "admin.add_member": "Neues Mitglied",
   "admin.add_member_submit": "Konto anlegen",
   "admin.created_for": "Konto angelegt für",
   "admin.created_password": "Vorläufiges Passwort:",

@@ -530,7 +530,7 @@
   "admin.disable_consequence": "El miembro ya no podrá iniciar sesión. La cuenta se puede reactivar.",
   "admin.enable": "Activar",
   "admin.you": "(usted)",
-  "admin.add_member": "Añadir un miembro",
+  "admin.add_member": "Nuevo miembro",
   "admin.add_member_submit": "Crear la cuenta",
   "admin.created_for": "Cuenta creada para",
   "admin.created_password": "Contraseña provisional:",

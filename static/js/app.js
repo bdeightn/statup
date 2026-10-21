@@ -525,7 +525,7 @@
         document.querySelectorAll(`[data-composer-toggle][aria-controls="${composer.id}"]`).forEach((toggle) => {
             toggle.setAttribute("aria-expanded", String(open));
         });
-        if (open) composer.querySelector("textarea")?.focus();
+        if (open) composer.querySelector("textarea, input:not([type=hidden])")?.focus();
         return true;
     }
 
