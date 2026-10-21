@@ -65,12 +65,6 @@
         background: var(--tone);
     }
 
-    .set-inline-form {
-        display: flex;
-        align-items: flex-start;
-        gap: 8px;
-    }
-
     .set-field {
         display: flex;
         flex: 1 1 auto;

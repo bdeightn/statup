@@ -213,17 +213,6 @@
         overflow-wrap: anywhere;
     }
 
-    .event-state {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 6px 12px;
-        margin-top: 14px;
-        font-size: var(--text-md);
-        line-height: 1.5;
-        color: var(--ink);
-    }
-
     /* Facts under the title, each under its own label, read across. */
     .event-facts {
         display: flex;
