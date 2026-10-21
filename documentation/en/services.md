@@ -9,7 +9,7 @@ Editors and administrators manage services from the **Services** page. Readers a
 
 ## Create a service
 
-**New service**, on the Services page, opens the form:
+**New**, then **Service**, on the Services page, opens the form:
 
 | Field | Description |
 |---|---|
@@ -27,7 +27,7 @@ To change a service later, open it by its name or by its pencil on the Services 
 
 - 24 built-in icons, from Server to Printing.
 - **Upload an icon**: PNG, JPG, WebP or SVG, up to 256 KB. Images larger than 128 pixels are reduced; an SVG is cleaned of anything that could run or load something.
-- Uploaded icons form one library, shared by services, events and templates, under **Icons** on the Services page. An icon still in use cannot be deleted.
+- Uploaded icons form one library, shared by services, events and templates, reached by **Manage your icons** in a service's icon choice. An icon still in use cannot be deleted.
 
 ## Visibility
 
@@ -58,7 +58,7 @@ On the Services page, each folder is a card with its name, its number of service
 
 ### Create a folder
 
-**New folder**, at the top of the Services page, then a **Folder name** of up to 100 characters, unique, and **Create the folder**. The folder's page opens.
+**New**, then **Folder**, at the top of the Services page, then a **Folder name** of up to 100 characters, unique, and **Create the folder**. The folder's page opens.
 
 ### A folder's page
 
@@ -105,7 +105,7 @@ While an event or a detected outage holds a service, its menu gives way to the s
 
 ## Order
 
-**Change order** puts an up and a down arrow on each service, which moves it within its card, and on each folder, which moves the folder among the others. The order is saved a moment after the last move, and applies wherever services are listed, the dashboard included. **Done** or Escape leaves the mode.
+**Arrange** puts an up and a down arrow on each service, which moves it within its card, and on each folder, which moves the folder among the others. The order is saved a moment after the last move, and applies wherever services are listed, the dashboard included. **Done** or Escape leaves the mode.
 
 In the same mode, **Show disrupted services first** lists every service that is not **Operational** before the others, each group in the chosen order. It is off by default.
 

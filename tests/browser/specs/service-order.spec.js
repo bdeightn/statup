@@ -16,7 +16,7 @@ test("services keep the order chosen with the arrows", async ({ page }, testInfo
     const before = await names();
     expect(before.at(-1), "a new service goes last").toBe(last);
 
-    await page.getByRole("button", { name: "Changer l'ordre" }).click();
+    await page.getByRole("button", { name: "Organiser" }).click();
     await expect(page.getByRole("button", { name: `Descendre ${last}` })).toBeDisabled();
     await page.getByRole("button", { name: `Monter ${last}` }).click();
     const moved = [...before.slice(0, -2), last, before.at(-2)];

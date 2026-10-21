@@ -13,9 +13,9 @@
     const URLS = { services: "/services/order", folders: "/services/folders/order" };
     const list = document.querySelector("[data-service-order]");
     const toggle = document.querySelector("[data-order-toggle]");
-    if (!list || !toggle) return;
+    const done = document.querySelector("[data-order-done]");
+    if (!list || !toggle || !done) return;
     const problemsFirst = document.querySelector("[data-problems-first]");
-    const problemsFirstField = document.querySelector("[data-problems-first-field]");
 
     const { announce, csrfToken } = window.statup;
     const timers = {};
@@ -129,11 +129,18 @@
         syncEnds();
     }
 
+    // As on the dashboard: the mode shows Done and its own option, and hides
+    // the buttons that would leave it.
+    function reveal(on) {
+        document.querySelectorAll("[data-order-only]").forEach((el) => (el.hidden = !on));
+        document.querySelectorAll("[data-order-off]").forEach((el) => (el.hidden = on));
+    }
+
     function setMode(on) {
         if (on && problemsFirst?.checked) putBackChosenOrder();
         list.classList.toggle("is-ordering", on);
-        toggle.setAttribute("aria-pressed", String(on));
-        if (problemsFirstField) problemsFirstField.hidden = !on;
+        reveal(on);
+        (on ? done : toggle).focus();
         if (on) return;
         flush(false);
         if (problemsFirst?.checked) sending.then(() => window.location.reload());
@@ -146,7 +153,8 @@
             .catch(() => window.location.reload());
     });
 
-    toggle.addEventListener("click", () => setMode(!ordering()));
+    toggle.addEventListener("click", () => setMode(true));
+    done.addEventListener("click", () => setMode(false));
     list.addEventListener("click", (event) => {
         if (!ordering()) return;
         const row = event.target.closest("[data-move]");
@@ -157,13 +165,12 @@
     // Escape closes the mode from its own controls only, not from a menu
     // opened meanwhile.
     document.addEventListener("keydown", (event) => {
-        const own = list.contains(document.activeElement) || document.activeElement === toggle;
+        const own = list.contains(document.activeElement) || document.activeElement === done;
         if (event.key !== "Escape" || event.defaultPrevented || !ordering() || !own) return;
         setMode(false);
-        toggle.focus();
     });
     window.addEventListener("pagehide", () => flush(true));
 
     syncEnds();
-    toggle.hidden = false;
+    reveal(false);
 })();

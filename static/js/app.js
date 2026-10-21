@@ -503,6 +503,17 @@
         });
     }
 
+    // A menu entry that leads to a small form in the same panel, as "Folder"
+    // under "New": the list gives way to the form until the menu closes.
+    function onSwapToForm(target) {
+        const entry = target.closest("[data-swap-to-form]");
+        if (!entry) return false;
+        const panel = entry.closest("[data-swap-panel]");
+        panel?.classList.add("is-form");
+        panel?.querySelector("input:not([type=hidden])")?.focus();
+        return true;
+    }
+
     // A composer folded behind a button, as in the side panel.
     function onComposerToggle(target) {
         const button = target.closest("[data-composer-toggle]");
@@ -600,7 +611,7 @@
             return;
         }
         closeMoreActions(target.closest("details[data-more-actions]"));
-        if (onMenuClick(target) || onComposerOpen(target) || onComposerToggle(target) || onFiltersToggle(target)) return;
+        if (onMenuClick(target) || onSwapToForm(target) || onComposerOpen(target) || onComposerToggle(target) || onFiltersToggle(target)) return;
         if (target.closest("[data-toast-close]")) {
             clearToast();
             return;
@@ -685,6 +696,7 @@
             const menu = event.target;
             if (!(menu instanceof HTMLDetailsElement) || menu.open) return;
             if (!menu.hasAttribute("data-more-actions")) return;
+            menu.querySelectorAll("[data-swap-panel]").forEach((panel) => panel.classList.remove("is-form"));
             menu.querySelectorAll("form[data-warn-unsaved]").forEach((form) => {
                 form.reset();
                 delete form.dataset.unsaved;

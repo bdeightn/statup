@@ -438,8 +438,14 @@ async fn icons_and_arranging_each_have_one_way_in() {
 
     let (_, body) = app.get("/services").await;
     assert!(
+        !body.contains(r#"href="/icons""#),
+        "the icons are reached from where a service picks one"
+    );
+
+    let (_, body) = app.get("/services/new").await;
+    assert!(
         body.contains(r#"href="/icons""#),
-        "the services page leads to the icons"
+        "the icon choice of a service leads to the icons"
     );
 
     let (_, body) = app.get("/icons").await;

@@ -353,22 +353,6 @@
         grid-column: 2;
     }
 
-    /* The button that opens and closes the mode, as wide as its longer
-       label whichever one shows. */
-    .order-toggle {
-        display: inline-grid;
-        place-items: center;
-    }
-
-    .order-toggle > span {
-        grid-area: 1 / 1;
-    }
-
-    .order-toggle[aria-pressed="true"] > [data-when="closed"],
-    .order-toggle[aria-pressed="false"] > [data-when="open"] {
-        visibility: hidden;
-    }
-
     /* The problems-first box shows only while choosing the order. */
     .order-option[hidden] {
         display: none;
@@ -941,6 +925,7 @@
 
     .icon-name-echo {
         min-width: 0;
+        margin-left: auto;
         overflow: hidden;
         font-size: var(--text-xs);
         color: var(--muted);
@@ -957,10 +942,19 @@
         gap: 6px;
     }
 
+    /* Eight columns across the whole column of the form, so the names
+       and links above end on the grid's edge. */
     @media (min-width: 640px) {
         .icon-grid {
             grid-template-columns: repeat(8, 44px);
+            justify-content: space-between;
         }
+    }
+
+    /* The way to the icon library, where icons are sent and removed. */
+    .icon-group-link {
+        margin-right: -2px;
+        white-space: nowrap;
     }
 
     /* A cell is a radio: the chosen one shows an ink edge and a check in
@@ -1691,11 +1685,48 @@
         }
     }
 
-    /* "New folder" is followed by "New service", or starts a wrapped
-       line: its panel opens from its start at any width. */
-    .folder-new > .group-panel {
-        right: auto;
-        left: 0;
+    /* "New": what can be created here, as wide as its button; "Folder"
+       turns the list into the name form of the folder to come. Without a
+       script both show, one under the other. */
+    .new-menu > summary svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    .new-menu > summary svg:last-child {
+        margin-right: -4px;
+    }
+
+    .new-menu-panel {
+        min-width: 100%;
+        width: max-content;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .new-menu-panel.is-form {
+        width: 320px;
+        max-width: calc(100vw - 32px);
+        padding: 16px;
+    }
+
+    .new-menu-list {
+        display: grid;
+        gap: 2px;
+    }
+
+    .new-menu-form {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .new-menu-form > .field-error {
+        margin-top: 6px;
+    }
+
+    html:not(.js) [data-swap-to-form],
+    .js .new-menu-panel:not(.is-form) > .new-menu-form,
+    .new-menu-panel.is-form > .new-menu-list {
+        display: none;
     }
 
     @media (prefers-reduced-motion: reduce) {

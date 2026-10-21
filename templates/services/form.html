@@ -19,13 +19,10 @@
         <div>
             <a href="/services" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("services.heading") }}</a>
             <h1 class="page-title">{% if edit_id.is_some() %}{{ i18n.t("services.edit") }} <span class="wrap-anywhere">{{ form.name }}</span>{% else %}{{ i18n.t("services.new") }}{% endif %}</h1>
-            {% if edit_id.is_some() %}
-            <p class="event-state" data-tone="{{ form.status.tone().as_str() }}">
-                <span class="ring-dot" aria-hidden="true"></span>
-                <span>{{ self.status_line() }} <a href="/services" class="link">{{ i18n.t("services.status_change_link") }}</a></span>
-            </p>
-            {% endif %}
         </div>
+        {% if edit_id.is_some() %}
+        <p class="journal-summary" data-tone="{{ form.status.tone().as_str() }}"><span class="dot" aria-hidden="true"></span>{{ i18n.t(form.status.i18n_key()) }}</p>
+        {% endif %}
     </header>
 
     {% if let Some(message) = error %}
@@ -34,7 +31,7 @@
 
     <form method="post"
           action="{% match edit_id %}{% when Some with (id) %}/services/{{ id }}/edit{% when None %}/services/new{% endmatch %}"
-          class="mt-6"{% if error.is_some() %} aria-describedby="form-error"{% endif %}>
+          class="mt-6" data-warn-unsaved{% if error.is_some() %} aria-describedby="form-error"{% endif %}>
         <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
 
         <div class="card form-card">
@@ -82,7 +79,6 @@
     <section class="card danger-zone" aria-labelledby="delete-title">
         <div class="danger-zone-text">
             <h2 id="delete-title" class="card-title">{{ i18n.t("services.delete_title") }}</h2>
-            <p class="field-hint">{{ i18n.t("services.delete_consequence") }}</p>
         </div>
         <form method="post" action="/services/{{ id }}/delete" data-confirm>
             <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
