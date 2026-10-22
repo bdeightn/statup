@@ -2,7 +2,7 @@
 
 All notable changes to Statup are listed here. The project is pre-v1: until 1.0, a minor version may change the interface or the database, and the README asks you to back up before upgrading.
 
-## Unreleased
+## 0.7.2, 2026-10-22
 
 - Certificates issued through the emSign intermediates, whose private keys were made public in October, are now refused when Statup checks a site, sends an alert or reaches the mail server (RUSTSEC-2026-0381, RUSTSEC-2026-0382). The other libraries move to their latest compatible versions.
 - The Docker image takes Alpine's latest security fixes (zlib, musl), in parts of the system that Statup itself does not use.
