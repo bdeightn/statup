@@ -40,7 +40,7 @@ Open `http://localhost:3000`, or your server's address on port 3000. An empty in
 
 1. **Account**: **Name**, **Email address** and **Password**. This first account is the administrator. The instance takes its time zone from your browser.
 2. **Page**: **Page name** (optional, up to 40 characters), **Logo** (optional), and **Page access**: **Members only** or **Public**.
-3. **Services**: "The tools to follow". Tick some of the most common, or type your own, and open **Monitor this service** to add a check. Optional, up to 50 at once.
+3. **Services**: "Your services". Tick some of the **Suggestions**, or type your own, and open **Monitor this service** to add a check. Optional, up to 50 at once.
 4. **Ready**: the address of the page, with **Copy**, to share with the people who use your services. **Open the dashboard** ends the setup.
 
 Everything can be changed later in [Settings](settings.md), and services added from the [Services](services.md) page.

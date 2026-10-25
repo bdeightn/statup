@@ -40,7 +40,7 @@ Ouvrez `http://localhost:3000`, ou l'adresse de votre serveur sur le port 3000. 
 
 1. **Compte** : **Nom**, **Adresse e-mail** et **Mot de passe**. Ce premier compte est celui de l'administrateur. L'instance reprend le fuseau horaire de votre navigateur.
 2. **Page** : **Nom de la page** (facultatif, 40 caractères au plus), **Logo** (facultatif), et **Accès à la page** : **Membres seulement** ou **Publique**.
-3. **Services** : « Les outils à suivre ». Cochez des services parmi les plus courants, ou tapez les vôtres, et ouvrez **Surveiller ce service** pour ajouter une vérification. Facultatif, 50 au plus en une fois.
+3. **Services** : « Vos services ». Cochez des services parmi les **Suggestions**, ou saisissez les vôtres, et ouvrez **Surveiller ce service** pour ajouter une vérification. Facultatif, 50 au plus en une fois.
 4. **Prête** : l'adresse de la page, avec **Copier**, à partager avec ceux qui utilisent vos services. **Ouvrir le tableau de bord** termine la mise en route.
 
 Tout se change ensuite dans les [Paramètres](settings.md), et d'autres services s'ajoutent depuis la page [Services](services.md).
