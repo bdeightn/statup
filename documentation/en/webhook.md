@@ -3,7 +3,7 @@ title: Webhook body
 description: "The JSON that a webhook channel receives for each incident, maintenance, announcement and detected outage."
 ---
 
-A channel of the tool **Other tool (webhook)** receives a `POST` with a JSON body at the address you give it: Zapier, Make, n8n, Power Automate, Home Assistant or a script of your own. See [Alerts](alerts.md) for the channels themselves.
+A channel of type **Webhook** receives a `POST` with a JSON body at the URL you give it: Zapier, Make, n8n, Power Automate, Home Assistant or a script of your own. See [Alerts](alerts.md) for the channels themselves.
 
 ## The body, version 1
 

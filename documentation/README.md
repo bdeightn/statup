@@ -16,7 +16,7 @@ Text in Markdown. Headings start at `##`: the title is the page's `#`.
 ```
 
 - `description` in double quotes, always.
-- In the words of the app: every label as `locales/<language>.json` writes it, in bold (**Send a test**, **Envoyer un essai**).
+- In the words of the app: every label as `locales/<language>.json` writes it, in bold (**Send a test**, **Envoyer un test**).
 - A page added to a folder is added to every folder and to `nav.json`, or the site does not build.
 - No HTML comment: the site refuses to serve one.
 - No em dash, no en dash.

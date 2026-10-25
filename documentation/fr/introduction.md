@@ -19,7 +19,7 @@ Ce qui se publie :
 - une **maintenance** quand des travaux sont prévus, avec un début et une fin qui s'appliquent d'eux-mêmes aux heures annoncées : voir [Maintenances](maintenance.md) ;
 - une **annonce** pour une nouveauté ou une information : voir [Annonces](announcements.md).
 
-Un incident fixe l'état des services qu'il cite tant qu'il est en analyse ou en correction, une maintenance tant qu'elle est en cours. Chaque événement peut aussi être envoyé dans Teams, Slack, par courriel ou vers d'autres outils : voir [Alertes](alerts.md).
+Un incident fixe l'état des services qu'il cite tant qu'il est en analyse ou en correction, une maintenance tant qu'elle est en cours. Chaque événement peut aussi être envoyé dans Teams, Slack, par e-mail ou vers d'autres outils : voir [Alertes](alerts.md).
 
 ## Les personnes
 

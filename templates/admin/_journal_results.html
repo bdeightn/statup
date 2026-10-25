@@ -2,7 +2,6 @@
 {% if results.total == 0 && !results.has_filters %}
 <div class="card empty-state">
     <p class="empty-state-title">{{ i18n.t("journal.empty_title") }}</p>
-    <p class="empty-state-text">{{ i18n.t("journal.empty_text") }}</p>
 </div>
 {% else if results.total == 0 %}
 <div class="card empty-state">

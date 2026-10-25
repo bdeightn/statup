@@ -38,7 +38,7 @@ test("what the journal keeps is switched from its menu", async ({ page }) => {
         await page.locator(".journal-edit").click();
         await page.locator(".journal-option").filter({ hasText: word }).click();
         await page.getByRole("button", { name: "Enregistrer" }).click();
-        await expect(page.getByText("Réglages du journal enregistrés.")).toBeVisible();
+        await expect(page.getByText("Paramètres du journal enregistrés.")).toBeVisible();
         await expect(page.locator(".journal-summary")).toContainText(summary);
     };
 

@@ -21,8 +21,8 @@ test("a visitor reads the page without signing in", async ({ page }, testInfo) =
 
 test("without a mail server the subscribe page offers no email form", async ({ page }) => {
     await page.goto("/subscribe");
-    await expect(page.getByRole("heading", { name: "Dans Teams, Slack ou par courriel" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Par courriel", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Dans Teams, Slack ou par e-mail" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Par e-mail", exact: true })).toHaveCount(0);
     await expect(page.locator("section.subscribe-band")).toHaveCount(0);
     await expect(page.locator('form[action="/subscribe/email"]')).toHaveCount(0);
 

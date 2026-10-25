@@ -66,7 +66,7 @@ Every update sets the next one again: left empty, it clears it. A delay is offer
 
 ### Reminder
 
-When an update is more than 5 minutes late, the member who announced it gets a notification, "Your update is overdue", and an email when a mail server is set. Once for each time announced.
+When an update is more than 5 minutes late, the member who announced it gets a notification, "Update overdue", and an email when an SMTP server is set. Once for each time announced.
 
 ## Resolve
 

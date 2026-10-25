@@ -3,7 +3,7 @@ title: Paramètres
 description: "Le nom, le logo, le fuseau horaire et le public de la page, la version, et l'organisation du tableau de bord."
 ---
 
-La page **Paramètres**, réservée aux administrateurs, s'ouvre sur quatre tuiles, sous **Gérer** :
+La page **Paramètres**, réservée aux administrateurs, s'ouvre sur quatre tuiles, sous **Gestion** :
 
 - **Équipe** : les membres et leurs rôles. Voir [Équipe et rôles](team.md).
 - **Alertes** : les canaux qui reçoivent les nouvelles. Voir [Alertes](alerts.md).
@@ -42,6 +42,6 @@ Statup interroge GitHub une fois par jour, la première fois une minute après s
 
 - Déplacez un bloc en le faisant glisser, ou avec les flèches du clavier.
 - Réglez sa largeur : **Un quart**, **La moitié** ou **Toute la largeur**.
-- **Réglages**, sur un bloc, ouvre ses options. **Masquer** le retire de la page ; **Ajouter un bloc** le fait revenir.
+- **Options**, sur un bloc, ouvre le choix de ce qu'il affiche. **Masquer** le retire de la page ; **Ajouter un bloc** le fait revenir.
 
 Chaque changement est enregistré aussitôt, pour tous les lecteurs : il n'y a qu'une organisation par instance. **Terminer**, ou Échap, quitte ce mode.

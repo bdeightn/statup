@@ -352,7 +352,7 @@ mod tests {
             ),
             [
                 "https://intranet.acme.local/…",
-                "pas de réponse à temps",
+                "délai dépassé",
                 "3 échecs de suite"
             ]
         );
@@ -389,7 +389,7 @@ mod tests {
         );
         assert_eq!(
             said(JournalKind::AlertSent, "slack · sent"),
-            ["Slack", "parti"]
+            ["Slack", "envoyé"]
         );
         assert_eq!(
             said(JournalKind::ServiceStatusSet, "major_outage, undo"),
@@ -432,7 +432,7 @@ mod tests {
         refused.ip = Some("203.0.113.7".into());
         assert_eq!(
             facts(&refused, &I18n::new("fr")),
-            ["mauvais mot de passe", "203.0.113.7"]
+            ["mot de passe incorrect", "203.0.113.7"]
         );
         assert_eq!(
             said(JournalKind::SignInBlocked, "too many attempts"),

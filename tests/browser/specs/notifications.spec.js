@@ -38,14 +38,14 @@ test("an admin adds a destination, tests it, and finds it listed", async ({ page
         const form = page.locator("form[data-destination-form]");
         await expect(form, "the add form is closed on arrival").toBeHidden();
         await page.getByText("Nouveau canal").click();
-        await page.getByRole("combobox", { name: "Outil" }).click();
-        await page.getByRole("option", { name: "Autre outil (webhook)" }).click();
+        await page.getByRole("combobox", { name: "Type" }).click();
+        await page.getByRole("option", { name: "Webhook" }).click();
         await expect(form.getByText("Statup y envoie un JSON")).toBeVisible();
 
         await form.getByLabel("Nom", { exact: true }).fill(name);
-        await form.getByLabel("Adresse du webhook").fill(`http://127.0.0.1:${tool.port}/hook`);
-        await form.getByRole("button", { name: "Envoyer un essai" }).click();
-        await expect(form.getByText("Message d'essai envoyé")).toBeVisible();
+        await form.getByLabel("URL du webhook").fill(`http://127.0.0.1:${tool.port}/hook`);
+        await form.getByRole("button", { name: "Envoyer un test" }).click();
+        await expect(form.getByText("Message de test envoyé.")).toBeVisible();
         expect(tool.received).toHaveLength(1);
         expect(tool.received[0].method).toBe("POST");
         expect(tool.received[0].body).toContain('"happening":"test"');
@@ -53,7 +53,7 @@ test("an admin adds a destination, tests it, and finds it listed", async ({ page
         await form.getByRole("button", { name: "Ajouter le canal", exact: true }).click();
         await expect(page).toHaveURL(/\/admin\/notifications\?added=/);
         const row = page.getByRole("listitem").filter({ hasText: name });
-        await expect(row.getByText("Aucun envoi pour l'instant")).toBeVisible();
+        await expect(row.getByText("Aucun envoi", { exact: true })).toBeVisible();
     } finally {
         tool.server.close();
     }
@@ -62,14 +62,14 @@ test("an admin adds a destination, tests it, and finds it listed", async ({ page
 test("without a mail server the Alerts page says nobody can subscribe by email", async ({ page }, testInfo) => {
     await page.goto("/admin/notifications");
 
-    const subscribers = page.getByRole("region", { name: "Abonnés par courriel" });
+    const subscribers = page.getByRole("region", { name: "Abonnés par e-mail" });
     await expect(subscribers.locator(".card-head .count")).toHaveText("0");
-    await expect(subscribers.getByText("Sans serveur d'envoi, personne ne peut s'abonner.")).toBeVisible();
-    await expect(subscribers.getByRole("link", { name: "Régler le serveur d'envoi" })).toBeVisible();
+    await expect(subscribers.getByText("Abonnement impossible sans serveur SMTP.")).toBeVisible();
+    await expect(subscribers.getByRole("link", { name: "Configurer le serveur SMTP" })).toBeVisible();
     await expect(page.locator('input[name="open"]')).toHaveCount(0);
 
     const first = await subscribers.boundingBox();
-    const second = await page.getByRole("region", { name: "Lien dans les messages" }).boundingBox();
+    const second = await page.getByRole("region", { name: "URL de la page" }).boundingBox();
     if (testInfo.project.name === "phone") {
         expect(second.y, "stacked: the address card comes below").toBeGreaterThanOrEqual(first.y + first.height);
     } else {

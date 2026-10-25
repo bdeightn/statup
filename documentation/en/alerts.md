@@ -13,32 +13,32 @@ In the app, **Notifications** is the bell in the header; **Alerts** are the mess
 
 | Field | Description |
 |---|---|
-| **Tool** | Microsoft Teams, Slack, Google Chat, Discord, Mattermost, ntfy (phone), Email, or Other tool (webhook). |
+| **Type** | Microsoft Teams, Slack, Google Chat, Discord, Mattermost, ntfy (phone), Email or Webhook. |
 | **Name** | Required, up to 60 characters, such as "#it-team channel". |
-| **Webhook address** | Or **Topic address** for ntfy, **Addresses** for email. Where to find it is below. |
+| **Webhook URL** | Or **Topic URL** for ntfy, **Addresses** for email. Where to find it is below. |
 | **Message language** | Français, English, Deutsch or Español. The instance's [default language](configuration.md#default_locale) at first. |
 | **Receives** | **Incidents**, **Maintenance**, **Announcements**, all ticked at first, and **Outages detected automatically**, not ticked. |
 
-**Send a test** posts a test message with the values of the form, without saving them, and says "Test message sent: it should arrive within seconds." or why it failed. A channel with nothing ticked under **Receives** is **Paused**.
+**Send a test** posts a test message with the values of the form, without saving them, and says "Test message sent." or why it failed. A channel with nothing ticked under **Receives** is **Paused**.
 
 To change a channel, open it by its name in the list. **Delete this channel** stops every message to it, waiting ones included.
 
-## Where to find the address
+## Where to find the URL
 
-| Tool | The address to paste |
+| Type | What to paste |
 |---|---|
 | Microsoft Teams | In the channel: ⋯, Workflows, then the template that posts a webhook request to the channel. The former incoming webhooks (Office 365 connectors) stopped in May 2026. |
 | Slack | On api.slack.com/apps, create an app, turn on Incoming Webhooks and add it to the channel. Rocket.Chat takes the same format: choose Slack. |
 | Google Chat | In the space: Apps & integrations, Webhooks, Add. |
 | Discord | In the channel settings: Integrations, Webhooks, New Webhook, Copy Webhook URL. |
 | Mattermost | Integrations, Incoming Webhooks, Add. |
-| ntfy | The topic address, such as `https://ntfy.sh/your-topic`, then subscribe to the topic in the ntfy app. A topic on ntfy.sh is readable by anyone who knows its name: choose one nobody guesses, or use your own ntfy server, with `?auth=` in the address for a protected topic. |
+| ntfy | The topic URL, such as `https://ntfy.sh/your-topic`, then subscribe to the topic in the ntfy app. A topic on ntfy.sh is readable by anyone who knows its name: choose one nobody guesses, or use your own ntfy server, with `?auth=` in the URL for a protected topic. |
 | Email | Addresses separated by commas, 50 at most. |
-| Other tool (webhook) | An address that takes a JSON `POST`: Zapier, Make, n8n, Power Automate, Home Assistant. See [Webhook body](webhook.md). |
+| Webhook | A URL that takes a JSON `POST`: Zapier, Make, n8n, Power Automate, Home Assistant. See [Webhook body](webhook.md). |
 
 ## Email
 
-Email channels need a mail server: set [`SMTP_HOST`](configuration.md#smtp_host) and the others in `.env`. Without it, the tool shows "Email (needs a mail server)".
+Email channels need an SMTP server: set [`SMTP_HOST`](configuration.md#smtp_host) and the others in `.env`. Without it, the type shows "Email (SMTP server not configured)".
 
 - Each address receives a copy of its own, so an address the server refuses keeps the message from no one else.
 - Every message of an event has the same subject and joins one conversation in the mail client.
@@ -47,7 +47,7 @@ Email channels need a mail server: set [`SMTP_HOST`](configuration.md#smtp_host)
 ## Delivery
 
 - Messages leave within seconds, in order for each channel.
-- A channel that does not answer is tried again after 30 seconds, 2, 10 and 30 minutes. After that, or at once when the tool refuses the address (404, 401), its waiting messages are given up.
+- A channel that does not answer is tried again after 30 seconds, 2, 10 and 30 minutes. After that, or at once when the service refuses the URL (404, 401), its waiting messages are given up.
 - The list of channels says, for each one, when it last sent, when it tries again and why, or when it failed and why.
 
 Outages found by [monitoring](monitoring.md) at the same minute are grouped in one message per channel, and their return in one more.
@@ -58,12 +58,12 @@ Visitors and members subscribe themselves from **Get notified**, described in [t
 
 - **See the subscribers** lists each person: who they are, what they receive, since when, and how their last email went, with the reason when it failed. **Remove** ends a subscription after a question in the row; the person receives nothing more.
 - **Visitors can subscribe** is ticked by an administrator and saved with **Save**. It is off on a new instance. Unticking it stops the emails to the visitors already subscribed, who come back when it is ticked again; members go on receiving theirs.
-- Nothing is sent without a mail server ([`SMTP_HOST`](configuration.md#smtp_host)): the card then says so and offers no switch.
+- Nothing is sent without an SMTP server ([`SMTP_HOST`](configuration.md#smtp_host)): the card then says so and offers no switch.
 - The [Journal](journal.md) keeps the address of a subscriber who confirmed, left or was removed for as long as it keeps its lines.
 
-## Link in the messages
+## Page URL
 
-Every message links to the page. At the foot of the Alerts page, **Link in the messages** shows that address:
+Every message links to the page. At the foot of the Alerts page, **Page URL** shows that address:
 
 - With [`PUBLIC_URL`](configuration.md#public_url) set, it is that address, and cannot be changed here.
 - Otherwise it can be typed here. The first channel added fills it with the address the Alerts page was opened at; an address emptied on purpose stays empty.

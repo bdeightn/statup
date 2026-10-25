@@ -66,7 +66,7 @@ Chaque mise à jour fixe à nouveau la suivante : laissé vide, le champ l'effa
 
 ### Rappel
 
-Quand une mise à jour a plus de 5 minutes de retard, le membre qui l'a annoncée reçoit une notification, « Votre mise à jour est en retard », et un courriel si un serveur de courriel est réglé. Une seule fois pour chaque heure annoncée.
+Quand une mise à jour a plus de 5 minutes de retard, le membre qui l'a annoncée reçoit une notification, « Mise à jour en retard », et un e-mail si un serveur SMTP est configuré. Une seule fois pour chaque heure annoncée.
 
 ## Résoudre
 

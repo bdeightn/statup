@@ -3,7 +3,7 @@ title: Corps du webhook
 description: "Le JSON que reçoit un canal webhook pour chaque incident, maintenance, annonce et panne détectée."
 ---
 
-Un canal de l'outil **Autre outil (webhook)** reçoit un `POST` avec un corps JSON à l'adresse que vous lui donnez : Zapier, Make, n8n, Power Automate, Home Assistant ou un script à vous. Pour les canaux eux-mêmes, voir [Alertes](alerts.md).
+Un canal de type **Webhook** reçoit un `POST` avec un corps JSON à l'URL que vous lui donnez : Zapier, Make, n8n, Power Automate, Home Assistant ou un script à vous. Pour les canaux eux-mêmes, voir [Alertes](alerts.md).
 
 ## Le corps, version 1
 
@@ -40,7 +40,7 @@ Un canal de l'outil **Autre outil (webhook)** reçoit un `POST` avec un corps JS
 
 ### `happening`
 
-Ce qui s'est produit : `opened`, `updated`, `rescheduled`, `started`, `closed`, `published`, `reviewed`, `service_down`, `service_up` ou `test`. `reviewed` correspond au bilan écrit une fois un incident résolu, envoyé une seule fois ; `message.text` en contient le début. `test` est le message envoyé par **Envoyer un essai**.
+Ce qui s'est produit : `opened`, `updated`, `rescheduled`, `started`, `closed`, `published`, `reviewed`, `service_down`, `service_up` ou `test`. `reviewed` correspond au bilan écrit une fois un incident résolu, envoyé une seule fois ; `message.text` en contient le début. `test` est le message envoyé par **Envoyer un test**.
 
 ### `event`
 

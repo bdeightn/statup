@@ -9,7 +9,7 @@ Chaque lecteur ne voit que les services que leur [visibilité](services.md#visib
 
 ## Le tableau de bord
 
-La page s'actualise d'elle-même chaque minute tant qu'elle est ouverte, et quand le lecteur revient sur son onglet. Si la connexion tombe, elle indique « Connexion perdue, nouvel essai en cours. »
+La page s'actualise d'elle-même chaque minute tant qu'elle est ouverte, et quand le lecteur revient sur son onglet. Si la connexion tombe, elle indique « Connexion perdue, nouvelle tentative en cours. »
 
 Les administrateurs choisissent ses blocs et leur disposition : voir [Paramètres](settings.md#arrange-the-dashboard). Les membres connectés trouvent un lien **Documentation** au pied de chaque page, vers ces pages.
 
@@ -51,14 +51,14 @@ Les membres connectés voient sur **Événements** combien d'incidents et de mai
 
 **Être prévenu**, en bas de chaque page et sur le bloc **Activité récente**, propose plusieurs façons de suivre sans ouvrir la page :
 
-- **Par courriel** : un visiteur tape son adresse, coche ce qu'il veut recevoir (**Incidents**, **Maintenances**, **Annonces**) et confirme par le lien qui lui est envoyé, valable un jour. Un membre connecté s'abonne à l'adresse de son compte, sans lien à confirmer, et change ses cases ou arrête au même endroit.
+- **Par e-mail** : un visiteur tape son adresse, coche ce qu'il veut recevoir (**Incidents**, **Maintenances**, **Annonces**) et confirme par le lien qui lui est envoyé, valable un jour. Un membre connecté s'abonne à l'adresse de son compte, sans lien à confirmer, et change ses cases ou arrête au même endroit.
 - **Avec un lecteur de flux** : l'adresse du flux Atom, à copier.
 - **Dans Teams ou Slack** : par les canaux qu'un administrateur règle dans [Alertes](alerts.md).
 - **Ou cette page** : laissée ouverte, elle se met à jour toute seule chaque minute.
 
-Chaque courriel porte une nouvelle : un incident ouvert, une mise à jour publiée, sa fin et son bilan, une maintenance annoncée, déplacée, commencée ou terminée, une annonce. Il ne nomme que les services que son lecteur a le droit de voir : un visiteur ne lit jamais le nom d'un service réservé aux membres. Chaque courriel se termine par **Se désabonner**, et les messageries peuvent proposer leur propre bouton de désabonnement.
+Chaque e-mail porte une nouvelle : un incident ouvert, une mise à jour publiée, sa fin et son bilan, une maintenance annoncée, déplacée, commencée ou terminée, une annonce. Il ne nomme que les services que son lecteur a le droit de voir : un visiteur ne lit jamais le nom d'un service réservé aux membres. Chaque e-mail se termine par **Se désabonner**, et les messageries peuvent proposer leur propre bouton de désabonnement.
 
-**Par courriel** n'apparaît que si l'instance peut envoyer des courriels ([`SMTP_HOST`](configuration.md#smtp_host)) et connaît sa propre adresse ([`PUBLIC_URL`](configuration.md#public_url), ou le **Lien dans les messages** des [Alertes](alerts.md#link-in-the-messages)). Pour les visiteurs, il faut en plus que la page soit ouverte à tout le monde et qu'un administrateur leur ouvre les abonnements dans [Alertes](alerts.md) : ils sont fermés sur une instance neuve.
+**Par e-mail** n'apparaît que si l'instance peut envoyer des e-mails ([`SMTP_HOST`](configuration.md#smtp_host)) et connaît sa propre adresse ([`PUBLIC_URL`](configuration.md#public_url), ou l'**URL de la page** des [Alertes](alerts.md#page-url)). Pour les visiteurs, il faut en plus que la page soit ouverte à tout le monde et qu'un administrateur leur ouvre les abonnements dans [Alertes](alerts.md) : ils sont fermés sur une instance neuve.
 
 ## Le flux Atom
 

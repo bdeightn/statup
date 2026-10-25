@@ -5,7 +5,7 @@ description: "How a member gets back in, by email or through an administrator, a
 
 ## By email
 
-With a mail server set ([`SMTP_HOST`](configuration.md#smtp_host) and the others) and the address of the page known ([`PUBLIC_URL`](configuration.md#public_url), or **Link in the messages** at the foot of the [Alerts](alerts.md) page), members reset their own password: **Forgot your password?** on the sign-in page emails them a link.
+With an SMTP server set ([`SMTP_HOST`](configuration.md#smtp_host) and the others) and the page URL known ([`PUBLIC_URL`](configuration.md#public_url), or **Page URL** at the foot of the [Alerts](alerts.md) page), members reset their own password: **Forgot your password?** on the sign-in page emails them a link.
 
 - The link works once, for one hour.
 - Choosing a new password signs them in and signs out every other session of the account.
@@ -13,7 +13,7 @@ With a mail server set ([`SMTP_HOST`](configuration.md#smtp_host) and the others
 
 ## Through an administrator
 
-Without a mail server, the same page asks the member to see an administrator, who gives a temporary password from the [Team](team.md) page. Its **Reset from the server** link leads to the part below.
+Without an SMTP server, the same page asks the member to see an administrator, who gives a temporary password from the [Team](team.md) page. Its **Reset from the server** link leads to the part below.
 
 ## From the server
 

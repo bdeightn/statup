@@ -105,7 +105,7 @@ Ask GitHub once a day whether a newer version is published, and tell administrat
 
 ## Email
 
-The mail server of the email alerts, of the [forgotten password](forgotten-password.md) links and of the emails to [subscribers](status-page.md#get-notified). Email channels and subscriptions are offered only when `SMTP_HOST` is set.
+The SMTP server of the email alerts, of the [forgotten password](forgotten-password.md) links and of the emails to [subscribers](status-page.md#get-notified). Email channels and subscriptions are offered only when `SMTP_HOST` is set.
 
 > [!NOTE]
 > One incident sends one email to each subscriber. A mailbox account, such as Microsoft 365 or Gmail, caps how many emails it sends in a minute and in a day: past a few hundred subscribers, use a transactional mail service. Sign the domain of `SMTP_FROM` with DKIM and publish its SPF and DMARC records, so the emails reach the inbox; mail clients may then show their own unsubscribe button, when the page is served over `https`.
@@ -116,7 +116,7 @@ The mail server of the email alerts, of the [forgotten password](forgotten-passw
 - Values: a host name, such as `smtp.example.com`
 - Since: 0.3.0
 
-The mail server. Setting it makes `SMTP_FROM` required.
+The SMTP server. Setting it makes `SMTP_FROM` required.
 
 ### `SMTP_SECURITY`
 
@@ -124,7 +124,7 @@ The mail server. Setting it makes `SMTP_FROM` required.
 - Values: `starttls`, `tls`, `none`
 - Since: 0.3.0
 
-How the connection to the mail server is secured. `none` for a relay on your own network.
+How the connection to the SMTP server is secured. `none` for a relay on your own network.
 
 ### `SMTP_PORT`
 
@@ -132,7 +132,7 @@ How the connection to the mail server is secured. `none` for a relay on your own
 - Values: a port number
 - Since: 0.3.0
 
-The port of the mail server, when it is not the usual one for its security.
+The port of the SMTP server, when it is not the usual one for its security.
 
 ### `SMTP_USERNAME`
 
@@ -140,7 +140,7 @@ The port of the mail server, when it is not the usual one for its security.
 - Values: a user name
 - Since: 0.3.0
 
-With `SMTP_PASSWORD`, when the mail server asks for them. Set both or neither.
+With `SMTP_PASSWORD`, when the SMTP server asks for them. Set both or neither.
 
 ### `SMTP_PASSWORD`
 

@@ -203,7 +203,7 @@ async fn without_a_mail_server_the_card_says_so_and_has_no_switch() {
 
     let (_, page) = app.english(ALERTS).await;
 
-    assert!(page.contains("Without a mail server, nobody can subscribe."));
+    assert!(page.contains("Subscriptions need an SMTP server."));
     assert!(!page.contains(r#"name="open""#));
 }
 
@@ -268,11 +268,11 @@ async fn the_list_shows_who_receives_what_since_when_and_how_the_last_email_went
     assert!(page.contains("Member"));
     assert!(page.contains("ana@example.com"));
     assert!(page.contains("incidents, maintenance, announcements"));
-    assert!(page.contains("Nothing sent yet"));
+    assert!(page.contains("Nothing sent"));
     assert!(page.contains("ben@example.com"));
     assert!(page.contains("Visitor"));
     assert!(page.contains("incidents, announcements"));
-    assert!(page.contains("no mail server set"));
+    assert!(page.contains("SMTP server not configured"));
     let date = I18n::new("en").format_date_long(&clock::local_date(&Utc::now()));
     assert!(page.contains(&format!("since {date}")));
     assert!(

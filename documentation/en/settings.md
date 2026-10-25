@@ -3,7 +3,7 @@ title: Settings
 description: "The page's name, logo, time zone and audience, the version, and the layout of the dashboard."
 ---
 
-**Settings**, for administrators, opens on four tiles, under **Manage**:
+**Settings**, for administrators, opens on four tiles, under **Management**:
 
 - **Team**: the members and their roles. See [Team and roles](team.md).
 - **Alerts**: the channels that receive the news. See [Alerts](alerts.md).
@@ -42,6 +42,6 @@ Statup asks GitHub once a day, the first time a minute after it starts. The answ
 
 - Move a block by dragging it, or with the arrow keys.
 - Set its width: **A quarter**, **Half** or **Full width**.
-- **Settings**, on a block, opens its options. **Hide** takes it off the page; **Add a block** brings it back.
+- **Options**, on a block, opens the choice of what it shows. **Hide** takes it off the page; **Add a block** brings it back.
 
 Every change is saved at once, for every reader: there is one layout per instance. **Done**, or Escape, leaves the mode.

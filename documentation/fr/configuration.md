@@ -103,12 +103,12 @@ Statup lance chaque minute les vérifications des services qui en ont une. `fals
 
 Statup demande une fois par jour à GitHub si une version plus récente est publiée, et le signale aux administrateurs dans les Paramètres. La requête ne transmet aucune information sur l'instance. `false` pour une instance qui ne doit pas sortir sur internet.
 
-## Courriel
+## E-mail
 
-Le serveur de courriel des alertes par courriel, des liens de [mot de passe oublié](forgotten-password.md) et des courriels aux [abonnés](status-page.md#get-notified). Les canaux Courriel et l'abonnement ne sont proposés que si `SMTP_HOST` est défini.
+Le serveur SMTP des alertes par e-mail, des liens de [mot de passe oublié](forgotten-password.md) et des e-mails aux [abonnés](status-page.md#get-notified). Les canaux E-mail et l'abonnement ne sont proposés que si `SMTP_HOST` est défini.
 
 > [!NOTE]
-> Un incident envoie un courriel à chaque abonné. Une boîte de messagerie, comme Microsoft 365 ou Gmail, limite le nombre de courriels envoyés par minute et par jour : au-delà de quelques centaines d'abonnés, passez par un service d'envoi transactionnel. Signez le domaine de `SMTP_FROM` avec DKIM et publiez ses enregistrements SPF et DMARC, pour que les courriels arrivent en boîte de réception ; les messageries peuvent alors afficher leur propre bouton de désabonnement, quand la page est servie en `https`.
+> Un incident envoie un e-mail à chaque abonné. Une boîte de messagerie, comme Microsoft 365 ou Gmail, limite le nombre d'e-mails envoyés par minute et par jour : au-delà de quelques centaines d'abonnés, passez par un service d'envoi transactionnel. Signez le domaine de `SMTP_FROM` avec DKIM et publiez ses enregistrements SPF et DMARC, pour que les e-mails arrivent en boîte de réception ; les messageries peuvent alors afficher leur propre bouton de désabonnement, quand la page est servie en `https`.
 
 ### `SMTP_HOST`
 
@@ -116,7 +116,7 @@ Le serveur de courriel des alertes par courriel, des liens de [mot de passe oubl
 - Valeurs : un nom d'hôte, comme `smtp.example.com`
 - Depuis : 0.3.0
 
-Le serveur de courriel. Le définir rend `SMTP_FROM` obligatoire.
+Le serveur SMTP. Le définir rend `SMTP_FROM` obligatoire.
 
 ### `SMTP_SECURITY`
 
@@ -124,7 +124,7 @@ Le serveur de courriel. Le définir rend `SMTP_FROM` obligatoire.
 - Valeurs : `starttls`, `tls`, `none`
 - Depuis : 0.3.0
 
-La façon dont la connexion au serveur de courriel est sécurisée. `none` pour un relais sur votre propre réseau.
+La façon dont la connexion au serveur SMTP est sécurisée. `none` pour un relais sur votre propre réseau.
 
 ### `SMTP_PORT`
 
@@ -132,7 +132,7 @@ La façon dont la connexion au serveur de courriel est sécurisée. `none` pour 
 - Valeurs : un numéro de port
 - Depuis : 0.3.0
 
-Le port du serveur de courriel, quand ce n'est pas le port habituel pour sa sécurisation.
+Le port du serveur SMTP, quand ce n'est pas le port habituel pour sa sécurisation.
 
 ### `SMTP_USERNAME`
 
@@ -140,7 +140,7 @@ Le port du serveur de courriel, quand ce n'est pas le port habituel pour sa séc
 - Valeurs : un nom d'utilisateur
 - Depuis : 0.3.0
 
-Avec `SMTP_PASSWORD`, quand le serveur de courriel les demande. Définissez les deux ou aucun.
+Avec `SMTP_PASSWORD`, quand le serveur SMTP les demande. Définissez les deux ou aucun.
 
 ### `SMTP_PASSWORD`
 
@@ -156,7 +156,7 @@ Le mot de passe qui va avec `SMTP_USERNAME`.
 - Valeurs : un expéditeur, comme `Statup <status@example.com>`
 - Depuis : 0.3.0
 
-L'expéditeur de chaque courriel envoyé par Statup.
+L'expéditeur de chaque e-mail envoyé par Statup.
 
 ## Stockage et serveur
 

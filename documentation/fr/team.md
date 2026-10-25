@@ -24,7 +24,7 @@ Les comptes sont créés par un administrateur : personne d'autre ne peut s'ins
 
 **Paramètres**, **Équipe**, puis **Nouveau membre** en tête de la carte **Membres** : **Nom**, **Adresse e-mail** et **Rôle**, **Lecteur** par défaut. **Créer le compte** affiche une seule fois un mot de passe provisoire, avec **Copier**.
 
-- Aucun courriel n'est envoyé : transmettez vous-même le mot de passe. Il n'est affiché que cette fois-là et n'est conservé nulle part.
+- Aucun e-mail n'est envoyé : transmettez vous-même le mot de passe. Il n'est affiché que cette fois-là et n'est conservé nulle part.
 - Il reste valable sept jours. À sa première connexion, le membre doit choisir le sien, sur **Choisissez votre mot de passe**.
 - Une adresse déjà utilisée par un autre compte, même désactivé, est refusée.
 
@@ -74,7 +74,7 @@ Sous **Supprimer le groupe**, au pied de sa page, **Supprimer** demande une conf
 
 Chaque membre accède à **Mon profil** depuis son menu :
 
-- **Nom et adresse** : son nom et son adresse e-mail.
+- **Informations du compte** : son nom et son adresse e-mail.
 - **Mot de passe** : l'actuel, puis le nouveau deux fois. Les autres sessions du compte sont fermées.
 
 La langue se choisit avec le sélecteur de langue, et reste enregistrée sur le compte. Le thème clair ou sombre est gardé par chaque navigateur.

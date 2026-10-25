@@ -57,7 +57,7 @@ async fn the_lines_are_listed_and_narrowed_by_family() {
     let app = spawn_with_admin().await;
     let (status, body) = app.get("/admin/journal").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("Rien à signaler pour l"));
+    assert!(body.contains("Aucune entrée"));
 
     let mut line = NewJournalEntry::new(JournalKind::AppError);
     line.subject = Some("Database is locked".into());
@@ -67,7 +67,7 @@ async fn the_lines_are_listed_and_narrowed_by_family() {
     assert!(body.contains("Erreur : Database is locked"));
     let (_, body) = app.get("/admin/journal?category=members").await;
     assert!(!body.contains("Database is locked"));
-    assert!(body.contains("Aucune ligne ne correspond"));
+    assert!(body.contains("Aucune entrée ne correspond"));
 }
 
 #[tokio::test]

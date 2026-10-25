@@ -560,7 +560,7 @@ async fn instance_name_replaces_the_brand_in_masthead_and_title() {
         "tab title should end with the instance name"
     );
     assert!(
-        body.contains("Réglages enregistrés."),
+        body.contains("Paramètres enregistrés."),
         "the settings page should confirm the save once"
     );
     assert!(

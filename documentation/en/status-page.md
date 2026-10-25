@@ -58,7 +58,7 @@ Signed-in members see on **Events** how many incidents and maintenance were publ
 
 Each email tells one piece of news: an incident opened, an update posted, its end and its review, a maintenance announced, moved, started or finished, an announcement. It names only the services its reader may see: a visitor never reads the name of a service kept for members. Every email ends with **Unsubscribe**, and mail clients can offer their own unsubscribe button.
 
-**By email** shows only when the instance can send email ([`SMTP_HOST`](configuration.md#smtp_host)) and knows its own address ([`PUBLIC_URL`](configuration.md#public_url), or the **Link in the messages** of [Alerts](alerts.md#link-in-the-messages)). For visitors, the page must also be open to everyone, and an administrator must open subscriptions to them in [Alerts](alerts.md): they are closed on a new instance.
+**By email** shows only when the instance can send email ([`SMTP_HOST`](configuration.md#smtp_host)) and knows its own address ([`PUBLIC_URL`](configuration.md#public_url), or the **Page URL** of [Alerts](alerts.md#page-url)). For visitors, the page must also be open to everyone, and an administrator must open subscriptions to them in [Alerts](alerts.md): they are closed on a new instance.
 
 ## The Atom feed
 
