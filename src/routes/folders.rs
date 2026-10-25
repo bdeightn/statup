@@ -13,7 +13,7 @@ use super::audience::{AccessBlock, Audience};
 use super::services::new_folder_refused;
 use super::{Frame, render};
 use crate::db::DbPool;
-use crate::error::AppError;
+use crate::error::{AppError, name_taken_on_conflict};
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
 use crate::models::{JournalKind, Service, ServiceFolder, User, Visibility, check_folder_name};
@@ -158,6 +158,18 @@ async fn free_name(pool: &DbPool, raw: &str, except: Option<i64>) -> Result<Stri
         return Err(AppError::validation("validation.folder_name_taken"));
     }
     Ok(name)
+}
+
+async fn create_named(pool: &DbPool, raw: &str) -> Result<(i64, String), AppError> {
+    let name = free_name(pool, raw, None).await?;
+    let id = FolderRepository::create(pool, &name)
+        .await
+        .map_err(taken_on_conflict)?;
+    Ok((id, name))
+}
+
+fn taken_on_conflict(error: sqlx::Error) -> AppError {
+    name_taken_on_conflict(error, "validation.folder_name_taken")
 }
 
 async fn find(pool: &DbPool, id: i64) -> Result<ServiceFolder, AppError> {
@@ -326,14 +338,13 @@ pub async fn create_folder(
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<FolderNameInput>,
 ) -> Result<Response, AppError> {
-    let name = match free_name(&state.pool, &input.name, None).await {
-        Ok(name) => name,
+    let (id, name) = match create_named(&state.pool, &input.name).await {
+        Ok(created) => created,
         Err(AppError::Validation(key)) => {
             return new_folder_refused(&state, &user, (csrf_token, i18n), &key, input.name).await;
         }
         Err(e) => return Err(e),
     };
-    let id = FolderRepository::create(&state.pool, &name).await?;
     NewJournalEntry::new(JournalKind::FolderCreated)
         .by(&user)
         .about(&name)
@@ -358,8 +369,9 @@ pub async fn save_settings(
     let before = shown_audience(&state.pool, id).await?;
     let name = refusal(free_name(&state.pool, &input.name, Some(id)).await, &i18n)?;
     let audience = refusal(checked(&state.pool, &input, &before).await, &i18n)?;
-    let (name, audience) = match (name, audience) {
-        (Ok(name), Ok(audience)) => (name, audience),
+    let name = write_if_checked(&state.pool, id, (name, &audience), &i18n).await?;
+    let name = match (name, audience) {
+        (Ok(name), Ok(_)) => name,
         (name, audience) => {
             let posted = Posted {
                 access_error: audience.as_ref().err().cloned(),
@@ -376,8 +388,6 @@ pub async fn save_settings(
             return render_folder(&state, &user, (csrf_token, i18n), id, shown).await;
         }
     };
-    FolderRepository::save_settings(&state.pool, id, &name, audience.mode, audience.grants())
-        .await?;
     if folder.name != name {
         NewJournalEntry::new(JournalKind::FolderRenamed)
             .by(&user)
@@ -396,6 +406,23 @@ pub async fn save_settings(
             .await;
     }
     Ok(Redirect::to(&format!("/services/folders/{id}?saved=1")).into_response())
+}
+
+/// Writes the settings once both checks pass. A name given to another folder
+/// since its check is refused the way the check refuses it.
+async fn write_if_checked(
+    pool: &DbPool,
+    id: i64,
+    (name, audience): (Result<String, String>, &Result<Audience, String>),
+    i18n: &I18n,
+) -> Result<Result<String, String>, AppError> {
+    let (Ok(free), Ok(audience)) = (&name, audience) else {
+        return Ok(name);
+    };
+    let written = FolderRepository::save_settings(pool, id, free, audience.mode, audience.grants())
+        .await
+        .map_err(taken_on_conflict);
+    Ok(refusal(written, i18n)?.map(|_| free.clone()))
 }
 
 /// A refused value becomes the sentence that says why; any other error

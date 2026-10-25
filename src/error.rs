@@ -194,6 +194,15 @@ fn is_foreign_key_violation(error: &sqlx::Error) -> bool {
     matches!(error, sqlx::Error::Database(db) if db.is_foreign_key_violation())
 }
 
+/// A name checked as free, then given to another row before the write: the
+/// unique index refuses it, and the reader is told what the check says.
+pub(crate) fn name_taken_on_conflict(error: sqlx::Error, key: &str) -> AppError {
+    match &error {
+        sqlx::Error::Database(db) if db.is_unique_violation() => AppError::validation(key),
+        _ => AppError::Database(error),
+    }
+}
+
 /// Statuses the timeout and body limit layers answer without a page.
 fn bare_status_key(status: StatusCode) -> Option<&'static str> {
     match status {
@@ -237,5 +246,54 @@ mod tests {
             Some("error.timeout")
         );
         assert_eq!(bare_status_key(StatusCode::NOT_FOUND), None);
+    }
+
+    fn refusal_key(error: AppError) -> Option<String> {
+        match error {
+            AppError::Validation(key) => Some(key),
+            _ => None,
+        }
+    }
+
+    /// Two people naming a folder or a group alike at the same moment both
+    /// pass the check; the second write meets the unique name.
+    #[tokio::test]
+    async fn a_name_taken_between_check_and_write_is_a_refusal() {
+        use crate::repositories::{FolderRepository, GroupRepository};
+        let pool = crate::test_helpers::test_pool().await;
+
+        FolderRepository::create(&pool, "Apps").await.unwrap();
+        let folder = FolderRepository::create(&pool, "apps").await.unwrap_err();
+        assert_eq!(
+            refusal_key(name_taken_on_conflict(
+                folder,
+                "validation.folder_name_taken"
+            ))
+            .as_deref(),
+            Some("validation.folder_name_taken")
+        );
+
+        GroupRepository::create(&pool, "Support").await.unwrap();
+        let other = GroupRepository::create(&pool, "Sales").await.unwrap();
+        let created = GroupRepository::create(&pool, "SUPPORT").await.unwrap_err();
+        let renamed = GroupRepository::rename(&pool, other, "support")
+            .await
+            .unwrap_err();
+        for error in [created, renamed] {
+            assert_eq!(
+                refusal_key(name_taken_on_conflict(error, "validation.group_name_taken"))
+                    .as_deref(),
+                Some("validation.group_name_taken")
+            );
+        }
+    }
+
+    #[test]
+    fn any_other_database_error_stays_one() {
+        let error = name_taken_on_conflict(sqlx::Error::RowNotFound, "validation.group_name_taken");
+        assert!(matches!(
+            error,
+            AppError::Database(sqlx::Error::RowNotFound)
+        ));
     }
 }

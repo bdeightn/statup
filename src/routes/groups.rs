@@ -11,7 +11,7 @@ use serde::Deserialize;
 use super::admin::refused_page;
 use super::group_access::{AccessFolder, AccessQuery, GroupAccess};
 use super::{Frame, group_access, render};
-use crate::error::AppError;
+use crate::error::{AppError, name_taken_on_conflict};
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
 use crate::models::{GroupMember, JournalKind, MemberGroup, User, check_group_name};
@@ -105,6 +105,26 @@ async fn free_name(state: &AppState, raw: &str, except: Option<i64>) -> Result<S
     Ok(name)
 }
 
+async fn create_named(state: &AppState, raw: &str) -> Result<(i64, String), AppError> {
+    let name = free_name(state, raw, None).await?;
+    let id = GroupRepository::create(&state.pool, &name)
+        .await
+        .map_err(taken_on_conflict)?;
+    Ok((id, name))
+}
+
+async fn rename_to(state: &AppState, id: i64, raw: &str) -> Result<String, AppError> {
+    let name = free_name(state, raw, Some(id)).await?;
+    GroupRepository::rename(&state.pool, id, &name)
+        .await
+        .map_err(taken_on_conflict)?;
+    Ok(name)
+}
+
+fn taken_on_conflict(error: sqlx::Error) -> AppError {
+    name_taken_on_conflict(error, "validation.group_name_taken")
+}
+
 async fn notice_of(
     state: &AppState,
     query: &GroupQuery,
@@ -176,9 +196,8 @@ pub async fn create_group(
     Locale(i18n): Locale,
     HtmlForm(input): HtmlForm<GroupNameInput>,
 ) -> Result<Response, AppError> {
-    match free_name(&state, &input.name, None).await {
-        Ok(name) => {
-            let id = GroupRepository::create(&state.pool, &name).await?;
+    match create_named(&state, &input.name).await {
+        Ok((id, name)) => {
             NewJournalEntry::new(JournalKind::GroupCreated)
                 .by(&admin)
                 .about(&name)
@@ -204,7 +223,7 @@ pub async fn rename_group(
     let group = GroupRepository::find(&state.pool, id)
         .await?
         .ok_or(AppError::NotFound)?;
-    let name = match free_name(&state, &input.name, Some(id)).await {
+    let name = match rename_to(&state, id, &input.name).await {
         Ok(name) => name,
         Err(AppError::Validation(key)) => {
             let rename = RenameForm {
@@ -215,7 +234,6 @@ pub async fn rename_group(
         }
         Err(e) => return Err(e),
     };
-    GroupRepository::rename(&state.pool, id, &name).await?;
     if group.name != name {
         NewJournalEntry::new(JournalKind::GroupRenamed)
             .by(&admin)
