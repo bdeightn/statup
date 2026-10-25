@@ -22,7 +22,7 @@
             <a href="/events/{{ id }}" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("events.back_to_event") }}</a>
             <h1 class="page-title">{{ i18n.t("events.edit_heading") }}</h1>
             {% when None %}
-            <a href="/events" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("events.back_to_events") }}</a>
+            <a href="/events" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("events.heading") }}</a>
             <h1 class="page-title">{{ i18n.t("events.new_heading") }}</h1>
             {% endmatch %}
         </div>
@@ -196,7 +196,7 @@
 
                     {% if edit_id.is_none() || (form.kind_is("publication") && !maintenances.is_empty()) %}
                     <details class="more-options"{% if form.options_in_use() %} open{% endif %}>
-                        <summary>{{ i18n.t("events.more_options") }}</summary>
+                        <summary>{{ i18n.t("events.more_options") }}{% call ui::caret_icon() %}{% endcall %}</summary>
                         {% if edit_id.is_none() %}
                         <div class="reveal-row form-grid{% if form.kind_is("incident") %} is-open{% endif %}" data-for-kind="incident">
                             <fieldset class="choice-group">

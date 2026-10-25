@@ -9,7 +9,7 @@ Les éditeurs et les administrateurs gèrent les services depuis la page **Servi
 
 ## Créer un service
 
-**Nouveau service**, sur la page Services, ouvre le formulaire :
+**Nouveau**, puis **Service**, sur la page Services, ouvre le formulaire :
 
 | Champ | Description |
 |---|---|
@@ -26,8 +26,8 @@ Pour modifier un service par la suite, ouvrez-le par son nom ou par son crayon s
 ## Icônes
 
 - 24 icônes fournies, de Serveur à Impression.
-- **Envoyer une icône** : PNG, JPG, WebP ou SVG, jusqu'à 256 Ko. Les images de plus de 128 pixels sont réduites ; un SVG est débarrassé de tout ce qui pourrait exécuter ou charger quelque chose.
-- Les icônes envoyées forment une seule bibliothèque, partagée par les services, les événements et les modèles, sous **Icônes** sur la page Services. Une icône encore utilisée ne peut pas être supprimée.
+- **Envoyer une icône**, dans l'en-tête de la carte **Vos icônes** de la page de la bibliothèque d'icônes : PNG, JPG, WebP ou SVG, jusqu'à 256 Ko. Les images de plus de 128 pixels sont réduites ; un SVG est débarrassé de tout ce qui pourrait exécuter ou charger quelque chose.
+- Les icônes envoyées forment une seule bibliothèque, partagée par les services, les événements et les modèles, accessible par **Gérer vos icônes** dans le choix d'icône d'un service. Une icône encore utilisée ne peut pas être supprimée.
 
 ## Visibilité
 
@@ -58,12 +58,11 @@ Sur la page Services, chaque dossier est une carte avec son nom, son nombre de s
 
 ### Créer un dossier
 
-**Nouveau dossier**, en haut de la page Services, puis un **Nom du dossier** de 100 caractères au plus, unique, et **Créer le dossier**. La page du dossier s'ouvre.
+**Nouveau**, puis **Dossier**, en haut de la page Services, puis un **Nom du dossier** de 100 caractères au plus, unique, et **Créer le dossier**. La page du dossier s'ouvre.
 
 ### Page d'un dossier
 
-- **Renommer**, à côté de son nom.
-- « Visibilité : Restreinte, Compta », avec **Modifier**, ouvre la visibilité du dossier, le même réglage que celui d'un service, puis **Enregistrer**.
+- « Restreinte, Compta », à droite de son nom, avec **Modifier**, ouvre son **Nom du dossier** et sa visibilité, le même réglage que celui d'un service, puis **Enregistrer**.
 - **Ajouter des services** liste les services qui ne sont pas dans ce dossier, avec une recherche au-delà de huit ; cochez-les, puis **Ajouter**. Un service rangé dans un autre dossier passe dans celui-ci.
 - **Retirer**, sur la ligne d'un service, le sort du dossier.
 
@@ -105,7 +104,7 @@ Tant qu'un événement ou une panne détectée fixe l'état d'un service, son me
 
 ## Ordre
 
-**Changer l'ordre** place une flèche vers le haut et une vers le bas sur chaque service, qui le déplace dans sa carte, et sur chaque dossier, qui le déplace parmi les autres. L'ordre est enregistré peu après le dernier déplacement, et s'applique partout où les services sont listés, tableau de bord compris. **Terminer** ou Échap quitte ce mode.
+**Organiser** place une flèche vers le haut et une vers le bas sur chaque service, qui le déplace dans sa carte, et sur chaque dossier, qui le déplace parmi les autres. L'ordre est enregistré peu après le dernier déplacement, et s'applique partout où les services sont listés, tableau de bord compris. **Terminer** ou Échap quitte ce mode.
 
 Dans ce même mode, **Afficher d'abord les services perturbés** place chaque service qui n'est pas **Opérationnel** avant les autres, chaque groupe dans l'ordre choisi. Cette option est désactivée par défaut.
 
@@ -130,7 +129,7 @@ Aucun pourcentage : la légende compte les jours avec incident.
 
 Un service qu'aucun événement n'a jamais cité peut être supprimé depuis son formulaire, avec **Supprimer le service**. Il disparaît sans laisser de trace, pannes détectées comprises.
 
-Un service cité par des événements est conservé, pour que leur historique reste complet. Pour ne plus le montrer sur le tableau de bord, un administrateur le décoche dans **Organiser** : voir [Paramètres](settings.md#arrange-the-dashboard). Un service décoché revient dès qu'il n'est plus **Opérationnel**.
+Un service cité par des événements est conservé, pour que leur historique reste complet. Pour ne plus le montrer sur le tableau de bord, un administrateur le décoche dans **Organiser** du tableau de bord : voir [Paramètres](settings.md#arrange-the-dashboard). Un service décoché revient dès qu'il n'est plus **Opérationnel**.
 
 ## Qui peut faire quoi
 

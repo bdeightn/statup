@@ -3,16 +3,14 @@
 
 mod common;
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::StatusCode;
 use reqwest::cookie::Jar;
 use reqwest::redirect::Policy;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{TcpListener, TcpStream};
 
-use common::{Options, TestApp, extract_csrf_token};
+use common::{MailSink, Options, TestApp, extract_csrf_token};
 use statup::models::Role;
 
 const PUBLIC_URL: &str = "http://status.test";
@@ -22,95 +20,6 @@ const NEW_PASSWORD: &str = "a brand new passphrase to keep";
 const FORM: &str = r#"action="/password/forgot""#;
 const RESET_FORM: &str = r#"action="/password/reset""#;
 const TOKEN_INPUT: &str = r#"name="token""#;
-
-type Mailbox = Arc<Mutex<Vec<String>>>;
-
-/// A mail server that accepts everything and keeps each message it receives.
-struct MailSink {
-    port: u16,
-    messages: Mailbox,
-}
-
-impl MailSink {
-    async fn start() -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let port = listener.local_addr().expect("address").port();
-        let messages = Mailbox::default();
-        let kept = Arc::clone(&messages);
-        tokio::spawn(async move {
-            while let Ok((stream, _)) = listener.accept().await {
-                tokio::spawn(converse(stream, Arc::clone(&kept)));
-            }
-        });
-        Self { port, messages }
-    }
-
-    fn received(&self) -> Vec<String> {
-        self.messages
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    /// Waits up to five seconds for `count` messages and returns what arrived.
-    async fn wait_for(&self, count: usize) -> Vec<String> {
-        for _ in 0..100 {
-            if self.received().len() >= count {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        self.received()
-    }
-}
-
-async fn converse(stream: TcpStream, messages: Mailbox) {
-    let (reader, mut writer) = stream.into_split();
-    let mut lines = BufReader::new(reader);
-    if writer.write_all(b"220 sink ready\r\n").await.is_err() {
-        return;
-    }
-    let mut line = String::new();
-    loop {
-        line.clear();
-        match lines.read_line(&mut line).await {
-            Ok(0) | Err(_) => return,
-            Ok(_) => {}
-        }
-        let command = line.trim_end().to_ascii_uppercase();
-        let reply: &[u8] = if command.starts_with("QUIT") {
-            let _ = writer.write_all(b"221 bye\r\n").await;
-            return;
-        } else if command.starts_with("DATA") {
-            let _ = writer.write_all(b"354 go ahead\r\n").await;
-            let message = read_message(&mut lines).await;
-            messages
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(message);
-            b"250 queued\r\n"
-        } else {
-            b"250 ok\r\n"
-        };
-        if writer.write_all(reply).await.is_err() {
-            return;
-        }
-    }
-}
-
-async fn read_message<R: AsyncBufReadExt + Unpin>(lines: &mut R) -> String {
-    let mut message = String::new();
-    let mut line = String::new();
-    loop {
-        line.clear();
-        match lines.read_line(&mut line).await {
-            Ok(0) | Err(_) => break,
-            Ok(_) if line == ".\r\n" => break,
-            Ok(_) => message.push_str(&line),
-        }
-    }
-    message
-}
 
 /// The link of a message, once quoted-printable soft breaks and `=3D` are undone.
 fn link_in(message: &str) -> String {

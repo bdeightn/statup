@@ -60,10 +60,3 @@
         <label class="check-row"><input type="checkbox" name="on_detected" value="on" class="checkbox"{% if form.on_detected.is_some() %} checked{% endif %}><span>{{ i18n.t("notifications.box_detected") }}</span></label>
     </div>
 </fieldset>
-
-{# hx-sync drops a second click while a test runs, as on the monitoring
-   fields. #}
-<div class="destination-test">
-    <button type="button" class="btn btn-ghost check-test" hx-post="/admin/notifications/test" hx-target="next [data-test-result]" hx-swap="innerHTML" hx-sync="this:drop"><span class="check-test-idle">{{ i18n.t("notifications.test") }}</span><span class="check-test-busy">{{ i18n.t("notifications.testing") }}</span></button>
-    <div aria-live="polite" data-test-result></div>
-</div>

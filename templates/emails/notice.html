@@ -16,6 +16,8 @@
     .link { margin: 0 0 8px; }
     .link a { color: #1c1b18; font-weight: 600; }
     .foot { margin: 32px 0 0; padding-top: 12px; border-top: 1px solid #e8e6e1; color: #5f5c52; font-size: 12px; }
+    .way-out { margin: 8px 0 0; color: #5f5c52; font-size: 12px; }
+    .way-out a { color: #5f5c52; }
 </style>
 </head>
 <body>
@@ -31,6 +33,9 @@
     <p class="link"><a href="{{ link.url }}">{{ link.label }}</a></p>
     {% endif %}
     <p class="foot">{{ notice.instance }}</p>
+    {% if let Some(way_out) = unsubscribe %}
+    <p class="way-out">{{ way_out.reason }} <a href="{{ way_out.url }}">{{ way_out.label }}</a></p>
+    {% endif %}
 </div>
 </body>
 </html>

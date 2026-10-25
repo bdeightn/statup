@@ -26,7 +26,7 @@
                 </span>
                 <span class="icon-choices-label" data-icon-choices-label data-choose="{{ i18n.t("icons.choose") }}" data-change="{{ i18n.t("icons.change") }}">{% if has_icon %}{{ i18n.t("icons.change") }}{% else %}{{ i18n.t("icons.choose") }}{% endif %}</span>
                 <span class="sr-only" data-icon-current data-template="{{ i18n.t("icons.current") }}">{{ self.chosen_icon() }}</span>
-                <svg class="icon-choices-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
+                <span class="icon-choices-chevron">{% call ui::caret_icon() %}{% endcall %}</span>
             </summary>
 
             <div class="icon-choices-body">
@@ -53,6 +53,7 @@
                         <p id="custom-icons-label" class="label">{{ i18n.t("icons.custom") }}</p>
                         <span class="icon-name-echo" aria-hidden="true" data-icon-echo></span>
                         <span id="icon-upload-status" class="field-hint htmx-indicator">{{ i18n.t("icons.uploading") }}</span>
+                        <a href="/icons" class="text-action icon-group-link">{{ i18n.t("icons.manage") }}</a>
                     </div>
                     <label class="icon-upload-field">
                         <span class="icon-upload-cta">{{ i18n.t("icons.upload") }}</span>

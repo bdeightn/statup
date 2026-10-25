@@ -23,36 +23,41 @@
         </div>
         <div class="page-actions">
             {% if self.orderable() %}
-            {# Revealed by its script, without which it would do nothing. Both
-               labels hold their place, so the header keeps its width. #}
-            <button type="button" class="btn btn-ghost order-toggle" data-order-toggle aria-pressed="false" hidden>
-                <span data-when="closed">{{ i18n.t("services.reorder") }}</span>
-                <span data-when="open">{{ i18n.t("services.reorder_done") }}</span>
-            </button>
+            {# Revealed by its script, without which it would do nothing. As
+               on the dashboard, the mode closes from Done, which takes the
+               place of the buttons it hides. #}
+            <button type="button" class="btn btn-ghost" data-order-toggle data-order-off hidden>{{ i18n.t("dashboard.arrange_open") }}</button>
             {% endif %}
-            <a href="/icons" class="btn btn-ghost">{{ i18n.t("icons.title") }}</a>
-            {# A folder starts from its name and opens on its own page, where
-               its services are added. #}
-            <details class="more-actions folder-new" data-more-actions{% if new_folder.error.is_some() %} open{% endif %}>
-                <summary class="btn btn-ghost">{% call ui::plus() %}{% endcall %}{{ i18n.t("folders.new") }}</summary>
-                <form class="more-actions-menu group-panel" method="post" action="/services/folders/new">
-                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                    <label for="new-folder" class="field-label">{{ i18n.t("folders.name") }}</label>
-                    <input id="new-folder" name="name" type="text" class="input" required maxlength="{{ crate::models::FOLDER_NAME_MAX_CHARS }}" autocomplete="off" value="{{ new_folder.value }}" placeholder="{{ i18n.t("folders.name_placeholder") }}"
-                           {% if new_folder.error.is_some() %}aria-invalid="true" aria-describedby="new-folder-error" autofocus{% endif %}>
-                    {% if let Some(message) = new_folder.error %}
-                    <p id="new-folder-error" class="field-error" role="alert">{{ message }}</p>
-                    {% endif %}
-                    <button type="submit" class="btn btn-primary group-panel-submit">{{ i18n.t("folders.create") }}</button>
-                </form>
+            {# One way in for what can be created here. A folder starts from
+               its name, given in the same panel, and opens on its own page. #}
+            <details class="more-actions new-menu" data-more-actions data-order-off{% if new_folder.error.is_some() %} open{% endif %}>
+                <summary class="btn btn-primary">{% call ui::plus() %}{% endcall %}{{ i18n.t("services.new_menu") }}{% call ui::caret_icon() %}{% endcall %}</summary>
+                <div class="more-actions-menu new-menu-panel{% if new_folder.error.is_some() %} is-form{% endif %}" data-swap-panel>
+                    <div class="new-menu-list">
+                        <a href="/services/new" class="more-actions-item">{{ i18n.t("services.new_menu_service") }}</a>
+                        <button type="button" class="more-actions-item" data-swap-to-form>{{ i18n.t("services.new_menu_folder") }}</button>
+                    </div>
+                    <form class="new-menu-form" method="post" action="/services/folders/new">
+                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                        <label for="new-folder" class="field-label">{{ i18n.t("folders.name") }}</label>
+                        <input id="new-folder" name="name" type="text" class="input" required maxlength="{{ crate::models::FOLDER_NAME_MAX_CHARS }}" autocomplete="off" value="{{ new_folder.value }}" placeholder="{{ i18n.t("folders.name_placeholder") }}"
+                               {% if new_folder.error.is_some() %}aria-invalid="true" aria-describedby="new-folder-error" autofocus{% endif %}>
+                        {% if let Some(message) = new_folder.error %}
+                        <p id="new-folder-error" class="field-error" role="alert">{{ message }}</p>
+                        {% endif %}
+                        <button type="submit" class="btn btn-primary group-panel-submit">{{ i18n.t("folders.create") }}</button>
+                    </form>
+                </div>
             </details>
-            <a href="/services/new" class="btn btn-primary">{% call ui::plus() %}{% endcall %}{{ i18n.t("services.new") }}</a>
+            {% if self.orderable() %}
+            <button type="button" class="btn btn-primary" data-order-done data-order-only hidden>{{ i18n.t("dashboard.arrange_done") }}</button>
+            {% endif %}
         </div>
     </header>
 
     {% if service_count > 1 %}
     {# Shown by the ordering mode, which also puts back the chosen order. #}
-    <label class="check-row order-option mb-5" data-problems-first-field hidden><input type="checkbox" class="checkbox" data-problems-first{% if problems_first %} checked{% endif %}><span>{{ i18n.t("services.problems_first") }}</span></label>
+    <label class="check-row order-option mb-5" data-order-only hidden><input type="checkbox" class="checkbox" data-problems-first{% if problems_first %} checked{% endif %}><span>{{ i18n.t("services.problems_first") }}</span></label>
     {% endif %}
 
     {% if let Some(name) = saved_name %}
@@ -80,7 +85,7 @@
         {% for group in groups %}
         {% match group.folder %}
         {% when Some with (folder) %}
-        <section class="card svc-group" data-folder-id="{{ folder.id }}" data-folder-name="{{ folder.name }}" aria-labelledby="folder-{{ folder.id }}">
+        <section class="card" data-folder-id="{{ folder.id }}" data-folder-name="{{ folder.name }}" aria-labelledby="folder-{{ folder.id }}">
             <header class="card-head">
                 <h2 id="folder-{{ folder.id }}" class="card-title wrap-anywhere">{{ folder.name }} <span class="count">{{ group.services.len() }}</span></h2>
                 <a href="/services/folders/{{ folder.id }}" class="card-action svc-group-manage">{{ i18n.t("folders.manage") }}</a>
@@ -90,7 +95,7 @@
                 </div>
             </header>
         {% when None %}
-        <section class="card svc-group">
+        <section class="card">
         {% endmatch %}
             {% if group.services.is_empty() %}
             <p class="groups-empty">{{ i18n.t("folders.no_service") }}</p>

@@ -203,7 +203,7 @@
 
     .bell-head {
         margin: 0;
-        padding: 12px 14px;
+        padding: 12px 16px;
         font-size: var(--text-sm);
         font-weight: 600;
         border-bottom: 1px solid var(--line);
@@ -211,14 +211,14 @@
 
     .bell-empty {
         margin: 0;
-        padding: 16px 14px;
+        padding: 16px;
         font-size: var(--text-sm);
         color: var(--muted);
     }
 
     .bell-all {
         display: block;
-        padding: 10px 14px;
+        padding: 10px 16px;
         font-size: var(--text-sm);
         color: var(--ink);
         text-align: center;
@@ -232,7 +232,7 @@
         grid-template-columns: auto minmax(0, 1fr) auto;
         align-items: baseline;
         gap: 4px 10px;
-        padding: 12px 14px;
+        padding: 12px 16px;
         color: var(--ink);
         text-decoration: none;
         border-bottom: 1px solid var(--line);
@@ -916,11 +916,12 @@
     /* A form on a card, in two columns on a wide screen, read left then
        right. */
     .form-card {
-        padding: 24px 24px 28px;
+        padding: 24px 16px 28px;
     }
 
     .form-columns {
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
         gap: 28px 48px;
     }
 
@@ -996,7 +997,7 @@
     }
 
     .card-body {
-        padding: 18px 20px 22px;
+        padding: 18px 16px 22px;
     }
 
     .card-head {
@@ -1005,8 +1006,14 @@
         justify-content: space-between;
         gap: 12px;
         min-height: 48px;
-        padding: 10px 16px;
+        padding: 8px 16px;
         border-bottom: 1px solid var(--line);
+    }
+
+    /* A panel's trigger in a head lines up like a plain action, so every
+       head stays 48px tall. */
+    .card-head > details {
+        display: flex;
     }
 
     .card-title {
@@ -1042,7 +1049,8 @@
         gap: 4px 12px;
     }
 
-    .card-follow svg {
+    .card-follow svg,
+    .card-head .card-action svg {
         width: 13px;
         height: 13px;
     }
@@ -1050,6 +1058,13 @@
     .card-action:hover {
         color: var(--ink);
         background: var(--surface-hover);
+    }
+
+    /* An upload action is a label around a hidden file field: it shows the
+       keyboard's focus for it. */
+    .card-action:has(:focus-visible) {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
     }
 
     /* An empty state says what belongs here and how to put it there. */

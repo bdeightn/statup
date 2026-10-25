@@ -1,0 +1,62 @@
+{% extends "_layout.html" %}
+{% import "components/macros.html" as ui %}
+
+{% block title %}{{ i18n.t("notifications.subscribers_title") }} | {{ crate::brand_name() }}{% endblock %}
+{% block section %}admin{% endblock %}
+
+{% block content %}
+<div class="page">
+    <header class="page-head">
+        <div>
+            <a href="/admin/notifications" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("notifications.title") }}</a>
+            <h1 class="page-title">{{ i18n.t("notifications.subscribers_title") }}</h1>
+        </div>
+    </header>
+
+    {% if removed %}
+    <div class="form-notice mb-5" role="status">
+        <p>{{ i18n.t("subscribers.removed") }}</p>
+    </div>
+    {% endif %}
+
+    {% if visitors_paused %}
+    <div class="form-notice mb-5" role="status">
+        <p>{{ i18n.t("subscribers.visitors_paused") }}</p>
+    </div>
+    {% endif %}
+
+    <section class="card" aria-labelledby="subscribers-list-title">
+        <header class="card-head">
+            <h2 id="subscribers-list-title" class="card-title">{{ i18n.t("subscribers.list_title") }} <span class="count">{{ lines.len() }}</span></h2>
+        </header>
+        {% if lines.is_empty() %}
+        <p class="groups-empty">{{ i18n.t("subscribers.empty") }}</p>
+        {% else %}
+        <ul class="admin-list">
+            {% for line in lines %}
+            <li class="admin-row">
+                <div class="min-w-0">
+                    <p class="admin-row-name">{{ line.name }}</p>
+                    <p class="admin-row-sub">{{ line.sub }}</p>
+                    {% match line.last %}
+                    {% when LastSend::Never %}<p class="destination-last">{{ i18n.t("notifications.never") }}</p>
+                    {% when LastSend::Sent with (text) %}<p class="destination-last">{{ text }}</p>
+                    {% when LastSend::Trouble with (tone, text) %}<p class="state destination-state" data-tone="{{ tone }}">{{ text }}</p>
+                    {% endmatch %}
+                </div>
+                <form method="post" action="/admin/notifications/subscribers/{{ line.id }}/remove" data-confirm>
+                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                    <button type="button" class="text-action text-action-danger" data-confirm-open aria-label="{{ i18n.t("subscribers.remove") }} {{ line.address }}">{{ i18n.t("subscribers.remove") }}</button>
+                    <div class="confirm" role="group" aria-label="{{ i18n.t("subscribers.remove") }} {{ line.address }}" aria-describedby="remove-q-{{ line.id }}" data-confirm-box hidden>
+                        <span id="remove-q-{{ line.id }}" class="confirm-text">{{ i18n.t("common.question_open") }}{{ i18n.t("subscribers.remove") }} <q>{{ line.address }}</q>{{ i18n.t("common.question_mark") }}</span>
+                        <button type="button" class="confirm-cancel" data-confirm-cancel>{{ i18n.t("common.cancel") }}</button>
+                        <button type="submit" class="confirm-go" data-danger>{{ i18n.t("subscribers.remove") }}</button>
+                    </div>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

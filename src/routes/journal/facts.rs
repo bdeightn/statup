@@ -106,7 +106,9 @@ fn detail_facts(kind: JournalKind, detail: &str, i18n: &I18n) -> Vec<String> {
         | K::PasswordCheckBlocked
         | K::PasswordResetBlocked
         | K::DashboardArranged => Vec::new(),
-        K::PasswordResetNotSent => vec![reason_of(Some(detail), i18n)],
+        K::PasswordResetNotSent | K::SubscriberMailsAbandoned | K::SubscriberMailsPaused => {
+            vec![reason_of(Some(detail), i18n)]
+        }
         K::MemberAdded | K::MemberRoleChanged => detail
             .parse::<Role>()
             .ok()
@@ -116,7 +118,7 @@ fn detail_facts(kind: JournalKind, detail: &str, i18n: &I18n) -> Vec<String> {
         K::GroupRenamed | K::FolderRenamed => {
             vec![i18n.tf("journal.fact_formerly", &[("name", detail)])]
         }
-        K::ProblemsFirstChanged => match detail {
+        K::ProblemsFirstChanged | K::VisitorSubscriptionsChanged => match detail {
             "on" => said("journal.fact_on"),
             _ => said("journal.fact_off"),
         },
@@ -372,7 +374,7 @@ mod tests {
         assert_eq!(said(JournalKind::MemberAdded, "publisher"), ["Éditeur"]);
         assert_eq!(
             said(JournalKind::SettingsSaved, "name, access"),
-            ["Nom de la page, Qui peut voir la page"]
+            ["Nom de la page, Accès à la page"]
         );
         assert_eq!(
             said(

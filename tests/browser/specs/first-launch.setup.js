@@ -17,8 +17,8 @@ test("a fresh instance is set up from its first account", async ({ page }) => {
 
     await expect(page).toHaveURL(/\/setup\/page$/);
     await page.getByLabel("Nom de la page").fill("Acme IT");
-    await page.getByText("Tout le monde", { exact: true }).click();
-    await expect(page.getByRole("radio", { name: /Tout le monde/ })).toBeChecked();
+    await page.getByText("Publique", { exact: true }).click();
+    await expect(page.getByRole("radio", { name: /Publique/ })).toBeChecked();
     await page.getByRole("button", { name: "Continuer" }).click();
 
     await expect(page).toHaveURL(/\/setup\/services$/);
@@ -38,7 +38,7 @@ test("a member added by the owner signs in and chooses their password", async ({
     const owner = await browser.newContext({ storageState: OWNER_SESSION });
     const page = await owner.newPage();
     await page.goto("/admin/users");
-    await page.getByText("Ajouter un membre", { exact: true }).click();
+    await page.getByText("Nouveau membre", { exact: true }).click();
     await page.getByLabel("Nom", { exact: true }).fill(READER.name);
     await page.getByLabel("Adresse e-mail").fill(READER.email);
     await expect(page.getByRole("radio", { name: "Lecteur" })).toBeChecked();

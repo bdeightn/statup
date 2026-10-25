@@ -62,6 +62,12 @@
         current.textContent = cell ? current.dataset.template.replace("{name}", cell.dataset.iconLabel || "") : "";
     }
 
+    // The values are written by script: say so, as a typed change would,
+    // so a form that warns before leaving counts a new icon as unsaved.
+    function announce() {
+        nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
     function choose(cell) {
         // A cell whose image failed to load has nothing to show.
         const drawing = cell.querySelector("svg, img");
@@ -78,6 +84,7 @@
         showPreview(copy, false);
         markChosen(cell);
         sayChosen(cell);
+        announce();
     }
 
     // The remove button hides itself: the keyboard goes on from the summary.
@@ -93,6 +100,7 @@
     function reset() {
         nameInput.value = "";
         idInput.value = "";
+        announce();
         showPreview(placeholder.content.cloneNode(true), true);
         markChosen(null);
         sayChosen(null);

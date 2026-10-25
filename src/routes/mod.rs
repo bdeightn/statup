@@ -27,6 +27,8 @@ mod password_reset;
 mod profile;
 mod services;
 mod setup;
+mod subscribers;
+mod subscriptions;
 mod timeline;
 
 use std::any::Any;
@@ -102,8 +104,10 @@ fn dynamic_routes(state: &AppState, rate_limit: &RateLimit) -> Router<AppState> 
         .layer(RequestBodyLimitLayer::new(FORM_BODY_LIMIT));
     let uploads = with_request_guards(upload_routes(), state)
         .layer(RequestBodyLimitLayer::new(UPLOAD_BODY_LIMIT));
+    let links = link_routes().layer(RequestBodyLimitLayer::new(FORM_BODY_LIMIT));
     pages
         .merge(uploads)
+        .merge(links)
         .fallback(not_found)
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
@@ -160,7 +164,24 @@ fn public_routes() -> Router<AppState> {
         .route("/events/{id}/drawer", get(events::drawer_content))
         .route("/services/{id}/drawer", get(services::drawer_content))
         .route("/feed", get(feed::atom))
-        .route("/subscribe", get(dashboard::subscribe))
+        .route("/subscribe", get(subscriptions::page))
+        .route("/subscribe/email", post(subscriptions::ask))
+        .route("/subscribe/me", post(subscriptions::save_mine))
+}
+
+/// The pages an email links to. No session and no CSRF check: the token in
+/// the address is the proof, and a mail client posts to the unsubscribe
+/// address on its own (RFC 8058), with no cookie.
+fn link_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/subscribe/confirm",
+            get(subscriptions::confirm_page).post(subscriptions::confirm),
+        )
+        .route(
+            "/unsubscribe",
+            get(subscriptions::unsubscribe_page).post(subscriptions::unsubscribe),
+        )
 }
 
 /// Events, templates, services and icons, for publishers and admins.
@@ -206,12 +227,8 @@ fn publisher_routes() -> Router<AppState> {
         .route("/services/folders/order", post(folders::save_order))
         .route("/services/folders/{id}", get(folders::folder_page))
         .route(
-            "/services/folders/{id}/rename",
-            post(folders::rename_folder),
-        )
-        .route(
-            "/services/folders/{id}/visibility",
-            post(folders::save_visibility),
+            "/services/folders/{id}/settings",
+            post(folders::save_settings),
         )
         .route(
             "/services/folders/{id}/services",
@@ -311,6 +328,15 @@ fn notification_routes() -> Router<AppState> {
             get(notifications::list).post(notifications::create),
         )
         .route("/admin/notifications/test", post(notifications::test))
+        .route("/admin/notifications/subscribers", get(subscribers::list))
+        .route(
+            "/admin/notifications/subscribers/{id}/remove",
+            post(subscribers::remove),
+        )
+        .route(
+            "/admin/notifications/visitor-subscriptions",
+            post(subscribers::set_visitors),
+        )
         .route(
             "/admin/notifications/page-address",
             post(notifications::save_page_address),

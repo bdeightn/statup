@@ -293,12 +293,6 @@ struct ServiceFormTemplate {
 }
 
 impl ServiceFormTemplate {
-    /// "Currently Operational." under the title of an edited service.
-    fn status_line(&self) -> String {
-        let status = self.i18n.t(self.form.status.i18n_key());
-        self.i18n.tf("services.status_now", &[("status", status)])
-    }
-
     /// The monitoring fields, as the shared block reads them.
     fn check(&self) -> &CheckFields {
         &self.form.check

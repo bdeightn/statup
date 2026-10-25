@@ -10,16 +10,51 @@
         <div>
             <a href="/" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("subscribe.back") }}</a>
             <h1 class="page-title">{{ i18n.t("subscribe.heading") }}</h1>
-            <p class="page-lede">{{ i18n.t("subscribe.lede") }}</p>
         </div>
     </header>
 
     {% if !feed_readable %}
     {% if frame.is_admin %}
-    <div class="form-notice mb-6"><p>{{ i18n.t("subscribe.members_only_admin") }} <a href="/admin/settings" class="link">{{ i18n.t("nav.admin") }}</a></p></div>
+    <div class="form-notice mb-6"><p>{{ i18n.t("subscribe.members_only_admin") }} <a href="/admin/settings" class="link">{{ i18n.t("subscribe.open_page") }}</a></p></div>
     {% else %}
     <div class="form-notice mb-6"><p>{{ i18n.t("subscribe.members_only") }}</p></div>
     {% endif %}
+    {% endif %}
+
+    {% if let Some(card) = email %}
+    <section class="card subscribe-band" aria-labelledby="email-title">
+        {% if card.is_asked() %}
+        <div class="subscribe-row">
+            <div class="subscribe-head"><h2 id="email-title" class="card-title">{{ i18n.t("subscribe.email_title") }}</h2></div>
+            {% if let Some(notice) = card.notice %}<p class="subscribe-sent" role="status">{{ notice }}</p>{% endif %}
+            <a href="/subscribe" class="link subscribe-end">{{ i18n.t("subscribe.other_address") }}</a>
+        </div>
+        {% else %}
+        <form method="post" action="{% if card.is_form() %}/subscribe/email{% else %}/subscribe/me{% endif %}" class="subscribe-row">
+            <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+            <div class="subscribe-head">
+                <h2 id="email-title" class="card-title">{{ i18n.t("subscribe.email_title") }}</h2>
+                {% if !card.is_form() %}
+                <p class="subscribe-meta"{% if card.notice.is_some() %} role="status"{% endif %}>{{ card.address }}{% if let Some(notice) = card.notice %}&nbsp;<span aria-hidden="true">·</span> {{ notice }}{% else if let Some(since) = card.since %}&nbsp;<span aria-hidden="true">·</span> {{ since }}{% endif %}</p>
+                {% endif %}
+            </div>
+            {% include "subscriptions/_boxes.html" %}
+            <div class="subscribe-end">
+                <div class="subscribe-control">
+                    {% if card.is_form() %}
+                    <label for="subscribe-email" class="sr-only">{{ i18n.t("auth.email") }}</label>
+                    <input id="subscribe-email" name="email" type="email" class="input" value="{{ card.address }}" placeholder="{{ i18n.t("auth.email") }}" required autocomplete="email"{% if card.address_error.is_some() %} aria-invalid="true" aria-describedby="subscribe-error"{% endif %}>
+                    <button type="submit" class="btn btn-primary">{{ i18n.t("subscribe.submit") }}</button>
+                    {% else %}
+                    <button type="submit" name="action" value="save" class="btn btn-primary">{% if card.subscribed() %}{{ i18n.t("common.save") }}{% else %}{{ i18n.t("subscribe.submit") }}{% endif %}</button>
+                    {% if card.subscribed() %}<button type="submit" name="action" value="stop" class="text-action">{{ i18n.t("subscribe.stop") }}</button>{% endif %}
+                    {% endif %}
+                </div>
+                {% if let Some(error) = card.address_error %}<p id="subscribe-error" class="field-error subscribe-error">{{ error }}</p>{% endif %}
+            </div>
+        </form>
+        {% endif %}
+    </section>
     {% endif %}
 
     <div class="card-grid card-grid-3">
@@ -43,7 +78,7 @@
 
         <section class="card" aria-labelledby="chat-title">
             <header class="card-head">
-                <h2 id="chat-title" class="card-title">{{ i18n.t("subscribe.chat_title") }}</h2>
+                <h2 id="chat-title" class="card-title">{% if email.is_some() %}{{ i18n.t("subscribe.chat_title_tools") }}{% else %}{{ i18n.t("subscribe.chat_title") }}{% endif %}</h2>
             </header>
             <div class="card-body">
                 <p class="page-lede">{{ i18n.t("subscribe.chat_text") }}{% if frame.is_admin %} <a href="/admin/notifications" class="link">{{ i18n.t("notifications.manage") }}</a>{% endif %}</p>

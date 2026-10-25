@@ -438,8 +438,14 @@ async fn icons_and_arranging_each_have_one_way_in() {
 
     let (_, body) = app.get("/services").await;
     assert!(
+        !body.contains(r#"href="/icons""#),
+        "the icons are reached from where a service picks one"
+    );
+
+    let (_, body) = app.get("/services/new").await;
+    assert!(
         body.contains(r#"href="/icons""#),
-        "the services page leads to the icons"
+        "the icon choice of a service leads to the icons"
     );
 
     let (_, body) = app.get("/icons").await;
@@ -619,7 +625,7 @@ async fn instance_name_too_long_is_refused_in_the_page() {
     );
 }
 
-/// Who can see the page is saved with the rest of the card, and only then.
+/// Page access is saved with the rest of the card, and only then.
 #[tokio::test]
 async fn public_access_is_saved_with_the_card() {
     // Saves the general settings, which the brand tests read.

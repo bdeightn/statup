@@ -122,6 +122,16 @@ pub(super) struct EventDetailTemplate {
     i18n: I18n,
 }
 
+impl EventDetailTemplate {
+    /// The page head keeps "Edit" and at most one primary action: what
+    /// closes the event (changelog, review) or, while it runs, an update.
+    fn has_head_actions(&self) -> bool {
+        self.can_edit
+            || self.follow_up.is_changelog()
+            || (self.follow_up.is_review() && self.view.review.is_none())
+    }
+}
+
 #[derive(Template)]
 #[template(path = "events/drawer_content.html")]
 pub(super) struct DrawerTemplate {

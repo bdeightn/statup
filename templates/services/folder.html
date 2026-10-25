@@ -14,33 +14,25 @@
     <header class="page-head">
         <div>
             <a href="/services" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("services.heading") }}</a>
-            <div class="group-title-row">
-                <h1 class="page-title wrap-anywhere">{{ folder.name }}</h1>
-                <details class="more-actions group-rename" data-more-actions{% if rename.error.is_some() %} open{% endif %}>
-                    <summary class="link">{{ i18n.t("admin.rename") }}</summary>
-                    <form class="more-actions-menu group-panel" method="post" action="/services/folders/{{ folder.id }}/rename">
-                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+            <h1 class="page-title wrap-anywhere">{{ folder.name }}</h1>
+        </div>
+        {# Who sees the folder, said in one grey line; its name and that
+           setting fold under "Change", in one panel over the page. The
+           services that inherit it follow on saving. #}
+        <div class="journal-summary folder-summary">
+            <span>{{ summary }}&nbsp;<span aria-hidden="true">·</span></span>
+            <details class="more-actions journal-menu folder-menu" data-more-actions{% if settings_open %} open{% endif %}>
+                <summary class="journal-edit">{{ i18n.t("folders.edit_visibility") }}{% call ui::caret_icon() %}{% endcall %}</summary>
+                <form class="more-actions-menu folder-panel" method="post" action="/services/folders/{{ folder.id }}/settings">
+                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                    <div class="folder-name-field">
                         <label for="folder-name" class="field-label">{{ i18n.t("folders.name") }}</label>
-                        <input id="folder-name" name="name" type="text" class="input" required maxlength="{{ crate::models::FOLDER_NAME_MAX_CHARS }}" autocomplete="off"
-                               value="{% match rename.value %}{% when Some with (typed) %}{{ typed }}{% when None %}{{ folder.name }}{% endmatch %}"
-                               {% if rename.error.is_some() %}aria-invalid="true" aria-describedby="folder-name-error" autofocus{% endif %}>
-                        {% if let Some(message) = rename.error %}
+                        <input id="folder-name" name="name" type="text" class="input" required maxlength="{{ crate::models::FOLDER_NAME_MAX_CHARS }}" autocomplete="off" value="{{ name.value }}"
+                               {% if name.error.is_some() %}aria-invalid="true" aria-describedby="folder-name-error" autofocus{% endif %}>
+                        {% if let Some(message) = name.error %}
                         <p id="folder-name-error" class="field-error" role="alert">{{ message }}</p>
                         {% endif %}
-                        <button type="submit" class="btn btn-primary group-panel-submit">{{ i18n.t("common.save") }}</button>
-                    </form>
-                </details>
-            </div>
-        </div>
-        {# Who sees the folder, said in one grey line; the setting folds
-           under "Edit", in a panel over the page. The services that
-           inherit it follow on saving. #}
-        <div class="journal-summary folder-summary">
-            <span>{{ self.visibility_line() }}&nbsp;<span aria-hidden="true">·</span></span>
-            <details class="more-actions journal-menu folder-menu" data-more-actions{% if visibility_open %} open{% endif %}>
-                <summary class="journal-edit">{{ i18n.t("folders.edit_visibility") }}{% call ui::caret_icon() %}{% endcall %}</summary>
-                <form class="more-actions-menu folder-panel" method="post" action="/services/folders/{{ folder.id }}/visibility">
-                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                    </div>
                     {% include "components/access_field.html" %}
                     <button type="submit" class="btn btn-primary journal-save">{{ i18n.t("common.save") }}</button>
                 </form>
@@ -53,8 +45,7 @@
         <p>
             {% match n %}
             {% when FolderNotice::Created %}{{ i18n.t("folders.notice_created") }}
-            {% when FolderNotice::Renamed %}{{ i18n.t("folders.notice_renamed") }}
-            {% when FolderNotice::VisibilitySaved %}{{ i18n.t("folders.notice_visibility_saved") }}
+            {% when FolderNotice::Saved %}{{ i18n.t("folders.notice_saved") }}
             {% when FolderNotice::Added with (text) %}{{ text }}
             {% when FolderNotice::Removed with (name) %}<q>{{ name }}</q> {{ i18n.t("folders.notice_removed") }}
             {% endmatch %}

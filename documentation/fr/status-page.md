@@ -3,7 +3,7 @@ title: La page d'état
 description: "Ce que lisent les collègues et les visiteurs : le bandeau, les services, l'activité récente, les événements et le flux."
 ---
 
-Ce que tout le monde lit, depuis un poste ou un téléphone. Avec **Qui peut voir la page** sur **Tout le monde**, les visiteurs la lisent sans compte ; avec **Membres seulement**, ils doivent se connecter. Les noms des membres de l'équipe ne sont montrés qu'aux membres connectés.
+Ce que tout le monde lit, depuis un poste ou un téléphone. Avec **Accès à la page** sur **Publique**, les visiteurs la lisent sans compte ; avec **Membres seulement**, ils doivent se connecter. Les noms des membres de l'équipe ne sont montrés qu'aux membres connectés.
 
 Chaque lecteur ne voit que les services que leur [visibilité](services.md#visibility) lui permet, et les événements qui les citent.
 
@@ -49,13 +49,16 @@ Les membres connectés voient sur **Événements** combien d'incidents et de mai
 
 ## Être prévenu
 
-**Être prévenu**, en bas de chaque page et sur le bloc **Activité récente**, propose trois façons de suivre sans ouvrir la page :
+**Être prévenu**, en bas de chaque page et sur le bloc **Activité récente**, propose plusieurs façons de suivre sans ouvrir la page :
 
-- **Avec un lecteur de flux** : l'adresse du flux Atom, à copier.
-- **Dans Teams, Slack ou par courriel** : par les canaux qu'un administrateur règle dans [Alertes](alerts.md).
-- **Ou cette page** : laissée ouverte, elle se met à jour toute seule chaque minute.
+- **Par courriel** : un visiteur tape son adresse, coche ce qu'il veut recevoir (**Incidents**, **Maintenances**, **Annonces**) et confirme par le lien qui lui est envoyé, valable un jour. Un membre connecté s'abonne à l'adresse de son compte, sans lien à confirmer, et change ses cases ou arrête au même endroit.
+- **Avec un lecteur de flux** : l'adresse du flux Atom, à copier.
+- **Dans Teams ou Slack** : par les canaux qu'un administrateur règle dans [Alertes](alerts.md).
+- **Ou cette page** : laissée ouverte, elle se met à jour toute seule chaque minute.
 
-Un visiteur ne peut pas encore s'abonner avec sa propre adresse e-mail.
+Chaque courriel porte une nouvelle : un incident ouvert, une mise à jour publiée, sa fin et son bilan, une maintenance annoncée, déplacée, commencée ou terminée, une annonce. Il ne nomme que les services que son lecteur a le droit de voir : un visiteur ne lit jamais le nom d'un service réservé aux membres. Chaque courriel se termine par **Se désabonner**, et les messageries peuvent proposer leur propre bouton de désabonnement.
+
+**Par courriel** n'apparaît que si l'instance peut envoyer des courriels ([`SMTP_HOST`](configuration.md#smtp_host)) et connaît sa propre adresse ([`PUBLIC_URL`](configuration.md#public_url), ou le **Lien dans les messages** des [Alertes](alerts.md#link-in-the-messages)). Pour les visiteurs, il faut en plus que la page soit ouverte à tout le monde et qu'un administrateur leur ouvre les abonnements dans [Alertes](alerts.md) : ils sont fermés sur une instance neuve.
 
 ## Le flux Atom
 

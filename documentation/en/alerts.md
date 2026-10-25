@@ -9,7 +9,7 @@ In the app, **Notifications** is the bell in the header; **Alerts** are the mess
 
 ## Add a channel
 
-**Add a channel** opens the form:
+**New channel**, at the head of the **Channels** card, opens the form:
 
 | Field | Description |
 |---|---|
@@ -51,6 +51,15 @@ Email channels need a mail server: set [`SMTP_HOST`](configuration.md#smtp_host)
 - The list of channels says, for each one, when it last sent, when it tries again and why, or when it failed and why.
 
 Outages found by [monitoring](monitoring.md) at the same minute are grouped in one message per channel, and their return in one more.
+
+## Email subscribers
+
+Visitors and members subscribe themselves from **Get notified**, described in [the status page](status-page.md#get-notified). The **Email subscribers** card of the Alerts page counts them and leads to their list.
+
+- **See the subscribers** lists each person: who they are, what they receive, since when, and how their last email went, with the reason when it failed. **Remove** ends a subscription after a question in the row; the person receives nothing more.
+- **Visitors can subscribe** is ticked by an administrator and saved with **Save**. It is off on a new instance. Unticking it stops the emails to the visitors already subscribed, who come back when it is ticked again; members go on receiving theirs.
+- Nothing is sent without a mail server ([`SMTP_HOST`](configuration.md#smtp_host)): the card then says so and offers no switch.
+- The [Journal](journal.md) keeps the address of a subscriber who confirmed, left or was removed for as long as it keeps its lines.
 
 ## Link in the messages
 

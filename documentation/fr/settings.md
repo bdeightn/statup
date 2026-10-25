@@ -19,7 +19,7 @@ Un seul formulaire, enregistré par un seul bouton **Enregistrer**. Tous les cha
 | **Nom de la page** | Affiché à la place de Statup dans l'en-tête et l'onglet du navigateur. 40 caractères au plus ; vide, il affiche Statup. |
 | **Logo** | Remplace le signe Statup dans l'en-tête ; « Propulsé par Statup » reste en bas de page. PNG, JPG, WebP ou SVG, jusqu'à 256 Ko. Une image de plus de 256 pixels est réduite. **Retirer le logo** remet aussitôt le signe. |
 | **Fuseau horaire** | Les heures de la page, des événements et des maintenances s'affichent et se saisissent dans ce fuseau. |
-| **Qui peut voir la page** | **Membres seulement** ou **Tout le monde**. Voir [Équipe et rôles](team.md#who-can-see-the-page). |
+| **Accès à la page** | **Membres seulement** ou **Publique**. Voir [Équipe et rôles](team.md#page-access). |
 
 Ce qui est enregistré ici prime sur [`TZ`](configuration.md#tz) et [`PUBLIC_MODE`](configuration.md#public_mode), et est conservé d'un redémarrage à l'autre.
 

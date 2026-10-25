@@ -8,10 +8,11 @@ use askama::Template;
 use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Redirect, Response};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use super::dashboard::origin;
+use super::subscribers::{self, SubscribersCard};
 use super::{Frame, render};
 use crate::error::AppError;
 use crate::i18n::{I18n, LANGUAGES, Locale, language};
@@ -152,7 +153,7 @@ struct DestinationRow {
 }
 
 /// How the last message went, in the words of the list.
-enum LastSend {
+pub(super) enum LastSend {
     Never,
     Sent(String),
     /// A tone and the sentence: a failure being tried again, or given up.
@@ -165,6 +166,8 @@ enum ListNotice {
     Saved(String),
     Deleted,
     AddressSaved,
+    VisitorsOpened,
+    VisitorsClosed,
 }
 
 /// The address the messages link to, as the foot of the list shows it.
@@ -185,6 +188,7 @@ struct NotificationsTemplate {
     form_error: Option<FieldError>,
     add_open: bool,
     email_ready: bool,
+    subscribers: SubscribersCard,
     page: PageAddress,
     i18n: I18n,
 }
@@ -258,6 +262,7 @@ pub struct ListQuery {
     saved: Option<i64>,
     deleted: Option<String>,
     address: Option<String>,
+    notice: Option<String>,
 }
 
 impl ListQuery {
@@ -274,7 +279,18 @@ impl ListQuery {
         if self.deleted.is_some() {
             return Ok(Some(ListNotice::Deleted));
         }
-        Ok(self.address.is_some().then_some(ListNotice::AddressSaved))
+        if self.address.is_some() {
+            return Ok(Some(ListNotice::AddressSaved));
+        }
+        Ok(self.notice.as_deref().and_then(visitors_notice))
+    }
+}
+
+fn visitors_notice(code: &str) -> Option<ListNotice> {
+    match code {
+        "visitors_open" => Some(ListNotice::VisitorsOpened),
+        "visitors_closed" => Some(ListNotice::VisitorsClosed),
+        _ => None,
     }
 }
 
@@ -313,8 +329,9 @@ async fn render_list(
 ) -> Result<Response, AppError> {
     let channels = NotificationRepository::list_channels(&state.pool).await?;
     let rows = destination_rows(state, channels, &i18n).await?;
-    let add_open = rows.is_empty() || page.form_error.is_some();
+    let add_open = page.form_error.is_some();
     let address = page_address_field(state, headers, page.address_error, &i18n).await?;
+    let subscribers = subscribers::card(state).await?;
     let frame = Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?;
     render(&NotificationsTemplate {
         frame,
@@ -324,6 +341,7 @@ async fn render_list(
         form_error: page.form_error,
         add_open,
         email_ready: state.notifier.mail_ready(),
+        subscribers,
         page: address,
         i18n,
     })
@@ -400,13 +418,28 @@ fn last_send(
     let Some(delivery) = outcomes.get(&channel_id) else {
         return LastSend::Never;
     };
-    if delivery.status == DeliveryStatus::Sent {
-        let at = delivery.sent_at.unwrap_or(delivery.created_at);
-        let when = i18n.format_datetime(&at);
+    let sent = delivery.status == DeliveryStatus::Sent;
+    let at = if sent {
+        delivery.sent_at.unwrap_or(delivery.created_at)
+    } else {
+        delivery.next_attempt_at
+    };
+    outcome_line(sent, &at, delivery.failure.as_deref(), i18n)
+}
+
+/// A finished message in the words of the list: when it left, or when it
+/// was given up and why.
+pub(super) fn outcome_line(
+    sent: bool,
+    at: &DateTime<Utc>,
+    failure: Option<&str>,
+    i18n: &I18n,
+) -> LastSend {
+    let when = i18n.format_datetime(at);
+    if sent {
         return LastSend::Sent(i18n.tf("notifications.sent", &[("when", &when)]));
     }
-    let reason = reason_of(delivery.failure.as_deref(), i18n);
-    let when = i18n.format_datetime(&delivery.next_attempt_at);
+    let reason = reason_of(failure, i18n);
     let text = i18n.tf(
         "notifications.failed",
         &[("when", &when), ("reason", &reason)],
@@ -438,6 +471,8 @@ fn failure_text(failure: Failure, i18n: &I18n) -> String {
         Failure::MailBusy(status) => ("notifications.failure_mail_busy", status),
         Failure::MailUnreachable => ("notifications.failure_mail_unreachable", None),
         Failure::NoMailServer => ("notifications.failure_no_mail_server", None),
+        Failure::Expired => ("notifications.failure_expired", None),
+        Failure::NoPageAddress => ("notifications.failure_no_page_address", None),
     };
     let text = i18n.t(key);
     status.map_or_else(|| text.to_string(), |status| format!("{text} ({status})"))

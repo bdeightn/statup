@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 
 use crate::clock;
 use crate::db::DbPool;
-use crate::models::{Audience, Channel, ChannelInput, Delivery, Happening, Notification};
+use crate::models::{Channel, ChannelInput, Delivery, Happening, Notification};
 
 const DELIVERY_COLUMNS: &str = "d.id, d.channel_id, d.happening, d.event_id, d.update_id, \
      d.lifecycle, d.service_id, d.status, d.attempts, d.next_attempt_at, d.failure, \
@@ -109,12 +109,7 @@ impl NotificationRepository {
         now: DateTime<Utc>,
         send_at: DateTime<Utc>,
     ) -> Result<u64, sqlx::Error> {
-        let column = match notification.audience {
-            Audience::Incidents => "on_incidents",
-            Audience::Maintenances => "on_maintenances",
-            Audience::Publications => "on_publications",
-            Audience::DetectedOutages => "on_detected",
-        };
+        let column = notification.audience.column();
         let coming_back = notification.happening == Happening::ServiceUp;
         let after_outage = if coming_back {
             " AND (SELECT d.happening FROM notification_deliveries d \
@@ -299,6 +294,7 @@ mod tests {
     use chrono::{Duration, TimeZone};
 
     use super::*;
+    use crate::models::Audience;
     use crate::models::{
         ChannelKind, CreateEventInput, DeliveryStatus, Kind, Lifecycle, Role, Severity,
     };

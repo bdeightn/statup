@@ -9,10 +9,10 @@ use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, RETRY_AFTER};
 
+use super::link_mail::link_email;
 use super::mail::{email, recipients};
 use super::reminder_mail::reminder_email;
-use super::reset_mail::reset_email;
-use super::{Facts, Notice, ReminderEmail, ResetEmail, post};
+use super::{Facts, LinkEmail, Notice, ReminderEmail, Unsubscribe, post};
 use crate::config::{SmtpConfig, SmtpSecurity};
 use crate::models::{Channel, ChannelKind};
 use crate::services::Finding;
@@ -48,6 +48,11 @@ pub enum Failure {
     NoMailServer,
     /// The event or service the message is about no longer exists.
     Gone,
+    /// An email to a subscriber waited so long that it would mislead.
+    Expired,
+    /// No page address to link back to, so no email to a subscriber can
+    /// carry its way out.
+    NoPageAddress,
 }
 
 impl Failure {
@@ -63,6 +68,8 @@ impl Failure {
             Self::MailBusy(status) => with_status("mail_busy", status),
             Self::MailUnreachable => "mail_unreachable".to_string(),
             Self::NoMailServer => "no_mail_server".to_string(),
+            Self::Expired => "expired".to_string(),
+            Self::NoPageAddress => "no_page_address".to_string(),
         }
     }
 
@@ -90,6 +97,8 @@ impl Failure {
             "gone" => Self::Gone,
             "mail_unreachable" => Self::MailUnreachable,
             "no_mail_server" => Self::NoMailServer,
+            "expired" => Self::Expired,
+            "no_page_address" => Self::NoPageAddress,
             _ => return None,
         };
         Some(failure)
@@ -108,12 +117,29 @@ impl Failure {
             | Self::Unsupported
             | Self::Gone
             | Self::MailRefused(_)
-            | Self::NoMailServer => true,
+            | Self::NoMailServer
+            | Self::Expired
+            | Self::NoPageAddress => true,
             Self::TooManyRequests(_)
             | Self::Transport(_)
             | Self::MailBusy(_)
             | Self::MailUnreachable => false,
         }
+    }
+
+    /// The mail server failed as a whole, not one address: out of reach,
+    /// closing the connection (421), or refusing the sign-in (530, 534, 535,
+    /// 538). Every other email would fail the same way, so none should spend
+    /// an attempt on it.
+    pub fn is_server_wide(self) -> bool {
+        matches!(
+            self,
+            Self::NoMailServer
+                | Self::MailUnreachable
+                | Self::Transport(_)
+                | Self::MailBusy(Some(421))
+                | Self::MailRefused(Some(530 | 534 | 535 | 538))
+        )
     }
 }
 
@@ -149,6 +175,26 @@ pub trait Sender {
     ) -> impl Future<Output = Result<(), Failure>> + Send;
 }
 
+/// An email for one subscriber: a notice and its way out.
+pub struct SubscriberEmail<'a> {
+    pub to: &'a str,
+    pub notice: &'a Notice,
+    pub facts: &'a Facts,
+    pub locale: &'a str,
+    pub unsubscribe: &'a Unsubscribe,
+}
+
+/// Sends emails to subscribers. The real one goes through the mail server;
+/// tests use fakes.
+pub trait SubscriberSender {
+    fn mail_ready(&self) -> bool;
+
+    fn send_to_subscriber(
+        &self,
+        mail: &SubscriberEmail<'_>,
+    ) -> impl Future<Output = Result<(), Failure>> + Send;
+}
+
 /// The clients of the notifications, shared by the background task and the
 /// test button of the settings: HTTP for the tools, SMTP for email when a
 /// mail server is set.
@@ -180,10 +226,11 @@ impl Notifier {
         self.mailer.is_some()
     }
 
-    /// Sends a password reset link to the member who asked for it.
-    pub async fn send_password_reset(&self, mail: &ResetEmail<'_>) -> Result<(), Failure> {
+    /// Sends a link to the person who asked for it: a password reset, or the
+    /// confirmation of a subscription.
+    pub async fn send_link(&self, mail: &LinkEmail<'_>) -> Result<(), Failure> {
         let mailer = self.mailer.as_ref().ok_or(Failure::NoMailServer)?;
-        let message = reset_email(&mailer.from, mail).ok_or(Failure::MailRefused(None))?;
+        let message = link_email(&mailer.from, mail).ok_or(Failure::MailRefused(None))?;
         mailer.deliver(message).await
     }
 
@@ -205,7 +252,10 @@ impl Notifier {
         let mut first_failure = None;
         let mut delivered = 0;
         for recipient in &recipients {
-            match mailer.send(recipient, notice, facts, &channel.locale).await {
+            match mailer
+                .send(recipient, notice, facts, &channel.locale, None)
+                .await
+            {
                 Ok(()) => delivered += 1,
                 Err(failure) => {
                     first_failure.get_or_insert(failure);
@@ -257,15 +307,17 @@ impl Notifier {
 }
 
 impl Mailer {
+    /// Sends a notice to one address; a subscriber's copy carries its way out.
     async fn send(
         &self,
         to: &Mailbox,
         notice: &Notice,
         facts: &Facts,
         locale: &str,
+        unsubscribe: Option<&Unsubscribe>,
     ) -> Result<(), Failure> {
-        let message =
-            email(&self.from, to, notice, facts, locale).map_err(|_| Failure::MailRefused(None))?;
+        let message = email(&self.from, to, notice, facts, locale, unsubscribe)
+            .map_err(|_| Failure::MailRefused(None))?;
         self.deliver(message).await
     }
 
@@ -311,6 +363,21 @@ impl Sender for Notifier {
     }
 }
 
+impl SubscriberSender for Notifier {
+    fn mail_ready(&self) -> bool {
+        Notifier::mail_ready(self)
+    }
+
+    async fn send_to_subscriber(&self, mail: &SubscriberEmail<'_>) -> Result<(), Failure> {
+        let mailer = self.mailer.as_ref().ok_or(Failure::NoMailServer)?;
+        let to: Mailbox = mail.to.parse().map_err(|_| Failure::MailRefused(None))?;
+        let way_out = Some(mail.unsubscribe);
+        mailer
+            .send(&to, mail.notice, mail.facts, mail.locale, way_out)
+            .await
+    }
+}
+
 /// What the mail server said, as a failure: refused, busy, or not reached.
 fn classify_smtp(error: &lettre::transport::smtp::Error) -> Failure {
     let status = error
@@ -353,7 +420,7 @@ mod tests {
     use super::*;
     use crate::i18n::I18n;
     use crate::models::{ChannelKind, Happening};
-    use crate::services::{Origin, Subject};
+    use crate::services::{LinkPurpose, Origin, Subject};
 
     /// Answers every request with the same raw response and keeps what it
     /// received.
@@ -623,7 +690,7 @@ mod tests {
         }
     }
 
-    async fn mail_to(addr: SocketAddr, target: &str) -> Result<(), Failure> {
+    fn notifier_with_mail(addr: SocketAddr) -> Notifier {
         let smtp = SmtpConfig {
             host: addr.ip().to_string(),
             port: addr.port(),
@@ -633,6 +700,11 @@ mod tests {
         };
         let notifier = Notifier::new(Duration::from_secs(5), Some(&smtp)).unwrap();
         assert!(notifier.mail_ready());
+        notifier
+    }
+
+    async fn mail_to(addr: SocketAddr, target: &str) -> Result<(), Failure> {
+        let notifier = notifier_with_mail(addr);
         let channel = channel(ChannelKind::Email, target.to_string());
         let (notice, facts) = test_message(&channel);
         notifier.send(&channel, &notice, &facts).await
@@ -692,6 +764,91 @@ mod tests {
 
         assert_eq!(failure, Failure::MailBusy(Some(451)));
         assert!(!failure.is_permanent());
+    }
+
+    /// Sends the test notice to `to` as a subscriber, through `notifier`.
+    async fn subscriber_mail_to(notifier: &Notifier, to: &str) -> Result<(), Failure> {
+        let channel = channel(ChannelKind::Email, to.to_string());
+        let (notice, facts) = test_message(&channel);
+        let unsubscribe =
+            Unsubscribe::new("https://status.example", "7.abc", "ACME", &I18n::new("en"));
+        notifier
+            .send_to_subscriber(&SubscriberEmail {
+                to,
+                notice: &notice,
+                facts: &facts,
+                locale: "en",
+                unsubscribe: &unsubscribe,
+            })
+            .await
+    }
+
+    #[tokio::test]
+    async fn a_subscriber_gets_one_message_with_the_way_out() {
+        let (addr, lines) = mail_server(|_| "250 OK\r\n").await;
+
+        subscriber_mail_to(&notifier_with_mail(addr), "ana@example.com")
+            .await
+            .unwrap();
+
+        let lines = lines.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        let count = |wanted: &str| lines.iter().filter(|line| *line == wanted).count();
+        assert_eq!(count("MAIL FROM:<status@example.com>"), 1);
+        assert_eq!(count("RCPT TO:<ana@example.com>"), 1);
+        assert_eq!(
+            count("List-Unsubscribe: <https://status.example/unsubscribe?token=7.abc>"),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn a_subscriber_email_needs_a_mail_server() {
+        let notifier = Notifier::new(Duration::from_secs(5), None).unwrap();
+
+        let failure = subscriber_mail_to(&notifier, "ana@example.com")
+            .await
+            .unwrap_err();
+
+        assert_eq!(failure, Failure::NoMailServer);
+        assert!(!SubscriberSender::mail_ready(&notifier));
+    }
+
+    #[tokio::test]
+    async fn an_address_that_cannot_be_written_contacts_no_server() {
+        let (addr, lines) = mail_server(|_| "250 OK\r\n").await;
+
+        let failure = subscriber_mail_to(&notifier_with_mail(addr), "not an address")
+            .await
+            .unwrap_err();
+
+        assert_eq!(failure, Failure::MailRefused(None));
+        assert!(
+            lines
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn the_confirmation_reaches_the_mail_server() {
+        let (addr, lines) = mail_server(|_| "250 OK\r\n").await;
+        let i18n = I18n::new("en");
+
+        notifier_with_mail(addr)
+            .send_link(&LinkEmail {
+                purpose: LinkPurpose::Subscription,
+                to: "ana@example.com",
+                url: "https://status.example/subscribe/confirm?token=7.abc",
+                instance: "ACME",
+                i18n: &i18n,
+            })
+            .await
+            .unwrap();
+
+        let lines = lines.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        assert!(lines.iter().any(|line| line == "RCPT TO:<ana@example.com>"));
+        assert!(lines.iter().any(|line| line == "To: ana@example.com"));
     }
 
     #[test]

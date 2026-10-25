@@ -67,7 +67,7 @@ impl<'a> Grants<'a> {
 ///
 /// There is deliberately no `Default`: a query that forgets to take a scope
 /// must fail to compile rather than quietly show every service.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Scope {
     /// Nothing is hidden from this viewer.
     All,

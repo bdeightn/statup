@@ -36,7 +36,8 @@ async function createService(page) {
 
 async function createFolder(page) {
     await page.goto("/services");
-    await page.getByText("Nouveau dossier", { exact: true }).click();
+    await page.locator("summary", { hasText: "Nouveau" }).click();
+    await page.getByRole("button", { name: "Dossier", exact: true }).click();
     await page.getByLabel("Nom du dossier").fill(FOLDER);
     await page.getByRole("button", { name: "Créer le dossier" }).click();
     await expect(page).toHaveURL(/\/services\/folders\/\d+/);
@@ -59,7 +60,7 @@ async function openToReaderOnly(page) {
     await page.locator("[data-grant-add]").click();
     await expect(page.locator("[data-access-field] [data-grant]:not([hidden])")).toHaveText(/Reader/);
     await page.locator(".folder-panel").getByRole("button", { name: "Enregistrer" }).click();
-    await expect(page.getByText("Visibilité enregistrée.")).toBeVisible();
+    await expect(page.getByText("Dossier enregistré.")).toBeVisible();
 }
 
 async function deleteAll(page, folderUrl, serviceId) {

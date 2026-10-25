@@ -80,13 +80,6 @@
         font-size: var(--text-sm);
     }
 
-    .results-count {
-        margin: 0 0 10px;
-        font-size: var(--text-sm);
-        color: var(--ink-soft);
-        font-feature-settings: 'tnum' 1;
-    }
-
     .pager {
         display: flex;
         align-items: center;
@@ -102,20 +95,11 @@
     }
 
     /* Event page: reading on the left, acting on the right. */
-    /* The title and everything that acts on the event, on one line. */
-    .event-head {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        align-items: start;
-        gap: 12px 24px;
-    }
-
     /* Two cards, as on the dashboard: the story takes two shares, the
        details one. On a phone the details come first. */
     .event-layout {
         display: grid;
         gap: 24px;
-        margin-top: 24px;
     }
 
     @media (min-width: 1024px) {
@@ -164,10 +148,6 @@
     }
 
     @media (max-width: 639px) {
-        .event-head {
-            grid-template-columns: minmax(0, 1fr);
-        }
-
         .event-actions {
             justify-content: flex-start;
         }
@@ -230,23 +210,7 @@
 
     .event-title {
         max-width: 40ch;
-        font-size: var(--text-3xl);
-        font-weight: 600;
-        line-height: 1.2;
-        letter-spacing: -0.022em;
-        color: var(--ink);
         overflow-wrap: anywhere;
-    }
-
-    .event-state {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 6px 12px;
-        margin-top: 14px;
-        font-size: var(--text-md);
-        line-height: 1.5;
-        color: var(--ink);
     }
 
     /* Facts under the title, each under its own label, read across. */
@@ -316,12 +280,6 @@
         }
     }
 
-    @media (max-width: 639px) {
-        .event-title {
-            font-size: var(--text-2xl);
-        }
-    }
-
     /* Rendered Markdown of descriptions and updates. */
     .rich-text {
         font-size: var(--text-md);
@@ -333,7 +291,7 @@
     /* An announcement reads as an article: a dateline, then the text a size
        up in full ink, on a reading measure. Its updates follow. */
     .article-body {
-        padding: 22px 20px 28px;
+        padding: 22px 16px 28px;
     }
 
     .article-dateline {
@@ -385,6 +343,7 @@
     .review-card .article-text {
         max-width: none;
     }
+
 
     /* Corrected in place: while its form is open, the form holds the text. */
     .review-card:has(.review-form:target, .review-form.is-open) .review {
@@ -484,6 +443,11 @@
         margin: 0;
         padding: 0;
         list-style: none;
+    }
+
+    /* In a card, the dots sit on the card's inner edge. */
+    .event-story .timeline {
+        padding-left: 4px;
     }
 
     .moment {
@@ -1240,6 +1204,9 @@
     }
 
     .more-options > summary {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
         width: fit-content;
         font-size: var(--text-sm);
         font-weight: 500;
@@ -1253,12 +1220,10 @@
         display: none;
     }
 
-    .more-options > summary::after {
-        content: " +";
-    }
-
-    .more-options[open] > summary::after {
-        content: " \2212";
+    /* The caret of every menu that opens, as on the Journal's "Modifier". */
+    .more-options > summary svg {
+        width: 16px;
+        height: 16px;
     }
 
     .more-options > summary:hover {
@@ -1442,7 +1407,7 @@
         justify-content: space-between;
         gap: 16px 24px;
         margin-top: 32px;
-        padding: 20px 24px;
+        padding: 20px 16px;
     }
 
     .danger-zone-text {

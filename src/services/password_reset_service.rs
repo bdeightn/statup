@@ -1,20 +1,17 @@
 //! The link that lets a member who forgot their password choose a new one.
 //!
-//! A link carries `<id>.<secret>`: the id finds the stored link, the secret
-//! is checked against its Argon2 hash, so a copy of the database opens no
-//! account. Only the newest link of an account works, for an hour, once.
-
-use rand::Rng;
-use rand::distributions::Alphanumeric;
+//! A link carries `<id>.<secret>` (see `link_token`): the id finds the
+//! stored link, the secret is checked against its Argon2 hash, so a copy of
+//! the database opens no account. Only the newest link of an account works,
+//! for an hour, once.
 
 use super::AuthService;
+use super::link_token::{new_secret, parse, token};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::User;
 use crate::repositories::{PasswordResetRepository, UserRepository};
 
-/// Characters of the secret: about 190 bits, beyond any guessing.
-const SECRET_LENGTH: usize = 32;
 /// Links an account can be sent in an hour, so the form cannot flood an inbox.
 const LINKS_PER_HOUR: i64 = 3;
 
@@ -56,7 +53,7 @@ impl PasswordResetService {
         };
         Ok(LinkRequest::Issued(ResetLink {
             user,
-            token: format!("{id}.{secret}"),
+            token: token(id, &secret),
         }))
     }
 
@@ -96,23 +93,6 @@ impl PasswordResetService {
             .await?
             .ok_or(AppError::NotFound)
     }
-}
-
-fn new_secret() -> String {
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(SECRET_LENGTH)
-        .map(char::from)
-        .collect()
-}
-
-/// The id and the secret of a well formed token.
-fn parse(token: &str) -> Option<(i64, &str)> {
-    let (id, secret) = token.trim().split_once('.')?;
-    let well_formed =
-        secret.len() == SECRET_LENGTH && secret.bytes().all(|b| b.is_ascii_alphanumeric());
-    well_formed.then_some(())?;
-    Some((id.parse().ok()?, secret))
 }
 
 #[cfg(test)]

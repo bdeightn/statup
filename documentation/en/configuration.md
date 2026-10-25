@@ -47,7 +47,7 @@ The header your proxy writes the client address in. Only its last entry counts, 
 - Default: `false`
 - Values: `true`, `false`
 
-Who can see the page until an administrator chooses: `true` for everyone, `false` for members only. Once the choice is made, at the first launch or in Settings, it takes precedence and is kept across restarts.
+Page access until an administrator chooses: `true` for everyone, `false` for members only. Once the choice is made, at the first launch or in Settings, it takes precedence and is kept across restarts.
 
 ### `ADMIN_EMAIL`
 
@@ -105,7 +105,10 @@ Ask GitHub once a day whether a newer version is published, and tell administrat
 
 ## Email
 
-The mail server of the email alerts and of the [forgotten password](forgotten-password.md) links. Email channels are offered only when `SMTP_HOST` is set.
+The mail server of the email alerts, of the [forgotten password](forgotten-password.md) links and of the emails to [subscribers](status-page.md#get-notified). Email channels and subscriptions are offered only when `SMTP_HOST` is set.
+
+> [!NOTE]
+> One incident sends one email to each subscriber. A mailbox account, such as Microsoft 365 or Gmail, caps how many emails it sends in a minute and in a day: past a few hundred subscribers, use a transactional mail service. Sign the domain of `SMTP_FROM` with DKIM and publish its SPF and DMARC records, so the emails reach the inbox; mail clients may then show their own unsubscribe button, when the page is served over `https`.
 
 ### `SMTP_HOST`
 

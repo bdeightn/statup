@@ -24,6 +24,10 @@
         <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
         <div class="card form-card stack">
             {% include "admin/_notification_fields.html" %}
+            <div class="destination-test">
+                {% include "admin/_notification_test_button.html" %}
+                <div id="destination-test-result" aria-live="polite" data-test-result></div>
+            </div>
         </div>
 
         <div class="action-bar">

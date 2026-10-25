@@ -103,7 +103,7 @@ impl ActivityKind {
 /// Workflow state. Valid values per kind:
 /// - incident: `investigating`, `in_progress`, `monitoring`, `resolved`, `cancelled`
 /// - maintenance: `scheduled`, `in_progress`, `completed`, `cancelled`
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, sqlx::Type, Deserialize)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum Lifecycle {

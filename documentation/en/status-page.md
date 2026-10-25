@@ -3,7 +3,7 @@ title: The status page
 description: "What colleagues and visitors read: the banner, the services, the recent activity, the events and the feed."
 ---
 
-What everyone reads, from a desk or a phone. With **Who can see the page** set to **Everyone**, visitors read it without an account; with **Members only**, they are asked to sign in. The names of the team are shown to signed-in members only.
+What everyone reads, from a desk or a phone. With **Page access** set to **Public**, visitors read it without an account; with **Members only**, they are asked to sign in. The names of the team are shown to signed-in members only.
 
 Each reader sees only the services their [visibility](services.md#visibility) allows, and the events that name them.
 
@@ -49,13 +49,16 @@ Signed-in members see on **Events** how many incidents and maintenance were publ
 
 ## Get notified
 
-**Get notified**, at the foot of every page and on the **Recent activity** block, gives three ways to follow without opening the page:
+**Get notified**, at the foot of every page and on the **Recent activity** block, gives the ways to follow without opening the page:
 
+- **By email**: a visitor types their address, ticks what they want to receive (**Incidents**, **Maintenance**, **Announcements**) and confirms through the link sent to them, which works for one day. A signed-in member subscribes at the address of their account, with no link to confirm, and changes their boxes or stops in the same place.
 - **With a feed reader**: the address of the Atom feed, to copy.
-- **In Teams, Slack or by email**: through the channels an administrator sets in [Alerts](alerts.md).
+- **In Teams or Slack**: through the channels an administrator sets in [Alerts](alerts.md).
 - **Or this page**: kept open, it updates itself every minute.
 
-A visitor cannot yet subscribe with their own email address.
+Each email tells one piece of news: an incident opened, an update posted, its end and its review, a maintenance announced, moved, started or finished, an announcement. It names only the services its reader may see: a visitor never reads the name of a service kept for members. Every email ends with **Unsubscribe**, and mail clients can offer their own unsubscribe button.
+
+**By email** shows only when the instance can send email ([`SMTP_HOST`](configuration.md#smtp_host)) and knows its own address ([`PUBLIC_URL`](configuration.md#public_url), or the **Link in the messages** of [Alerts](alerts.md#link-in-the-messages)). For visitors, the page must also be open to everyone, and an administrator must open subscriptions to them in [Alerts](alerts.md): they are closed on a new instance.
 
 ## The Atom feed
 

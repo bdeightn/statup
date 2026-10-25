@@ -1,6 +1,7 @@
 //! Folders of services. A folder starts from the Services page; its own
-//! page adds and takes out its services, sets who sees it for the services
-//! that inherit it, renames it, and deletes it at its foot.
+//! page adds and takes out its services, renames it and sets who sees it
+//! for the services that inherit it, from one panel, and deletes it at its
+//! foot.
 
 use askama::Template;
 use axum::extract::{Path, Query, State};
@@ -16,7 +17,7 @@ use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher};
 use crate::models::{JournalKind, Service, ServiceFolder, User, Visibility, check_folder_name};
-use crate::repositories::{FolderRepository, NewJournalEntry, ServiceRepository};
+use crate::repositories::{FolderRepository, NewJournalEntry, ServiceRepository, UserRepository};
 use crate::state::AppState;
 
 /// Past this many, the names in the grey line fold behind "and N more".
@@ -35,18 +36,13 @@ struct FolderTemplate {
     /// "Restricted, Accounting": the saved setting in one grey line.
     summary: String,
     notice: Option<FolderNotice>,
-    rename: NameForm,
-    /// A refused setting opens its panel again, with why.
-    visibility_open: bool,
+    name: NameField,
+    /// A refused save opens the panel again, with why.
+    settings_open: bool,
     i18n: I18n,
 }
 
 impl FolderTemplate {
-    fn visibility_line(&self) -> String {
-        self.i18n
-            .tf("folders.visibility_line", &[("value", &self.summary)])
-    }
-
     fn remove_label(&self, name: &str) -> String {
         self.i18n.tf("folders.remove_aria", &[("name", name)])
     }
@@ -62,32 +58,35 @@ struct Candidate {
 /// What the previous action did, said once on top of the page.
 enum FolderNotice {
     Created,
-    Renamed,
-    VisibilitySaved,
+    Saved,
     Added(String),
     Removed(String),
 }
 
-/// The rename panel, open again with the refused name and why.
-#[derive(Default)]
-struct NameForm {
-    value: Option<String>,
+/// The name field of the panel: the folder's name, or the refused one.
+struct NameField {
+    value: String,
     error: Option<String>,
+}
+
+/// A refused save, shown again in its open panel: what was typed and
+/// chosen, and why each part was refused.
+struct Posted {
+    name: NameField,
+    audience: Audience,
+    access_error: Option<String>,
 }
 
 /// What the page shows besides the folder itself.
 #[derive(Default)]
 struct Shown {
     notice: Option<FolderNotice>,
-    rename: NameForm,
-    /// A refused setting, shown again with why.
-    refused: Option<(Audience, String)>,
+    posted: Option<Posted>,
 }
 
 #[derive(Deserialize)]
 pub struct FolderQuery {
     created: Option<u8>,
-    renamed: Option<u8>,
     saved: Option<u8>,
     added: Option<usize>,
     kept: Option<usize>,
@@ -107,7 +106,9 @@ pub struct AddServicesInput {
 }
 
 #[derive(Deserialize)]
-pub struct VisibilityInput {
+pub struct FolderSettingsInput {
+    #[serde(default)]
+    name: String,
     #[serde(default)]
     visibility: String,
     #[serde(default)]
@@ -116,16 +117,36 @@ pub struct VisibilityInput {
     member_ids: Vec<i64>,
 }
 
-impl VisibilityInput {
+impl FolderSettingsInput {
     fn audience(&self) -> Result<Audience, AppError> {
         Audience::from_form(&self.visibility, &self.group_ids, &self.member_ids, false)
     }
 }
 
-/// The posted setting, refused when restricted to nobody.
-async fn checked(pool: &DbPool, input: &VisibilityInput) -> Result<Audience, AppError> {
+/// The posted setting, refused when it would restrict the folder to nobody.
+/// A folder already restricted to nobody (its last group removed, its only
+/// reader deactivated) keeps the setting, so it can still be renamed.
+async fn checked(
+    pool: &DbPool,
+    input: &FolderSettingsInput,
+    before: &Audience,
+) -> Result<Audience, AppError> {
     let audience = input.audience()?;
-    audience.check(pool, false).await?;
+    if before.check(pool, false).await.is_ok() {
+        audience.check(pool, false).await?;
+    }
+    Ok(audience)
+}
+
+/// Who sees the folder, as the panel can show it: the members it names who
+/// are no longer active readers are left out, so a rename alone never counts
+/// as dropping them.
+async fn shown_audience(pool: &DbPool, id: i64) -> Result<Audience, AppError> {
+    let mut audience = Audience::of_folder(pool, id).await?;
+    let readers = UserRepository::active_readers(pool).await?;
+    audience
+        .member_ids
+        .retain(|member| readers.iter().any(|reader| reader.id == *member));
     Ok(audience)
 }
 
@@ -153,11 +174,8 @@ async fn notice_of(
     if query.created.is_some() {
         return Ok(Some(FolderNotice::Created));
     }
-    if query.renamed.is_some() {
-        return Ok(Some(FolderNotice::Renamed));
-    }
     if query.saved.is_some() {
-        return Ok(Some(FolderNotice::VisibilitySaved));
+        return Ok(Some(FolderNotice::Saved));
     }
     if let Some(added) = query.added.filter(|added| *added > 0) {
         let kept = query.kept.unwrap_or(0).min(added);
@@ -255,10 +273,17 @@ async fn render_folder(
     let folder = find(&state.pool, id).await?;
     let (services, others) = services_around(&state.pool, id).await?;
     let saved = Audience::of_folder(&state.pool, id).await?;
-    let visibility_open = shown.refused.is_some();
-    let (audience, error) = match shown.refused {
-        Some((posted, error)) => (posted, Some(error)),
-        None => (saved.clone(), None),
+    let settings_open = shown.posted.is_some();
+    let (name, audience, error) = match shown.posted {
+        Some(posted) => (posted.name, posted.audience, posted.access_error),
+        None => (
+            NameField {
+                value: folder.name.clone(),
+                error: None,
+            },
+            saved.clone(),
+            None,
+        ),
     };
     let public_mode = state.is_public_mode();
     let access = AccessBlock::load(&state.pool, &i18n, audience, public_mode, None, error)
@@ -272,8 +297,8 @@ async fn render_folder(
         others,
         access,
         notice: shown.notice,
-        rename: shown.rename,
-        visibility_open,
+        name,
+        settings_open,
         i18n,
     })
 }
@@ -317,31 +342,42 @@ pub async fn create_folder(
     Ok(Redirect::to(&format!("/services/folders/{id}?created=1")).into_response())
 }
 
-pub async fn rename_folder(
+/// Saves the folder's name and who sees it, from its one panel; the
+/// services that inherit it follow. Both are checked before anything is
+/// written, and each change leaves its own line in the journal, none when
+/// nothing changed.
+pub async fn save_settings(
     RequirePublisher(user): RequirePublisher,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     CsrfToken(csrf_token): CsrfToken,
     Locale(i18n): Locale,
-    HtmlForm(input): HtmlForm<FolderNameInput>,
+    HtmlForm(input): HtmlForm<FolderSettingsInput>,
 ) -> Result<Response, AppError> {
     let folder = find(&state.pool, id).await?;
-    let name = match free_name(&state.pool, &input.name, Some(id)).await {
-        Ok(name) => name,
-        Err(AppError::Validation(key)) => {
-            let rename = NameForm {
-                error: Some(i18n.t(&key).to_string()),
-                value: Some(input.name),
+    let before = shown_audience(&state.pool, id).await?;
+    let name = refusal(free_name(&state.pool, &input.name, Some(id)).await, &i18n)?;
+    let audience = refusal(checked(&state.pool, &input, &before).await, &i18n)?;
+    let (name, audience) = match (name, audience) {
+        (Ok(name), Ok(audience)) => (name, audience),
+        (name, audience) => {
+            let posted = Posted {
+                access_error: audience.as_ref().err().cloned(),
+                audience: audience.unwrap_or_else(|_| input.audience().unwrap_or(before)),
+                name: NameField {
+                    value: input.name,
+                    error: name.err(),
+                },
             };
             let shown = Shown {
-                rename,
+                posted: Some(posted),
                 ..Shown::default()
             };
             return render_folder(&state, &user, (csrf_token, i18n), id, shown).await;
         }
-        Err(e) => return Err(e),
     };
-    FolderRepository::rename(&state.pool, id, &name).await?;
+    FolderRepository::save_settings(&state.pool, id, &name, audience.mode, audience.grants())
+        .await?;
     if folder.name != name {
         NewJournalEntry::new(JournalKind::FolderRenamed)
             .by(&user)
@@ -350,44 +386,26 @@ pub async fn rename_folder(
             .record(&state.pool)
             .await;
     }
-    Ok(Redirect::to(&format!("/services/folders/{id}?renamed=1")).into_response())
-}
-
-/// Saves who sees the folder; the services that inherit it follow. A save
-/// that changes nothing leaves no line in the journal.
-pub async fn save_visibility(
-    RequirePublisher(user): RequirePublisher,
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-    CsrfToken(csrf_token): CsrfToken,
-    Locale(i18n): Locale,
-    HtmlForm(input): HtmlForm<VisibilityInput>,
-) -> Result<Response, AppError> {
-    let folder = find(&state.pool, id).await?;
-    let before = Audience::of_folder(&state.pool, id).await?;
-    let audience = match checked(&state.pool, &input).await {
-        Ok(audience) => audience,
-        Err(AppError::Validation(key)) => {
-            let posted = input.audience().unwrap_or_else(|_| before.clone());
-            let shown = Shown {
-                refused: Some((posted, i18n.t(&key).to_string())),
-                ..Shown::default()
-            };
-            return render_folder(&state, &user, (csrf_token, i18n), id, shown).await;
-        }
-        Err(e) => return Err(e),
-    };
-    FolderRepository::set_visibility(&state.pool, id, audience.mode, audience.grants()).await?;
-    let after = Audience::of_folder(&state.pool, id).await?;
+    let after = shown_audience(&state.pool, id).await?;
     if after != before {
         NewJournalEntry::new(JournalKind::FolderVisibilityChanged)
             .by(&user)
-            .about(&folder.name)
+            .about(&name)
             .with_detail(after.detail())
             .record(&state.pool)
             .await;
     }
     Ok(Redirect::to(&format!("/services/folders/{id}?saved=1")).into_response())
+}
+
+/// A refused value becomes the sentence that says why; any other error
+/// stops the request.
+fn refusal<T>(result: Result<T, AppError>, i18n: &I18n) -> Result<Result<T, String>, AppError> {
+    match result {
+        Ok(value) => Ok(Ok(value)),
+        Err(AppError::Validation(key)) => Ok(Err(i18n.t(&key).to_string())),
+        Err(e) => Err(e),
+    }
 }
 
 /// Puts the ticked services in the folder, out of the one they were in.

@@ -81,19 +81,13 @@
             <form method="post" action="/admin/settings/general" enctype="multipart/form-data" data-warn-unsaved>
                 <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
                 <div class="set-row">
-                    <div>
-                        <label for="instance-name" class="set-label">{{ i18n.t("admin.instance_name") }}</label>
-                        <p class="set-help">{{ i18n.t("admin.instance_name_help") }}</p>
-                    </div>
+                    <label for="instance-name" class="set-label">{{ i18n.t("admin.instance_name") }}</label>
                     <input id="instance-name" type="text" name="instance_name" class="input" maxlength="40"
                            value="{{ instance_name }}" placeholder="{{ i18n.t("admin.instance_name_placeholder") }}"
                            {% if error.is_some() %}aria-describedby="form-error" {% endif %}{% if error.is_some() %} aria-invalid="true"{% endif %}>
                 </div>
                 <div class="set-row">
-                    <div>
-                        <p class="set-label">{{ i18n.t("admin.logo") }}</p>
-                        <p class="set-help">{{ i18n.t("admin.logo_help") }}</p>
-                    </div>
+                    <p class="set-label">{{ i18n.t("admin.logo") }}</p>
                     <div class="set-logo">
                         {% if let Some(url) = crate::instance_logo_url() %}
                         <img class="set-logo-preview" src="{{ url }}" alt="">
@@ -116,10 +110,7 @@
                     </div>
                 </div>
                 <div class="set-row">
-                    <div>
-                        <label for="time-zone" class="set-label">{{ i18n.t("admin.time_zone") }}</label>
-                        <p class="set-help">{{ i18n.t("admin.time_zone_help") }}</p>
-                    </div>
+                    <label for="time-zone" class="set-label">{{ i18n.t("admin.time_zone") }}</label>
                     <select id="time-zone" name="time_zone" class="input" data-custom-select>
                         {% for zone in zones %}
                         <option value="{{ zone }}"{% if self.is_current_zone(zone) %} selected{% endif %}>{{ Self::zone_label(zone) }}</option>
@@ -127,11 +118,8 @@
                     </select>
                 </div>
                 <div class="set-row">
-                    <div>
-                        <p id="access-label" class="set-label">{{ i18n.t("admin.public_mode") }}</p>
-                        <p id="access-help" class="set-help">{{ i18n.t("admin.public_mode_help") }}</p>
-                    </div>
-                    <div class="segmented" role="radiogroup" aria-labelledby="access-label" aria-describedby="access-help">
+                    <p id="access-label" class="set-label">{{ i18n.t("admin.public_mode") }}</p>
+                    <div class="segmented" role="radiogroup" aria-labelledby="access-label">
                         <label class="choice"><input type="radio" name="access" value="members" class="sr-only"{% if !public_mode %} checked{% endif %}><span>{{ i18n.t("admin.access_members") }}</span></label>
                         <label class="choice"><input type="radio" name="access" value="everyone" class="sr-only"{% if public_mode %} checked{% endif %}><span>{{ i18n.t("admin.access_everyone") }}</span></label>
                     </div>

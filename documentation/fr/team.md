@@ -11,18 +11,18 @@ description: "Lecteurs, éditeurs et administrateurs, comment leurs comptes sont
 | **Éditeur** | Tout ce que peut un lecteur, plus publier incidents, maintenances et annonces, régler l'état des services, et gérer les services, les dossiers, les modèles et les icônes. |
 | **Administrateur** | Tout, plus les paramètres, l'équipe et ses groupes, les alertes, le Journal, l'organisation du tableau de bord, et la modification ou la suppression des événements clos. |
 
-## Qui peut voir la page
+## Accès à la page
 
-Se choisit au [premier lancement](install.md#first-launch), puis dans **Paramètres**, sous **Qui peut voir la page** :
+Se choisit au [premier lancement](install.md#first-launch), puis dans **Paramètres**, sous **Accès à la page** :
 
 - **Membres seulement** : il faut se connecter, et les lecteurs de flux ne peuvent plus lire le flux.
-- **Tout le monde** : les visiteurs lisent la page et le flux sans compte.
+- **Publique** : les visiteurs lisent la page et le flux sans compte.
 
 ## Ajouter un membre
 
 Les comptes sont créés par un administrateur : personne d'autre ne peut s'inscrire, sauf sur une instance vide, pour en devenir le premier administrateur.
 
-**Paramètres**, **Équipe**, puis **Ajouter un membre** : **Nom**, **Adresse e-mail** et **Rôle**, **Lecteur** par défaut. **Créer le compte** affiche une seule fois un mot de passe provisoire, avec **Copier**.
+**Paramètres**, **Équipe**, puis **Nouveau membre** en tête de la carte **Membres** : **Nom**, **Adresse e-mail** et **Rôle**, **Lecteur** par défaut. **Créer le compte** affiche une seule fois un mot de passe provisoire, avec **Copier**.
 
 - Aucun courriel n'est envoyé : transmettez vous-même le mot de passe. Il n'est affiché que cette fois-là et n'est conservé nulle part.
 - Il reste valable sept jours. À sa première connexion, le membre doit choisir le sien, sur **Choisissez votre mot de passe**.
@@ -54,7 +54,7 @@ Les administrateurs gèrent les groupes depuis **Paramètres**, **Équipe**, dan
 
 ### Créer un groupe
 
-**Nouveau groupe**, puis un **Nom du groupe** de 100 caractères au plus, unique, et **Créer le groupe**. La page du groupe s'ouvre. **Renommer**, à côté de son nom, le change.
+**Nouveau groupe**, puis un **Nom du groupe** de 100 caractères au plus, unique, et **Créer le groupe**. La page du groupe s'ouvre. **Renommer**, à droite de son nom, le change.
 
 ### Membres d'un groupe
 

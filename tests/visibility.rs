@@ -3,15 +3,23 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use chrono::{Duration, Utc};
-use common::TestApp;
+use common::{MailSink, TestApp};
 use sqlx::SqlitePool;
+use statup::config::{SmtpConfig, SmtpSecurity};
 use statup::i18n::{I18n, LANGUAGES};
 use statup::models::{
-    Category, CreateEventInput, Grants, Kind, Lifecycle, Role, Severity, Visibility,
+    Category, Choices, CreateEventInput, Grants, Kind, Lifecycle, Role, Severity, Subscriber,
+    Visibility,
 };
-use statup::repositories::{FolderRepository, GroupRepository, ServiceRepository, UserRepository};
-use statup::services::{EventService, ServiceService};
+use statup::repositories::{
+    FolderRepository, GroupRepository, ServiceRepository, SubscriberRepository, UserRepository,
+};
+use statup::services::{
+    EventService, Notifier, ServiceService, SubscriptionService, deliver_to_subscribers,
+};
 
 const PASSWORD: &str = "correct horse battery staple";
 
@@ -63,19 +71,30 @@ struct Events {
 
 impl Fixture {
     async fn new() -> Self {
-        let app = TestApp::spawn_public().await;
+        Self::seeded(TestApp::spawn_public().await, false).await
+    }
+
+    /// Like [`Fixture::new`], with every reader subscribed to the emails
+    /// before the events are created, so that each event is queued for them.
+    async fn with_subscribers() -> Self {
+        Self::seeded(TestApp::spawn_public().await, true).await
+    }
+
+    async fn seeded(app: TestApp, subscribe: bool) -> Self {
         let admin = app
             .create_user("admin@x.com", PASSWORD, "Admin", Role::Admin)
             .await;
         let inside = app
             .create_user("inside@x.com", PASSWORD, "Inside", Role::Reader)
             .await;
-        app.create_user("outside@x.com", PASSWORD, "Outside", Role::Reader)
+        let outside = app
+            .create_user("outside@x.com", PASSWORD, "Outside", Role::Reader)
             .await;
         let granted = app
             .create_user("granted@x.com", PASSWORD, "Granted", Role::Reader)
             .await;
-        app.create_user("publisher@x.com", PASSWORD, "Publisher", Role::Publisher)
+        let publisher = app
+            .create_user("publisher@x.com", PASSWORD, "Publisher", Role::Publisher)
             .await;
         let pool = &app.pool;
         let group = GroupRepository::create(pool, "Paie").await.unwrap();
@@ -83,6 +102,9 @@ impl Fixture {
             .await
             .unwrap();
         let (open, restricted, members) = seed_services(pool, group, granted).await;
+        if subscribe {
+            subscribe_everyone(pool, &[outside, inside, granted, publisher]).await;
+        }
         let events = seed_events(pool, admin, open, restricted).await;
         Self {
             app,
@@ -935,5 +957,301 @@ async fn an_editor_opens_a_service_to_a_member_or_hands_it_to_its_folder() {
     assert!(
         form.contains(r#"data-access-inherit checked"#),
         "and is ticked"
+    );
+}
+
+const VISITOR: &str = "visitor@example.com";
+const PAGE_URL: &str = "http://status.test";
+/// Every reader of the fixture who subscribes, by address.
+const OUTSIDE: &str = "outside@x.com";
+const INSIDE: &str = "inside@x.com";
+const GRANTED: &str = "granted@x.com";
+const PUBLISHER: &str = "publisher@x.com";
+
+/// Subscribes the visitor and the members to every kind of event. It happens
+/// before the events exist: an event is queued for who is subscribed then.
+async fn subscribe_everyone(pool: &SqlitePool, members: &[i64]) {
+    SubscriptionService::set_visitors_open(pool, true)
+        .await
+        .unwrap();
+    let request = SubscriptionService::request(pool, VISITOR, "en", Choices::EVERYTHING)
+        .await
+        .unwrap();
+    let Some(token) = request else {
+        panic!("no confirmation link for the visitor");
+    };
+    SubscriptionService::confirm(pool, &token)
+        .await
+        .unwrap()
+        .expect("the visitor is subscribed");
+    for &member in members {
+        SubscriptionService::save_member(pool, member, "en", Choices::EVERYTHING)
+            .await
+            .unwrap();
+    }
+}
+
+/// An email as the mail server received it, with its quoted-printable
+/// encoding and header folding undone: headers and both bodies as one text.
+struct Mail {
+    text: String,
+}
+
+impl Mail {
+    fn new(raw: &str) -> Self {
+        Self {
+            text: undo_quoted_printable(raw),
+        }
+    }
+
+    /// The value of a header of the message.
+    fn header(&self, name: &str) -> &str {
+        let headers = self.text.split("\r\n\r\n").next().unwrap_or_default();
+        let prefix = format!("{}:", name.to_ascii_lowercase());
+        headers
+            .lines()
+            .find(|line| line.to_ascii_lowercase().starts_with(&prefix))
+            .map_or("", |line| line[prefix.len()..].trim())
+    }
+
+    /// The address the message is for.
+    fn recipient(&self) -> &str {
+        let to = self.header("To");
+        let inside = to.split_once('<').map_or(to, |(_, rest)| rest);
+        inside.trim_end_matches('>')
+    }
+
+    /// The token in the `List-Unsubscribe` header.
+    fn way_out_token(&self) -> &str {
+        let link = self.header("List-Unsubscribe");
+        let after = link.split_once("token=").map_or("", |(_, token)| token);
+        after.trim_end_matches('>')
+    }
+}
+
+fn undo_quoted_printable(raw: &str) -> String {
+    let bytes = raw.replace("=\r\n", "").into_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let escaped = bytes
+            .get(at + 1..at + 3)
+            .and_then(|pair| std::str::from_utf8(pair).ok())
+            .filter(|pair| pair.bytes().all(|b| b.is_ascii_hexdigit()))
+            .and_then(|pair| u8::from_str_radix(pair, 16).ok());
+        match (bytes[at], escaped) {
+            (b'=', Some(byte)) => {
+                decoded.push(byte);
+                at += 3;
+            }
+            (byte, _) => {
+                decoded.push(byte);
+                at += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&decoded).replace("\r\n ", " ")
+}
+
+fn notifier_for(sink: &MailSink) -> Arc<Notifier> {
+    let smtp = SmtpConfig {
+        host: "127.0.0.1".into(),
+        port: sink.port,
+        security: SmtpSecurity::None,
+        credentials: None,
+        from: "Statup <statup@status.test>".into(),
+    };
+    Arc::new(Notifier::new(std::time::Duration::from_secs(5), Some(&smtp)).unwrap())
+}
+
+impl Fixture {
+    /// Sends every email due, as many rounds as it takes, and returns what
+    /// the mail server received. `public_page` is whether visitors may read
+    /// the page at that moment.
+    async fn deliver(&self, public_page: bool) -> Vec<Mail> {
+        let sink = MailSink::start().await;
+        let notifier = notifier_for(&sink);
+        let mut sent = 0;
+        for _ in 0..10 {
+            let round = deliver_to_subscribers(
+                &self.app.pool,
+                &notifier,
+                Some(PAGE_URL),
+                public_page,
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+            assert!(round.server_failure.is_none(), "the mail server failed");
+            if round.sent == 0 {
+                break;
+            }
+            sent += round.sent;
+        }
+        let received = sink.wait_for(sent).await;
+        assert_eq!(received.len(), sent, "every email sent was received");
+        received.iter().map(|raw| Mail::new(raw)).collect()
+    }
+
+    /// The subscriber whose address (their account's, for a member) is `address`.
+    async fn subscriber_of(&self, address: &str) -> Subscriber {
+        let id: i64 = sqlx::query_scalar(
+            "SELECT s.id FROM subscribers s LEFT JOIN users u ON u.id = s.user_id \
+             WHERE s.email = ? OR u.email = ?",
+        )
+        .bind(address)
+        .bind(address)
+        .fetch_one(&self.app.pool)
+        .await
+        .unwrap();
+        SubscriberRepository::find(&self.app.pool, id)
+            .await
+            .unwrap()
+            .unwrap()
+    }
+}
+
+fn sent_to<'a>(mails: &'a [Mail], address: &str) -> Vec<&'a Mail> {
+    mails
+        .iter()
+        .filter(|mail| mail.recipient() == address)
+        .collect()
+}
+
+/// Fails naming the recipient and the string when an email holds a forbidden text.
+fn forbid_in_emails(mails: &[&Mail], address: &str, strings: &[String]) {
+    for mail in mails {
+        for text in strings {
+            assert!(
+                !mail.text.contains(text.as_str()),
+                "an email to {address} leaked {text:?}:\n{}",
+                mail.text
+            );
+        }
+    }
+}
+
+/// What a visitor may not find in an email: what no reader outside the group
+/// sees, and what is for signed-in members.
+fn hidden_from_visitors(fixture: &Fixture) -> Vec<String> {
+    let mut strings = fixture.hidden_strings();
+    strings.extend([MEMBERS_SERVICE, MEMBERS_FOLDER].map(String::from));
+    strings.push(format!("service-{MEMBERS_SLUG}"));
+    strings
+}
+
+#[tokio::test]
+async fn emails_to_a_visitor_and_an_outside_reader_name_no_hidden_service() {
+    let fixture = Fixture::with_subscribers().await;
+    let mails = fixture.deliver(true).await;
+
+    let visitor = sent_to(&mails, VISITOR);
+    assert!(!visitor.is_empty(), "the visitor gets the open news");
+    forbid_in_emails(&visitor, VISITOR, &hidden_from_visitors(&fixture));
+    let outside = sent_to(&mails, OUTSIDE);
+    assert!(!outside.is_empty(), "the outside reader gets the open news");
+    forbid_in_emails(&outside, OUTSIDE, &fixture.hidden_strings());
+}
+
+#[tokio::test]
+async fn the_email_of_a_mixed_incident_names_only_the_open_service_to_who_cannot_see_the_rest() {
+    let fixture = Fixture::with_subscribers().await;
+    let mails = fixture.deliver(true).await;
+
+    for address in [VISITOR, OUTSIDE] {
+        let mixed: Vec<&Mail> = sent_to(&mails, address)
+            .into_iter()
+            .filter(|mail| mail.text.contains(MIXED_INCIDENT))
+            .collect();
+        assert!(!mixed.is_empty(), "{address} gets the mixed incident");
+        for mail in mixed {
+            assert!(mail.text.contains(OPEN), "{address}: the open service");
+            assert!(!mail.text.contains(RESTRICTED), "{address}: the hidden one");
+        }
+    }
+}
+
+#[tokio::test]
+async fn events_on_restricted_services_alone_send_no_email_to_who_cannot_see_them() {
+    let fixture = Fixture::with_subscribers().await;
+    let mails = fixture.deliver(true).await;
+
+    // The open news is the mixed incident and the announcement that names no
+    // service: nothing else may reach these two readers.
+    for address in [VISITOR, OUTSIDE] {
+        let theirs = sent_to(&mails, address);
+        let open_news = theirs
+            .iter()
+            .filter(|mail| mail.text.contains(MIXED_INCIDENT) || mail.text.contains(ANNOUNCEMENT))
+            .count();
+        assert!(open_news > 0, "{address} gets the open news");
+        assert_eq!(theirs.len(), open_news, "{address} got an email for more");
+        for title in [RESTRICTED_INCIDENT, MAINTENANCE, COMPLETED_MAINTENANCE] {
+            assert!(theirs.iter().all(|mail| !mail.text.contains(title)));
+        }
+    }
+}
+
+#[tokio::test]
+async fn readers_who_may_see_the_restricted_service_get_its_events_by_name() {
+    let fixture = Fixture::with_subscribers().await;
+    let mails = fixture.deliver(true).await;
+
+    for address in [INSIDE, GRANTED, PUBLISHER] {
+        let theirs = sent_to(&mails, address);
+        for name in [
+            RESTRICTED_INCIDENT,
+            MIXED_INCIDENT,
+            MAINTENANCE,
+            COMPLETED_MAINTENANCE,
+            UPDATE_TEXT,
+            RESTRICTED,
+        ] {
+            assert!(
+                theirs.iter().any(|mail| mail.text.contains(name)),
+                "{address} never got {name:?}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn every_email_carries_a_way_out_that_belongs_to_its_recipient() {
+    let fixture = Fixture::with_subscribers().await;
+    let mails = fixture.deliver(true).await;
+
+    for address in [VISITOR, OUTSIDE, INSIDE, GRANTED, PUBLISHER] {
+        let subscriber = fixture.subscriber_of(address).await;
+        let token =
+            SubscriptionService::unsubscribe_token(subscriber.id, &subscriber.unsubscribe_secret);
+        let theirs = sent_to(&mails, address);
+        assert!(!theirs.is_empty(), "{address} got no email");
+        for mail in theirs {
+            assert_eq!(mail.way_out_token(), token, "{address}: wrong way out");
+            let id = mail.way_out_token().split('.').next().unwrap_or_default();
+            assert_eq!(id, subscriber.id.to_string(), "{address}: another id");
+            let body = mail
+                .text
+                .split_once("\r\n\r\n")
+                .map_or("", |(_, body)| body);
+            assert!(body.contains(&token), "{address}: no link in the body");
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_page_closed_to_visitors_stops_their_emails_and_not_the_members() {
+    let fixture = Fixture::with_subscribers().await;
+    let mails = fixture.deliver(false).await;
+
+    assert!(sent_to(&mails, VISITOR).is_empty(), "the visitor got news");
+    for address in [OUTSIDE, INSIDE, GRANTED, PUBLISHER] {
+        assert!(!sent_to(&mails, address).is_empty(), "{address} got none");
+    }
+    let inside = sent_to(&mails, INSIDE);
+    assert!(
+        inside
+            .iter()
+            .any(|mail| mail.text.contains(RESTRICTED_INCIDENT))
     );
 }

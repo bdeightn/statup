@@ -27,7 +27,7 @@ use crate::middleware::{FormCsrfToken, HtmlForm, OptionalUser};
 use crate::models::{JournalKind, User};
 use crate::repositories::NewJournalEntry;
 use crate::services::{
-    LinkRequest, Notifier, PasswordResetService, ResetEmail, ResetRequest, page_address,
+    LinkEmail, LinkPurpose, LinkRequest, Notifier, PasswordResetService, RequestCheck, page_address,
 };
 use crate::state::AppState;
 
@@ -83,7 +83,7 @@ pub struct ResetInput {
 
 /// The address the links lead to, when the instance can send them. Never
 /// taken from the request, which anyone can word.
-async fn link_base(state: &AppState) -> Result<Option<String>, AppError> {
+pub(super) async fn link_base(state: &AppState) -> Result<Option<String>, AppError> {
     if !state.notifier.mail_ready() {
         return Ok(None);
     }
@@ -140,11 +140,11 @@ pub async fn forgot(
     }
     let ip = request_ip(&state, &headers, connect_info);
     match state.login_limiter.count_reset_request(&ip) {
-        ResetRequest::Allowed => {
+        RequestCheck::Allowed => {
             send_link_later(&state, ip, email.to_string(), base, i18n.locale());
         }
-        ResetRequest::JustBlocked => record_requests_blocked_later(&state, ip),
-        ResetRequest::Blocked => {}
+        RequestCheck::JustBlocked => record_requests_blocked_later(&state, ip),
+        RequestCheck::Blocked => {}
     }
     render_forgot(csrf_token, i18n, true, true)
 }
@@ -204,13 +204,14 @@ async fn send_link(
     let i18n = I18n::new(link.user.preferred_locale.as_deref().unwrap_or(page_locale));
     let url = format!("{base}/password/reset?token={}", link.token);
     let instance = crate::brand_name();
-    let mail = ResetEmail {
+    let mail = LinkEmail {
+        purpose: LinkPurpose::PasswordReset,
         to: &link.user.email,
         url: &url,
         instance: &instance,
         i18n: &i18n,
     };
-    if let Err(failure) = notifier.send_password_reset(&mail).await {
+    if let Err(failure) = notifier.send_link(&mail).await {
         let code = failure.code();
         NewJournalEntry::new(JournalKind::PasswordResetNotSent)
             .on_member(&link.user)

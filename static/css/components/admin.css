@@ -1,5 +1,5 @@
 @layer components {
-    /* Settings rows inside a card: label and help on the left, the control
+    /* Settings rows inside a card: the label on the left, the control
        on the right in a column of the same width on every row, so every
        control starts and ends on the same lines. On a phone the control goes
        under its label. */
@@ -15,16 +15,12 @@
         border-top: 1px solid var(--hairline);
     }
 
-    /* The one save of a card of settings, part of its last row rather
-       than a row of its own. */
-    .set-row:has(+ .set-foot) {
-        padding-bottom: 0;
-    }
-
+    /* The one save of a card of settings, in a foot band of its own. */
     .set-foot {
         display: flex;
         justify-content: flex-end;
-        padding: 12px 16px 16px;
+        padding: 16px;
+        border-top: 1px solid var(--line);
     }
 
     .set-row > * {
@@ -67,12 +63,6 @@
         height: 7px;
         border-radius: var(--mark-radius);
         background: var(--tone);
-    }
-
-    .set-inline-form {
-        display: flex;
-        align-items: flex-start;
-        gap: 8px;
     }
 
     .set-field {
@@ -260,13 +250,10 @@
     }
 
     /* Admin lists that reflow: identity first, then status, then actions. */
-    /* A managed list sits on a card, like every block of the dashboard. */
     .admin-list {
         margin: 0;
         padding: 0;
         list-style: none;
-        background: var(--card);
-        border: 1px solid var(--line);
     }
 
     .admin-row {
@@ -274,7 +261,7 @@
         grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
         gap: 10px 20px;
-        padding: 16px 20px;
+        padding: 16px;
         border-bottom: 1px solid var(--line);
     }
 
@@ -353,22 +340,6 @@
         grid-column: 2;
     }
 
-    /* The button that opens and closes the mode, as wide as its longer
-       label whichever one shows. */
-    .order-toggle {
-        display: inline-grid;
-        place-items: center;
-    }
-
-    .order-toggle > span {
-        grid-area: 1 / 1;
-    }
-
-    .order-toggle[aria-pressed="true"] > [data-when="closed"],
-    .order-toggle[aria-pressed="false"] > [data-when="open"] {
-        visibility: hidden;
-    }
-
     /* The problems-first box shows only while choosing the order. */
     .order-option[hidden] {
         display: none;
@@ -384,11 +355,6 @@
         margin: 0;
         padding: 0;
         list-style: none;
-    }
-
-    /* The folder's name and arrows on the edges of its rows. */
-    .svc-group > .card-head {
-        padding-inline: 20px;
     }
 
     /* Choosing the order: each row keeps its name and gains two arrows
@@ -481,13 +447,43 @@
             display: none;
         }
 
-        .member-row {
-            grid-template-columns: minmax(0, 1fr) 110px 200px minmax(140px, auto);
+        /* The members' card sets the columns its rows and its form share,
+           so every role sits on one edge whatever the actions beside it:
+           the widest actions set the last column. */
+        .members-card {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 110px 200px max-content;
+            column-gap: 20px;
+        }
+
+        .members-card > *,
+        .member-list > .member-row {
+            grid-column: 1 / -1;
+        }
+
+        .member-list,
+        .member-row,
+        .members-card > .member-add {
+            display: grid;
+            grid-template-columns: subgrid;
         }
 
         .member-row .admin-row-cell,
         .member-row .admin-row-actions {
             grid-column: auto;
+        }
+
+        .member-add-who {
+            grid-column: 1 / 3;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        }
+
+        .member-add-role {
+            grid-column: 3 / 5;
+        }
+
+        .member-add > .card-add-foot {
+            grid-column: 1 / -1;
         }
 
     }
@@ -530,9 +526,11 @@
         margin-top: 12px;
     }
 
-    /* Adding a member: only the chosen role says what it allows. */
+    /* Adding a member: only the chosen role says what it allows. Its
+       sentence wraps in its column rather than widen the rows' columns. */
     .role-descs {
         margin-top: 8px;
+        contain: inline-size;
     }
 
     .role-descs > [data-role-hint] {
@@ -621,27 +619,44 @@
         max-width: 220px;
     }
 
-    .add-member {
-        margin-bottom: 24px;
+    /* A form opened from a card's head ("New member"): it takes the head
+       of the card, without a frame of its own, its buttons at the foot on
+       the right. Without a script it stays open. */
+    .card-add {
+        display: flex;
+        flex-direction: column;
+        gap: 16px 20px;
+        padding: 16px 16px 20px;
+        border-bottom: 1px solid var(--line);
     }
 
-    .add-member > summary {
-        width: fit-content;
-        list-style: none;
-    }
-
-    .add-member > summary::-webkit-details-marker {
+    .js .card-add:not(.is-open),
+    html:not(.js) [data-composer-toggle] {
         display: none;
     }
 
-    .add-member-form {
-        max-width: 720px;
-        margin-top: 16px;
-        padding: 20px;
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 6px;
+    /* The foot keeps 20px under the fields, the gap between them included. */
+    .card-add-foot {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 12px 16px;
+        margin-top: 4px;
     }
+
+    .card-action[aria-expanded="true"] {
+        text-decoration: underline;
+        text-decoration-color: var(--line-strong);
+        text-underline-offset: 3px;
+    }
+
+    .member-add-who {
+        display: grid;
+        gap: 16px 20px;
+    }
+
+
 
     /* A notification destination: its page keeps the width of a reading
        column, the four boxes on one or two lines. */
@@ -686,8 +701,58 @@
         margin-top: 4px;
     }
 
-    .page-address {
-        margin-top: 32px;
+    /* The two short settings under the channels: side by side from a wide
+       screen, each card as tall as the other. */
+    .alerts-cards {
+        align-items: stretch;
+        margin-top: 16px;
+    }
+
+    .alerts-card-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 16px;
+    }
+
+    .set-help + .alerts-card-row,
+    .set-help + .page-address-value {
+        margin-top: 10px;
+    }
+
+    /* An empty result takes no room, in the column or in the grid; it stays
+       in the page so that what a test says is read out. */
+    .channel-add > [data-test-result]:empty {
+        position: absolute;
+    }
+
+
+    /* The channel form at the head of its card: tool, name and language on
+       one line, the address across under them. */
+    @media (min-width: 720px) {
+        .channel-add {
+            display: grid;
+            grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr);
+        }
+
+        .channel-add > * {
+            grid-column: 1 / -1;
+        }
+
+        .channel-add > .form-grid {
+            grid-column: 1 / 3;
+        }
+
+        .channel-add > .destination-locale {
+            grid-row: 1;
+            grid-column: 3;
+            max-width: none;
+        }
+    }
+
+    .alerts-card-field {
+        flex: 1 1 240px;
+        min-width: 0;
     }
 
     .page-address-value {
@@ -743,73 +808,45 @@
         color: var(--muted);
     }
 
-    .icon-cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
-        gap: 12px;
-        margin: 24px 0 0;
-        padding: 0;
-        list-style: none;
-    }
-
-    .icon-card {
-        display: flex;
-        flex-direction: column;
-        padding: 14px 14px 12px;
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 6px;
-    }
-
-    .icon-card-figure {
-        display: flex;
+    /* The library page: an icon, its file name and where it is used in grey,
+       then its action at the right edge. */
+    .icon-row-figure {
+        display: inline-flex;
+        flex: none;
         align-items: center;
         justify-content: center;
-        height: 56px;
+        width: 32px;
+        height: 32px;
         color: var(--muted);
     }
 
-    .icon-card-figure img {
-        width: 48px;
-        height: 48px;
+    .icon-row-figure img,
+    .icon-row-figure svg {
+        width: 32px;
+        height: 32px;
         object-fit: contain;
     }
 
-    .icon-card-figure svg {
-        width: 32px;
-        height: 32px;
-    }
-
-    .icon-card-name {
-        margin: 10px 0 0;
+    .icon-row-use {
         font-size: var(--text-sm);
-        font-weight: 600;
-        color: var(--ink);
-        overflow-wrap: anywhere;
-    }
-
-    .icon-card-use {
-        margin: 2px 0 0;
-        font-size: var(--text-xs);
-        line-height: 1.5;
+        font-weight: 400;
         color: var(--muted);
     }
 
-    .icon-card-use strong {
+    .icon-row-use strong {
         font-weight: 500;
         color: var(--ink);
     }
 
-    .icon-card-actions {
-        margin-top: auto;
-        padding-top: 10px;
-        font-size: var(--text-xs);
+    .icon-row-hint {
+        font-size: var(--text-sm);
         color: var(--muted);
     }
 
-    .icon-card .confirm {
-        gap: 2px 12px;
-        font-size: var(--text-xs);
+    /* The text action keeps 2px of padding: pull it back so its word ends on
+       the same 16px edge as the hint of an icon in use. */
+    .icon-row-actions .text-action {
+        margin-right: -2px;
     }
 
     .icon-picker {
@@ -883,14 +920,13 @@
     }
 
     .icon-choices-chevron {
-        width: 14px;
-        height: 14px;
+        display: inline-flex;
         color: var(--muted);
-        transition: transform 200ms var(--ease-out);
     }
 
-    .icon-choices[open] .icon-choices-chevron {
-        transform: rotate(180deg);
+    .icon-choices-chevron svg {
+        width: 16px;
+        height: 16px;
     }
 
     .icon-choices-body.is-revealing {
@@ -912,6 +948,7 @@
 
     .icon-name-echo {
         min-width: 0;
+        margin-left: auto;
         overflow: hidden;
         font-size: var(--text-xs);
         color: var(--muted);
@@ -928,10 +965,23 @@
         gap: 6px;
     }
 
+    /* Eight columns across the whole column of the form, so the names
+       and links above end on the grid's edge. */
     @media (min-width: 640px) {
         .icon-grid {
             grid-template-columns: repeat(8, 44px);
+            justify-content: space-between;
         }
+
+        /* Spread on its column, no wider than at the width it was drawn. */
+        .icon-choices-body {
+            max-width: 520px;
+        }
+    }
+
+    /* The way to the icon library, where icons are sent and removed. */
+    .icon-group-link {
+        margin-right: -2px;
     }
 
     /* A cell is a radio: the chosen one shows an ink edge and a check in
@@ -1086,10 +1136,115 @@
     }
 
     .stack > .btn {
-        align-self: flex-start;
+        align-self: flex-end;
     }
 
-    /* Subscribe page. */
+    /* The submit sits at the card's foot, 16px from the border like the sides. */
+    .card-body:has(> .stack) {
+        padding-bottom: 16px;
+    }
+
+    /* Subscribe page. The email band leads it, one row on a wide screen:
+       its title, the boxes, then the address and its button at the far
+       end, as the feed card pairs its address with its button. */
+    .subscribe-band {
+        margin-bottom: 24px;
+        padding: 16px;
+    }
+
+    .subscribe-row {
+        display: grid;
+        align-items: start;
+        gap: 14px;
+    }
+
+    /* From a tablet, the title and the boxes share the first row and the
+       address keeps its button beside it; from a wide screen, all of it is
+       one row, the address at the far end. */
+    @media (min-width: 640px) {
+        .subscribe-row {
+            grid-template-columns: auto minmax(0, 1fr);
+            column-gap: 40px;
+        }
+
+        .subscribe-end {
+            grid-column: 1 / -1;
+        }
+
+        .subscribe-control {
+            flex-wrap: nowrap;
+        }
+    }
+
+    @media (min-width: 1200px) {
+        .subscribe-row {
+            grid-template-columns: auto auto minmax(0, 1fr);
+            column-gap: 48px;
+        }
+
+        .subscribe-end {
+            grid-column: auto;
+            justify-self: end;
+        }
+    }
+
+    .subscribe-head {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 2px;
+        min-height: 34px;
+    }
+
+    .subscribe-boxes {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 24px;
+        min-height: 34px;
+    }
+
+    .subscribe-control {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 16px;
+    }
+
+    .subscribe-control .input {
+        width: 280px;
+        max-width: 100%;
+    }
+
+    a.subscribe-end {
+        align-self: center;
+    }
+
+    .subscribe-sent {
+        align-self: center;
+        margin: 0;
+        font-size: var(--text-md);
+        color: var(--ink);
+    }
+
+    .subscribe-meta {
+        margin: 0;
+        font-size: var(--text-xs);
+        color: var(--muted);
+        overflow-wrap: anywhere;
+    }
+
+    .subscribe-error {
+        margin: 8px 0 0;
+    }
+
+    @media (max-width: 639px) {
+        .subscribe-control .input {
+            flex: 1 1 100%;
+            width: auto;
+        }
+    }
+
     .copy-field {
         display: flex;
         flex-wrap: wrap;
@@ -1118,7 +1273,7 @@
     /* The groups of the team, on their own card under it: one link per
        group to its page. */
     .groups-card {
-        margin-top: 40px;
+        margin-top: 16px;
     }
 
     .group-links,
@@ -1133,7 +1288,7 @@
         grid-template-columns: minmax(0, 1fr) auto 16px;
         align-items: center;
         gap: 16px;
-        padding: 14px 20px;
+        padding: 14px 16px;
         color: var(--ink);
         border-bottom: 1px solid var(--line);
         transition: background-color 120ms ease;
@@ -1167,7 +1322,7 @@
     }
 
     .groups-empty {
-        padding: 16px 20px;
+        padding: 16px;
         font-size: var(--text-md);
         color: var(--ink-soft);
     }
@@ -1184,10 +1339,6 @@
         color: var(--ink);
     }
 
-    .group-panel > .field-label {
-        margin-bottom: 6px;
-    }
-
     .group-panel > .field-error {
         margin-top: 6px;
     }
@@ -1197,38 +1348,8 @@
         margin-top: 16px;
     }
 
-    .more-actions > summary.card-action,
-    .group-rename > summary {
+    .more-actions > summary.card-action {
         cursor: pointer;
-    }
-
-    /* A group's page: its name with "Rename" beside it. */
-    .group-title-row {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: baseline;
-        gap: 4px 16px;
-    }
-
-    .group-rename > summary {
-        font-size: var(--text-sm);
-    }
-
-    .group-rename > .group-panel {
-        right: auto;
-        left: 0;
-    }
-
-    /* On a phone the panel opens from the start of the title line, so it
-       stays on the screen. */
-    @media (max-width: 639px) {
-        .group-title-row {
-            position: relative;
-        }
-
-        .group-title-row > .group-rename {
-            position: static;
-        }
     }
 
     /* Who sees a service or a folder: three choices as buttons, the groups
@@ -1237,6 +1358,17 @@
     .access-field > .field-label {
         display: block;
         margin-bottom: 6px;
+    }
+
+    /* Inside a panel a field is named small and grey, as in the Journal's. */
+    .more-actions-menu .field-label {
+        margin-bottom: 8px;
+        font-size: var(--text-xs);
+        color: var(--muted);
+    }
+
+    .more-actions-menu .field {
+        gap: 0;
     }
 
     .access-inherit {
@@ -1436,7 +1568,7 @@
 
     /* The groups of a large team are searched before they are listed. */
     .groups-search {
-        padding: 12px 20px;
+        padding: 12px 16px;
         border-bottom: 1px solid var(--line);
     }
 
@@ -1512,9 +1644,9 @@
         border-top: 0;
     }
 
-    /* A folder's page: who sees it, in a panel under "Change" as for the
-       journal's settings, wide enough for a few tags. The panel to add
-       groups and members opens under the tags, across the panel. */
+    /* A folder's page: its name and who sees it, in one panel under "Change"
+       as for the journal's settings, wide enough for a few tags. The panel
+       to add groups and members opens under the tags, across the panel. */
     .folder-menu > .folder-panel {
         display: flex;
         flex-direction: column;
@@ -1527,6 +1659,16 @@
 
     .folder-panel > .access-field {
         margin-top: 0;
+    }
+
+    .folder-name-field {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 16px;
+    }
+
+    .folder-name-field > .field-error {
+        margin-top: 6px;
     }
 
     .folder-panel .access-grants {
@@ -1553,18 +1695,59 @@
         }
     }
 
-    /* "New folder" is followed by "New service", or starts a wrapped
-       line: its panel opens from its start at any width. */
-    .folder-new > .group-panel {
-        right: auto;
-        left: 0;
+    /* "New": what can be created here, as wide as its button; "Folder"
+       turns the list into the name form of the folder to come. Without a
+       script both show, one under the other. */
+    .new-menu > summary svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    .new-menu > summary svg:last-child {
+        margin-right: -4px;
+    }
+
+    .new-menu-panel {
+        min-width: 100%;
+        width: max-content;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .new-menu-panel.is-form {
+        width: 320px;
+        max-width: calc(100vw - 32px);
+        padding: 16px;
+    }
+
+    .new-menu-list {
+        display: grid;
+        gap: 2px;
+    }
+
+    .new-menu-form {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .new-menu-form > .field-error {
+        margin-top: 6px;
+    }
+
+    html:not(.js) [data-swap-to-form],
+    .js .new-menu-panel:not(.is-form) > .new-menu-form,
+    .js .new-menu-panel.is-form > .new-menu-list {
+        display: none;
+    }
+
+    /* On a phone the actions wrap under the title: at the right of their
+       line, so the folder form under "New" stays on the screen. */
+    @media (max-width: 639px) {
+        .page-actions:has(> .new-menu) {
+            margin-left: auto;
+        }
     }
 
     @media (prefers-reduced-motion: reduce) {
-        .icon-choices-chevron {
-            transition: none;
-        }
-
         .icon-choices-body.is-revealing,
         .row-saved {
             animation: none;

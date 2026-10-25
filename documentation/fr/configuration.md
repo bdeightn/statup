@@ -47,7 +47,7 @@ L'en-tête dans lequel votre proxy écrit l'adresse du client. Seule sa dernièr
 - Par défaut : `false`
 - Valeurs : `true`, `false`
 
-Qui peut voir la page tant qu'un administrateur n'a pas choisi : `true` pour tout le monde, `false` pour les membres seulement. Une fois le choix fait, au premier lancement ou dans les Paramètres, c'est lui qui prime, et il est conservé d'un redémarrage à l'autre.
+L'accès à la page tant qu'un administrateur n'a pas choisi : `true` pour tout le monde, `false` pour les membres seulement. Une fois le choix fait, au premier lancement ou dans les Paramètres, c'est lui qui prime, et il est conservé d'un redémarrage à l'autre.
 
 ### `ADMIN_EMAIL`
 
@@ -105,7 +105,10 @@ Statup demande une fois par jour à GitHub si une version plus récente est publ
 
 ## Courriel
 
-Le serveur de courriel des alertes par courriel et des liens de [mot de passe oublié](forgotten-password.md). Les canaux Courriel ne sont proposés que si `SMTP_HOST` est défini.
+Le serveur de courriel des alertes par courriel, des liens de [mot de passe oublié](forgotten-password.md) et des courriels aux [abonnés](status-page.md#get-notified). Les canaux Courriel et l'abonnement ne sont proposés que si `SMTP_HOST` est défini.
+
+> [!NOTE]
+> Un incident envoie un courriel à chaque abonné. Une boîte de messagerie, comme Microsoft 365 ou Gmail, limite le nombre de courriels envoyés par minute et par jour : au-delà de quelques centaines d'abonnés, passez par un service d'envoi transactionnel. Signez le domaine de `SMTP_FROM` avec DKIM et publiez ses enregistrements SPF et DMARC, pour que les courriels arrivent en boîte de réception ; les messageries peuvent alors afficher leur propre bouton de désabonnement, quand la page est servie en `https`.
 
 ### `SMTP_HOST`
 
