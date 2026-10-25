@@ -34,7 +34,7 @@ Statup ne rédige jamais d'incident lui-même. **Déclarer un incident**, sur le
 
 ## Quand aucune panne n'est déclarée
 
-- **Pendant une maintenance en cours** qui cite le service, sauf si elle est marquée **Sans coupure**. Les échecs sont comptés mais ne déclenchent rien. Si le service échoue encore à la fin de la maintenance, la panne est déclarée à la vérification ratée suivante, et datée de ce moment. Une vérification qui obtient une réponse pendant la maintenance met tout de même fin à une panne.
+- **Pendant une maintenance en cours** qui cite le service, sauf si elle est marquée **Sans interruption**. Les échecs sont comptés mais ne déclenchent rien. Si le service échoue encore à la fin de la maintenance, la panne est déclarée à la vérification ratée suivante, et datée de ce moment. Une vérification qui obtient une réponse pendant la maintenance met tout de même fin à une panne.
 - **Quand Statup perd lui-même sa connexion.** Si au moins trois services qui répondaient échouent tous lors du même passage, ce passage est ignoré, pour cinq passages de suite au plus. Deux services qui échouent ensemble sont jugés normalement.
 
 ## Alertes

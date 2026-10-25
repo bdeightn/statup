@@ -76,7 +76,7 @@ Choisissez **Résolu** dans **Publier une mise à jour**, avec ou sans message. 
 
 Une fois l'incident **Résolu**, **Écrire le bilan** permet de raconter ce qui s'est passé, pourquoi, et ce qui change pour que cela ne se reproduise pas. **Publier le bilan** l'affiche en tête de la page de l'incident et dans son panneau latéral, marque l'incident « Résolu · bilan » dans les listes, l'ajoute au flux et l'envoie une seule fois aux canaux d'alerte.
 
-**Modifier**, dans la carte **Bilan**, le corrige sans rien renvoyer ; **Retirer** le supprime. Un incident annulé n'a pas de bilan. Si un administrateur rouvre l'incident, son bilan est masqué jusqu'à ce qu'il soit de nouveau résolu.
+**Modifier**, dans la carte **Bilan**, le corrige sans rien renvoyer ; **Supprimer** l'efface. Un incident annulé n'a pas de bilan. Si un administrateur rouvre l'incident, son bilan est masqué jusqu'à ce qu'il soit de nouveau résolu.
 
 ## Modifier ou supprimer
 

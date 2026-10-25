@@ -36,7 +36,7 @@ Statup asks GitHub once a day, the first time a minute after it starts. The answ
 | Block | Description |
 |---|---|
 | **Status banner** | Always shown, full width, above the others. |
-| **Services** | A quarter of the width by default. Its options choose the services it lists. A service left out comes back as soon as something is wrong with it. |
+| **Services** | A quarter of the width by default. Its options choose the services it lists. A hidden service reappears as soon as it is disrupted. |
 | **Recent activity** | Half the width by default. Its options choose what it lists: **Minor incidents**, **Major incidents**, **Maintenance**, **Announcements**. All but maintenance by default. |
 | **Maintenance** | A quarter of the width by default. |
 

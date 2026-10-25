@@ -76,7 +76,7 @@ Choose **Resolved** in **Post an update**, with a message or without. The servic
 
 Once an incident is **Resolved**, **Write the report**: what happened, why, and what changes so it does not happen again. **Publish the report** shows it at the head of the incident's page and in its side panel, marks the incident "Resolved · report" in the lists, adds it to the feed, and sends it once to the alert channels.
 
-**Edit**, in the **Report** card, corrects it and sends nothing again; **Remove** takes it away. A cancelled incident has no report. If an administrator reopens the incident, its report is hidden until it is resolved again.
+**Edit**, in the **Report** card, corrects it and sends nothing again; **Delete** removes it. A cancelled incident has no report. If an administrator reopens the incident, its report is hidden until it is resolved again.
 
 ## Edit or delete
 

@@ -86,7 +86,7 @@ Un dossier n'ouvre jamais un service par erreur :
 | **Opérationnel** | Oui | |
 | **Dégradé** | Oui | Par un incident ouvert d'impact **Mineur**, ou sans impact |
 | **En panne** | Oui | Par un incident ouvert d'impact **Majeur**, ou par la [surveillance](monitoring.md) |
-| **En maintenance** | Oui | Par une maintenance en cours, sauf si elle est marquée **Sans coupure** |
+| **En maintenance** | Oui | Par une maintenance en cours, sauf si elle est marquée **Sans interruption** |
 
 ### Régler un état à la main
 

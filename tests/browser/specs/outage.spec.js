@@ -24,7 +24,7 @@ test("an outage takes a service down until the incident is resolved", async ({ p
     await page.getByLabel("Description").fill("La paie ne répond plus.");
     await page.getByText(service, { exact: true }).click();
     await page.getByRole("button", { name: "Publier l'incident" }).click();
-    await expect(page.getByText("Publié, visible dès maintenant.")).toBeVisible();
+    await expect(page.getByText("Événement publié.")).toBeVisible();
 
     const incidentUrl = page.url();
     await page.goto("/");

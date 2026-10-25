@@ -30,7 +30,7 @@ Chaque service avec son état et sa disponibilité jour par jour, sous le titre 
 
 ### Activité récente
 
-Les dix derniers événements, par jour. Par défaut, le bloc montre les incidents et les annonces, pas les maintenances. **Être prévenu** et **Tout voir** mènent plus loin.
+Les dix derniers événements, par jour. Par défaut, le bloc montre les incidents et les annonces, pas les maintenances. **S'abonner** et **Tout voir** mènent plus loin.
 
 ### Maintenances
 
@@ -47,9 +47,9 @@ Un événement s'ouvre dans un panneau latéral sans quitter la liste ; sur un 
 
 Les membres connectés voient sur **Événements** combien d'incidents et de maintenances ont été publiés depuis leur dernière visite.
 
-## Être prévenu
+## S'abonner
 
-**Être prévenu**, en bas de chaque page et sur le bloc **Activité récente**, propose plusieurs façons de suivre sans ouvrir la page :
+**S'abonner**, en bas de chaque page et sur le bloc **Activité récente**, propose plusieurs façons de suivre sans ouvrir la page :
 
 - **Par e-mail** : un visiteur tape son adresse, coche ce qu'il veut recevoir (**Incidents**, **Maintenances**, **Annonces**) et confirme par le lien qui lui est envoyé, valable un jour. Un membre connecté s'abonne à l'adresse de son compte, sans lien à confirmer, et change ses cases ou arrête au même endroit.
 - **Avec un lecteur de flux** : l'adresse du flux Atom, à copier.

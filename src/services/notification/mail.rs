@@ -317,7 +317,7 @@ mod tests {
         assert_eq!(en.url, "https://status.example/unsubscribe?token=7.abc");
         assert_eq!(
             en.reason,
-            "You receive this message because you follow the news of ACME."
+            "You receive this message because you subscribed to the updates of ACME."
         );
         assert_eq!(en.label, "Unsubscribe");
         let fr = Unsubscribe::new("https://status.example", "7.abc", "ACME", &I18n::new("fr"));

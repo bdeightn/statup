@@ -15,7 +15,7 @@ Une maintenance prévient que des travaux sont prévus ou en cours, sur quels se
 | **Titre** | Obligatoire. Tant que vous n'en tapez pas, il s'écrit tout seul, comme « Maintenance de Messagerie ». |
 | **Description** | Facultative. |
 
-Les heures sont dans le fuseau horaire de l'instance, que le formulaire indique. Sous **Plus d'options**, **Sans coupure** garde les services utilisables pendant les travaux : leur état ne change jamais. Ce choix ne se fait qu'à la création de la maintenance.
+Les heures sont dans le fuseau horaire de l'instance, que le formulaire indique. Sous **Plus d'options**, **Sans interruption** garde les services utilisables pendant les travaux : leur état ne change jamais. Ce choix ne se fait qu'à la création de la maintenance.
 
 **Annoncer la maintenance** la publie et l'envoie aux [canaux d'alerte](alerts.md) qui reçoivent les maintenances.
 
@@ -44,7 +44,7 @@ Tant qu'elle est programmée, **Modifier** change son début ou sa durée, et le
 
 ## Ce qu'affichent les services
 
-Tant qu'elle est en cours, les services qu'elle cite affichent **En maintenance**, sauf si elle est marquée **Sans coupure**, ou si un état plus grave l'emporte. Une maintenance programmée ne change encore rien.
+Tant qu'elle est en cours, les services qu'elle cite affichent **En maintenance**, sauf si elle est marquée **Sans interruption**, ou si un état plus grave l'emporte. Une maintenance programmée ne change encore rien.
 
 La [surveillance](monitoring.md#when-no-outage-is-declared) ne déclare aucune panne pour un service en maintenance.
 

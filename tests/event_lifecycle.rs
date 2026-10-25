@@ -1427,7 +1427,7 @@ async fn detail_page_says_an_incident_is_still_ongoing() {
     );
     let (_, body) = app.get(&format!("/events/{event_id}?published=1")).await;
     assert!(
-        body.contains("Publié, visible dès maintenant."),
+        body.contains("Événement publié."),
         "the editor sees the update went out"
     );
     assert!(
@@ -2284,7 +2284,7 @@ async fn an_event_panel_opened_from_a_service_leads_back_to_it() {
         panel.contains(&format!(r#"data-drawer="/services/{service_id}/drawer""#)),
         "the event's panel leads back to the service"
     );
-    assert!(panel.contains("Revenir à Mail"));
+    assert!(panel.contains("Retour à Mail"));
 
     let (_, panel) = app.get(&format!("/events/{event_id}/drawer")).await;
     assert!(
@@ -2600,7 +2600,7 @@ async fn an_editor_writes_the_report_of_a_resolved_incident() {
         Some(&*format!("/events/{id}?published=1"))
     );
     let (_, page) = app.get(&format!("{path}?published=1")).await;
-    assert!(page.contains("Publié, visible dès maintenant."));
+    assert!(page.contains("Événement publié."));
     assert!(page.contains("Modifier le bilan"));
     assert!(!page.contains("Écrire le bilan"));
     let report = page.find(REPORT).expect("the report is on the page");

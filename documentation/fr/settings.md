@@ -36,7 +36,7 @@ Statup interroge GitHub une fois par jour, la première fois une minute après s
 | Bloc | Description |
 |---|---|
 | **Bandeau d'état** | Toujours affiché, sur toute la largeur, au-dessus des autres. |
-| **Services** | Un quart de la largeur par défaut. Ses options choisissent les services listés. Un service décoché revient dès qu'il a un problème. |
+| **Services** | Un quart de la largeur par défaut. Ses options choisissent les services listés. Un service masqué réapparaît dès qu'il est perturbé. |
 | **Activité récente** | La moitié de la largeur par défaut. Ses options choisissent ce qui est listé : **Incidents mineurs**, **Incidents majeurs**, **Maintenances**, **Annonces**. Tout sauf les maintenances par défaut. |
 | **Maintenances** | Un quart de la largeur par défaut. |
 

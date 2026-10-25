@@ -664,7 +664,7 @@ mod tests {
         assert_eq!(notice.headline, "Message de test");
         assert_eq!(
             notice.text.as_deref(),
-            Some("Les nouvelles de ACME arriveront ici.")
+            Some("Les mises à jour de ACME arriveront ici.")
         );
     }
 
