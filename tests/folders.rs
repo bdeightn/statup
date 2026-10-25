@@ -768,6 +768,20 @@ async fn saving_the_same_visibility_again_leaves_no_second_line() {
     );
 }
 
+/// The notices after a deletion never repeat a name from the address, so a
+/// forged link cannot announce that a given folder or service is gone.
+#[tokio::test]
+async fn a_deletion_notice_names_nothing_from_the_address() {
+    let app = spawn_with_publisher().await;
+    let (status, body) = app
+        .get("/services?folder_deleted=Payroll%20archive&deleted=Payroll%20mail")
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!body.contains("Payroll"));
+    assert!(body.contains(&text("services.folder_deleted_notice")));
+    assert!(body.contains(&text("services.deleted_notice")));
+}
+
 #[tokio::test]
 async fn deleting_a_folder_keeps_its_services_as_they_were_seen() {
     let app = spawn_with_publisher().await;
@@ -782,10 +796,9 @@ async fn deleting_a_folder_keeps_its_services_as_they_were_seen() {
         post(&app, &format!("/services/folders/{folder}/delete"), &[]).await;
 
     assert_eq!(status, StatusCode::SEE_OTHER);
-    assert_eq!(
-        location.as_deref(),
-        Some("/services?folder_deleted=R%C3%A9seau%20%26%20Co")
-    );
+    assert_eq!(location.as_deref(), Some("/services?folder_deleted=1"));
+    let page = page_after(&app, location).await;
+    assert!(page.contains(&text("services.folder_deleted_notice")));
     assert!(folder_names(&app).await.is_empty());
     assert_eq!(
         placement(&app, heir).await,

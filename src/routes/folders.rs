@@ -517,9 +517,7 @@ pub async fn delete_folder(
         .about(&folder.name)
         .record(&state.pool)
         .await;
-    let name =
-        percent_encoding::utf8_percent_encode(&folder.name, percent_encoding::NON_ALPHANUMERIC);
-    Ok(Redirect::to(&format!("/services?folder_deleted={name}")).into_response())
+    Ok(Redirect::to("/services?folder_deleted=1").into_response())
 }
 
 #[cfg(test)]

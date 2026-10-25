@@ -54,8 +54,8 @@ struct ServiceListTemplate {
     /// back the chosen order, kept here as each service's place.
     problems_first: bool,
     chosen_places: HashMap<i64, usize>,
-    deleted_name: Option<String>,
-    folder_deleted: Option<String>,
+    deleted: bool,
+    folder_deleted: bool,
     new_folder: NewFolderForm,
     error: Option<String>,
     i18n: I18n,
@@ -107,11 +107,6 @@ impl ServiceListTemplate {
     /// Arrows move services within their folder and folders among themselves.
     fn orderable(&self) -> bool {
         self.service_count > 1 || self.folder_count > 1
-    }
-
-    fn folder_deleted_notice(&self, name: &str) -> String {
-        self.i18n
-            .tf("services.folder_deleted_notice", &[("name", name)])
     }
 }
 
@@ -234,8 +229,8 @@ async fn render_list(
         histories,
         problems_first,
         chosen_places,
-        deleted_name: query.deleted,
-        folder_deleted: query.folder_deleted,
+        deleted: query.deleted.is_some(),
+        folder_deleted: query.folder_deleted.is_some(),
         new_folder,
         error,
         i18n,
@@ -731,11 +726,7 @@ pub async fn delete(
                 .about(&service.name)
                 .record(&state.pool)
                 .await;
-            let name = percent_encoding::utf8_percent_encode(
-                &service.name,
-                percent_encoding::NON_ALPHANUMERIC,
-            );
-            Ok(Redirect::to(&format!("/services?deleted={name}")).into_response())
+            Ok(Redirect::to("/services?deleted=1").into_response())
         }
         Err(AppError::Validation(key)) => {
             let page = (Some(i18n.t(&key).to_string()), NewFolderForm::default());

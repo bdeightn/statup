@@ -2143,12 +2143,7 @@ async fn a_service_is_deleted_unless_events_cite_it() {
         .post_form_with_header_csrf(&format!("/services/{idle_id}/delete"), &[])
         .await;
     assert_eq!(status, StatusCode::SEE_OTHER);
-    assert!(
-        location
-            .as_deref()
-            .is_some_and(|path| path.starts_with("/services?deleted=")),
-        "{location:?}"
-    );
+    assert_eq!(location.as_deref(), Some("/services?deleted=1"));
     let gone = ServiceRepository::find_by_id(&app.pool, idle_id)
         .await
         .expect("db error");

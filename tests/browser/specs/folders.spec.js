@@ -67,11 +67,11 @@ async function deleteAll(page, folderUrl, serviceId) {
     await page.goto(folderUrl);
     await page.getByRole("button", { name: "Supprimer", exact: true }).click();
     await page.getByRole("group", { name: /./ }).getByRole("button", { name: "Supprimer" }).click();
-    await expect(page.getByText(`Dossier « ${FOLDER} » supprimé.`)).toBeVisible();
+    await expect(page.getByText("Dossier supprimé.")).toBeVisible();
     await page.goto(`/services/${serviceId}/edit`);
     await page.getByRole("button", { name: "Supprimer", exact: true }).click();
     await page.getByRole("group", { name: /./ }).getByRole("button", { name: "Supprimer" }).click();
-    await expect(page.getByText("supprimé.")).toBeVisible();
+    await expect(page.getByText("Service supprimé.")).toBeVisible();
 }
 
 test("a folder opened to one reader shows its title and its service to that reader only", async ({ page, browser }) => {

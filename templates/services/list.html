@@ -63,11 +63,11 @@
     {% if let Some(name) = saved_name %}
     <div class="form-notice mb-5" role="status"><p><q>{{ name }}</q> {{ self.saved_notice() }}</p></div>
     {% endif %}
-    {% if let Some(name) = folder_deleted %}
-    <div class="form-notice mb-5" role="status"><p>{{ self.folder_deleted_notice(name) }}</p></div>
+    {% if folder_deleted %}
+    <div class="form-notice mb-5" role="status"><p>{{ i18n.t("services.folder_deleted_notice") }}</p></div>
     {% endif %}
-    {% if let Some(name) = deleted_name %}
-    <div class="form-notice mb-5" role="status"><p><q>{{ name }}</q> {{ i18n.t("services.deleted_notice") }}</p></div>
+    {% if deleted %}
+    <div class="form-notice mb-5" role="status"><p>{{ i18n.t("services.deleted_notice") }}</p></div>
     {% endif %}
     {% if let Some(message) = error %}
     <div class="form-error mb-5" role="alert"><p>{{ message }}</p></div>

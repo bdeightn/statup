@@ -73,7 +73,7 @@ test("a service reserved for a group shows only to the members of that group", a
     await page.goto(`/services/${serviceId}/edit`);
     await page.getByRole("button", { name: "Supprimer", exact: true }).click();
     await page.getByRole("group", { name: /./ }).getByRole("button", { name: "Supprimer" }).click();
-    await expect(page.getByText("supprimé.")).toBeVisible();
+    await expect(page.getByText("Service supprimé.")).toBeVisible();
     await page.goto(groupUrl);
     await page.getByRole("button", { name: "Supprimer", exact: true }).click();
     await page.getByRole("group", { name: /./ }).getByRole("button", { name: "Supprimer" }).click();
