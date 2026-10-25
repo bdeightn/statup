@@ -30,5 +30,7 @@ test("without a mail server the subscribe page offers no email form", async ({ p
         scroll: document.documentElement.scrollWidth,
         client: document.documentElement.clientWidth,
     }));
-    expect(widths.scroll, "no horizontal scroll").toBe(widths.client);
+    // Below the client width when the stable scrollbar gutter of a short
+    // page is kept empty, as Chromium does on Linux.
+    expect(widths.scroll, "no horizontal scroll").toBeLessThanOrEqual(widths.client);
 });
