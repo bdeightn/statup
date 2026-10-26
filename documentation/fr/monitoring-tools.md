@@ -55,7 +55,7 @@ Un signalement répond 200 avec ce qu'il a changé et ce qu'il a laissé :
 | `monitored_by_statup` | Statup vérifie ce service lui-même. |
 | `under_maintenance` | Une maintenance en cours couvre le service. |
 | `no_service_label` | Une alerte d'Alertmanager ou de Grafana sans étiquette `service`. |
-| `no_monitor_name` | Un message d'Uptime Kuma sans sa sonde. |
+| `no_monitor_name` | Un battement d'Uptime Kuma dont la sonde n'a pas de nom. |
 | `not_down_or_up` | Un état qui n'est ni l'un ni l'autre, comme en attente. |
 
 Dans le format de Statup, les trois refus répondent une erreur à la place, pour qu'un script voie l'échec : 404 `unknown_service`, 409 `monitored_by_statup`, 409 `under_maintenance`. Un nom absent répond 400 `service_required`, un état autre que `down` ou `up` 400 `invalid_state`, un corps dans aucun format que Statup lit 400 `unknown_format`. Sans clé valable, la réponse est 401 et rien n'est écrit au Journal : le journal de l'outil montre le refus. Un corps que Statup ne peut pas lire répond 400 `invalid_data`, même s'il contient la clé. Parmi les raisons ci-dessus, `unknown_service`, `monitored_by_statup` et `under_maintenance` laissent aussi une ligne au Journal ; les autres non. Voir [API](api.md#errors) pour les autres.
@@ -66,18 +66,18 @@ Statup lit le message de ces outils tel qu'ils l'envoient.
 
 ### Uptime Kuma
 
-1. Dans **Settings**, **Notifications**, **Setup Notification**, choisissez **Webhook**.
-2. **Post URL** : `https://status.example.com/api/v1/reports`.
-3. **Request Body** : gardez **Preset - application/json**. Le format multipart est refusé, et un corps personnalisé part en formulaire, que Statup ne lit pas comme du JSON.
+1. Dans **Settings**, **Notifications**, **Set Up Notification**, choisissez **Webhook**.
+2. **Post URL** : `https://status.example.com/api/v1/reports`, avec **HTTP Method** laissé à `POST`.
+3. **Request Body** : choisissez **Preset - application/json**. Le format multipart est refusé, et un corps personnalisé part en formulaire, que Statup ne lit pas comme du JSON.
 4. Activez **Additional Headers** et écrivez :
 
 ```json
 {"Authorization": "Bearer stp_your_key"}
 ```
 
-5. Activez la notification sur chaque sonde dont le nom est un service de Statup.
+5. Activez la notification sur chaque sonde dont le nom est un service de Statup, dans les **Notifications** de la sonde, ou d'un coup avec **Apply on all existing monitors**.
 
-Le **Test** de la notification répond sans rien changer. Une sonde en attente ou en maintenance ne change rien non plus.
+Le **Test** de la notification répond 200 sans rien changer. Une sonde en attente ou en maintenance ne change rien non plus.
 
 ### Prometheus
 
@@ -136,7 +136,7 @@ Zabbix envoie un corps que vous écrivez : écrivez-le dans le format de Statup
 
 ### Zabbix
 
-Dans **Alerts**, **Media types**, créez un type de média de type **Webhook**, avec ces paramètres :
+Dans **Alerts**, **Media types**, créez un type de média de type **Webhook**. Retirez les paramètres que Zabbix remplit, puis ajoutez ces six :
 
 | Nom | Valeur |
 |---|---|
@@ -147,7 +147,7 @@ Dans **Alerts**, **Media types**, créez un type de média de type **Webhook**, 
 | `update` | `{EVENT.UPDATE.STATUS}` |
 | `problem` | `{EVENT.NAME}` |
 
-et ce script :
+et ce script, par le crayon à côté de **Script**, puis **Apply** :
 
 ```text
 var params = JSON.parse(value);
@@ -160,7 +160,7 @@ request.addHeader('Content-Type: application/json');
 request.post(params.url, JSON.stringify({
     service: params.service,
     state: params.value === '1' ? 'down' : 'up',
-    message: params.problem
+    message: params.value === '1' ? params.problem : ''
 }));
 if (request.getStatus() !== 200) {
     throw 'Statup answered ' + request.getStatus();
@@ -168,7 +168,13 @@ if (request.getStatus() !== 200) {
 return 'OK';
 ```
 
-Donnez au type de média un modèle de message pour **Problem** et un pour **Problem recovery**, puis, dans l'action qui doit prévenir Statup, envoyez le problème par ce type de média et ajoutez une **Recovery operation** qui l'envoie aussi. Ici, le service porte le nom de l'hôte : mettez une autre macro dans `service` pour le nommer autrement. `{EVENT.UPDATE.STATUS}` évite qu'un acquittement soit pris pour une panne.
+Puis :
+
+1. Dans les **Message templates** du type de média, ajoutez-en un pour **Problem** et un pour **Problem recovery** ; les textes par défaut de Zabbix conviennent.
+2. Donnez à un utilisateur un média de ce type : **Users**, **Users**, l'utilisateur, onglet **Media**, **Add**, ce type, n'importe quel texte dans **Send to**, activé. Prenez un utilisateur à part plutôt qu'un des **Zabbix administrators** : l'action par défaut qui leur signale chaque problème enverrait chaque hôte à Statup.
+3. Dans **Alerts**, **Actions**, **Trigger actions**, **Create action** sur les déclencheurs qui doivent prévenir Statup. Dans son onglet **Operations**, ajoutez une opération qui envoie à cet utilisateur par ce type de média, et une **Recovery operation** qui fait de même.
+
+Ici, le service porte le nom visible de l'hôte : mettez une autre macro dans `service` pour le nommer autrement. `{EVENT.UPDATE.STATUS}` évite qu'un acquittement soit pris pour une panne. Le **Test** du type de média, avec ses valeurs par défaut, échoue avec `Statup answered 404` et laisse une ligne « signalement ignoré » au Journal : Statup ne connaît aucun service nommé `{HOST.NAME}`.
 
 ## Tout autre outil
 

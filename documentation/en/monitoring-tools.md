@@ -55,7 +55,7 @@ A report answers 200 with what it changed and what it left:
 | `monitored_by_statup` | Statup checks this service itself. |
 | `under_maintenance` | A maintenance under way covers the service. |
 | `no_service_label` | An Alertmanager or Grafana alert without a `service` label. |
-| `no_monitor_name` | An Uptime Kuma message without its monitor. |
+| `no_monitor_name` | An Uptime Kuma heartbeat whose monitor has no name. |
 | `not_down_or_up` | A state that is neither, such as pending. |
 
 In Statup's format, the three refusals answer an error instead, so a script sees it failed: 404 `unknown_service`, 409 `monitored_by_statup`, 409 `under_maintenance`. A missing name answers 400 `service_required`, a state other than `down` or `up` 400 `invalid_state`, a body in no format Statup reads 400 `unknown_format`. Without a valid key, the answer is 401 and nothing is written in the Journal: the tool's own log shows the refusal. A body Statup cannot read answers 400 `invalid_data`, even when it holds the key. Of the reasons above, `unknown_service`, `monitored_by_statup` and `under_maintenance` also leave a line in the Journal; the others do not. See [API](api.md#errors) for the others.
@@ -66,18 +66,18 @@ Statup reads the message of these tools as they send it.
 
 ### Uptime Kuma
 
-1. In **Settings**, **Notifications**, **Setup Notification**, choose **Webhook**.
-2. **Post URL**: `https://status.example.com/api/v1/reports`.
-3. **Request Body**: keep **Preset - application/json**. The multipart preset is refused, and a custom body goes out as a form, which Statup does not read as JSON.
+1. In **Settings**, **Notifications**, **Set Up Notification**, choose **Webhook**.
+2. **Post URL**: `https://status.example.com/api/v1/reports`, with **HTTP Method** left at `POST`.
+3. **Request Body**: choose **Preset - application/json**. The multipart preset is refused, and a custom body goes out as a form, which Statup does not read as JSON.
 4. Turn on **Additional Headers** and write:
 
 ```json
 {"Authorization": "Bearer stp_your_key"}
 ```
 
-5. Turn the notification on for each monitor whose name is a service in Statup.
+5. Turn the notification on for each monitor whose name is a service in Statup, under the monitor's **Notifications**, or at once with **Apply on all existing monitors**.
 
-The notification's **Test** answers without changing anything. A monitor that is pending or in maintenance changes nothing either.
+The notification's **Test** answers 200 without changing anything. A monitor that is pending or in maintenance changes nothing either.
 
 ### Prometheus
 
@@ -136,7 +136,7 @@ Zabbix posts a body you write: write it in Statup's format.
 
 ### Zabbix
 
-In **Alerts**, **Media types**, create a media type of type **Webhook**, with these parameters:
+In **Alerts**, **Media types**, create a media type of type **Webhook**. Remove the parameters Zabbix fills in, then add these six:
 
 | Name | Value |
 |---|---|
@@ -147,7 +147,7 @@ In **Alerts**, **Media types**, create a media type of type **Webhook**, with th
 | `update` | `{EVENT.UPDATE.STATUS}` |
 | `problem` | `{EVENT.NAME}` |
 
-and this script:
+and this script, through the pencil next to **Script**, then **Apply**:
 
 ```text
 var params = JSON.parse(value);
@@ -160,7 +160,7 @@ request.addHeader('Content-Type: application/json');
 request.post(params.url, JSON.stringify({
     service: params.service,
     state: params.value === '1' ? 'down' : 'up',
-    message: params.problem
+    message: params.value === '1' ? params.problem : ''
 }));
 if (request.getStatus() !== 200) {
     throw 'Statup answered ' + request.getStatus();
@@ -168,7 +168,13 @@ if (request.getStatus() !== 200) {
 return 'OK';
 ```
 
-Give the media type a message template for **Problem** and one for **Problem recovery**, then, in the action that should tell Statup, send the problem with this media type and add a **Recovery operation** that sends it too. Here the service is named after the host: write another macro in `service` to name it otherwise. `{EVENT.UPDATE.STATUS}` keeps an acknowledgement from being taken for an outage.
+Then:
+
+1. In the media type's **Message templates**, add one for **Problem** and one for **Problem recovery**; Zabbix's default texts do.
+2. Give a user a media of this type: **Users**, **Users**, the user, tab **Media**, **Add**, this type, any text in **Send to**, enabled. Take a user of its own rather than one of **Zabbix administrators**: the default action that tells them every problem would send every host to Statup.
+3. In **Alerts**, **Actions**, **Trigger actions**, **Create action** on the triggers that should tell Statup. In its **Operations** tab, add an operation that sends to that user with this media type, and a **Recovery operation** that does the same.
+
+Here the service is named after the host's visible name: write another macro in `service` to name it otherwise. `{EVENT.UPDATE.STATUS}` keeps an acknowledgement from being taken for an outage. The media type's **Test**, with its default values, fails with `Statup answered 404` and leaves a "report ignored" line in the Journal: Statup knows no service called `{HOST.NAME}`.
 
 ## Any other tool
 
