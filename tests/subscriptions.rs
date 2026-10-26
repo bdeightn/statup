@@ -244,6 +244,7 @@ async fn publish_incident(app: &TestApp, author_id: i64) {
         service_ids: Vec::new(),
         follows_event_id: None,
         author_id,
+        api_key_id: None,
         next_update: None,
     };
     EventService::create(&app.pool, input)

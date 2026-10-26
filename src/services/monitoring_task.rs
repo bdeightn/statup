@@ -564,6 +564,7 @@ mod tests {
             service_ids: vec![service_id],
             follows_event_id: None,
             author_id: author.id,
+            api_key_id: None,
             next_update: None,
         };
         EventRepository::create(pool, &input).await.unwrap().id
@@ -833,6 +834,7 @@ mod tests {
             service_ids: vec![explained],
             follows_event_id: None,
             author_id: lead.id,
+            api_key_id: None,
             next_update: None,
         };
         EventRepository::create(&pool, &incident).await.unwrap();

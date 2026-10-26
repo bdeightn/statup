@@ -671,6 +671,7 @@ mod tests {
             service_ids,
             follows_event_id: None,
             author_id: author.id,
+            api_key_id: None,
             next_update: None,
         };
         EventService::create(pool, input).await.unwrap();

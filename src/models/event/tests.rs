@@ -98,6 +98,7 @@ fn input(kind: Kind, planned: bool) -> CreateEventInput {
         service_ids: vec![],
         follows_event_id: None,
         author_id: 1,
+        api_key_id: None,
         next_update: None,
     }
 }

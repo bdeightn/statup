@@ -511,6 +511,7 @@ pub async fn create(
                     service_ids: input.service_ids.clone(),
                     follows_event_id: input.follows_event_id,
                     author_id: user.id,
+                    api_key_id: None,
                     next_update,
                 },
             )

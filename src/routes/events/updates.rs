@@ -36,6 +36,7 @@ impl UpdateInput {
             self.lifecycle,
             next_update,
             user,
+            None,
         )
         .await?;
         self.record(state, id, user).await;

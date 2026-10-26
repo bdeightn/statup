@@ -116,6 +116,7 @@ impl TestApp {
             service_ids: Vec::new(),
             follows_event_id: None,
             author_id,
+            api_key_id: None,
             next_update: None,
         };
         EventService::create(&self.pool, input)

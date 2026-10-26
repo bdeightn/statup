@@ -140,6 +140,7 @@ fn incident(title: &str, author: &User, service_ids: Vec<i64>) -> CreateEventInp
         service_ids,
         follows_event_id: None,
         author_id: author.id,
+        api_key_id: None,
         next_update: None,
     }
 }
@@ -226,6 +227,7 @@ async fn events_are_listed_newest_first_and_filtered() {
         Some(Lifecycle::Resolved),
         None,
         &author,
+        None,
     )
     .await
     .unwrap();
@@ -301,14 +303,21 @@ async fn one_event_comes_with_its_services_and_updates() {
     )
     .await
     .unwrap();
-    EventRepository::add_update(&app.pool, event.id, "<p>Looking into it</p>", author.id)
-        .await
-        .unwrap();
+    EventRepository::add_update(
+        &app.pool,
+        event.id,
+        "<p>Looking into it</p>",
+        author.id,
+        None,
+    )
+    .await
+    .unwrap();
     EventRepository::add_update(
         &app.pool,
         event.id,
         "<p>Back <strong>up</strong></p>",
         author.id,
+        None,
     )
     .await
     .unwrap();

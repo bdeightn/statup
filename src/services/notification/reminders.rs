@@ -107,6 +107,7 @@ mod tests {
             service_ids: Vec::new(),
             follows_event_id: None,
             author_id: member.id,
+            api_key_id: None,
             next_update: Some(NextUpdate {
                 at: Utc::now() - Duration::minutes(minutes_ago),
                 every_minutes: None,
