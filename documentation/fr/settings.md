@@ -3,10 +3,11 @@ title: Paramètres
 description: "Le nom, le logo, le fuseau horaire et le public de la page, la version, et l'organisation du tableau de bord."
 ---
 
-La page **Paramètres**, réservée aux administrateurs, s'ouvre sur quatre tuiles, sous **Gestion** :
+La page **Paramètres**, réservée aux administrateurs, s'ouvre sur cinq tuiles, sous **Gestion** :
 
 - **Équipe** : les membres et leurs rôles. Voir [Équipe et rôles](team.md).
 - **Alertes** : les canaux qui reçoivent les nouvelles. Voir [Alertes](alerts.md).
+- **API** : les clés des scripts et des outils qui utilisent l'API. Voir [API](api.md#keys).
 - **Journal** : ce qui s'est passé sur l'instance. Voir [Journal](journal.md).
 - **Version** : la version en service.
 

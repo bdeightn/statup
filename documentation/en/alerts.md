@@ -50,7 +50,7 @@ Email channels need an SMTP server: set [`SMTP_HOST`](configuration.md#smtp_host
 - A channel that does not answer is tried again after 30 seconds, 2, 10 and 30 minutes. After that, or at once when the service refuses the URL (404, 401), its waiting messages are given up.
 - The list of channels says, for each one, when it last sent, when it tries again and why, or when it failed and why.
 
-Outages found by [monitoring](monitoring.md) at the same minute are grouped in one message per channel, and their return in one more.
+Outages found by [monitoring](monitoring.md), or reported by a [monitoring tool](monitoring-tools.md), at the same minute are grouped in one message per channel, and their return in one more.
 
 ## Email subscribers
 

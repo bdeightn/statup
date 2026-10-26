@@ -74,7 +74,7 @@ Un service, tel que toutes les adresses ci-dessous le répondent :
 
 ### Lister les services
 
-`GET /api/v1/services` répond `{"services": [...]}`, dans l'ordre de la page Services.
+`GET /api/v1/services` répond `{"services": [...]}`, dans l'ordre choisi sur la page Services.
 
 ### Lire un service
 

@@ -3,10 +3,11 @@ title: Settings
 description: "The page's name, logo, time zone and audience, the version, and the layout of the dashboard."
 ---
 
-**Settings**, for administrators, opens on four tiles, under **Management**:
+**Settings**, for administrators, opens on five tiles, under **Management**:
 
 - **Team**: the members and their roles. See [Team and roles](team.md).
 - **Alerts**: the channels that receive the news. See [Alerts](alerts.md).
+- **API**: the keys of the scripts and tools that use the API. See [API](api.md#keys).
 - **Journal**: what happened on the instance. See [Journal](journal.md).
 - **Version**: the version running.
 

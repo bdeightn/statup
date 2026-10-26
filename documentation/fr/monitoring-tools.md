@@ -10,7 +10,7 @@ Un outil de supervision surveille déjà vos serveurs. Réglez-le une fois pour 
 Chaque outil envoie à une seule adresse, `/api/v1/reports` sur l'adresse de votre page, avec une [clé d'API](api.md#keys) : créez-en une par outil, à son nom, pour que ses signalements soient signés de ce nom.
 
 - Le service est nommé comme dans Statup, par son nom ou son identifiant d'adresse (slug), sans tenir compte de la casse. Nommez de la même façon la sonde, l'étiquette ou l'hôte dans l'outil. Deux services du même nom : le premier dans l'ordre de la page Services reçoit le signalement ; nommez l'autre par son slug.
-- **En panne** : le service affiche **En panne**, marqué **Détecté automatiquement**, à partir de l'arrivée du signalement. Les canaux qui reçoivent les **Pannes détectées automatiquement** sont prévenus, et les éditeurs trouvent **Déclarer un incident** avec l'incident prérempli. Statup ne publie jamais d'incident lui-même.
+- **Panne** : le service affiche **En panne**, marqué **Détecté automatiquement**, à partir de l'arrivée du signalement. Les canaux qui reçoivent les **Pannes détectées automatiquement** sont prévenus, et les éditeurs trouvent **Déclarer un incident** avec l'incident prérempli. Statup ne publie jamais d'incident lui-même.
 - **Rétabli** : la panne se termine et l'état réglé à la main revient.
 - Un service couvert par un incident ouvert n'envoie pas d'alerte. Les services signalés en panne ensemble dans un même message partent dans une seule alerte par canal.
 
