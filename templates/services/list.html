@@ -36,6 +36,7 @@
                     <div class="new-menu-list">
                         <a href="/services/new" class="more-actions-item">{{ i18n.t("services.new_menu_service") }}</a>
                         <button type="button" class="more-actions-item" data-swap-to-form>{{ i18n.t("services.new_menu_folder") }}</button>
+                        <a href="/services/import" class="more-actions-item">{{ i18n.t("services.new_menu_kuma") }}</a>
                     </div>
                     <form class="new-menu-form" method="post" action="/services/folders/new">
                         <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
@@ -62,6 +63,9 @@
 
     {% if let Some(name) = saved_name %}
     <div class="form-notice mb-5" role="status"><p><q>{{ name }}</q> {{ self.saved_notice() }}</p></div>
+    {% endif %}
+    {% if let Some(text) = imported %}
+    <div class="form-notice mb-5" role="status"><p>{{ text }} <a class="link" href="{{ crate::docs_url(i18n.locale(), crate::Doc::KumaAlerts) }}">{{ i18n.t("services.kuma_alerts_link") }}</a></p></div>
     {% endif %}
     {% if folder_deleted %}
     <div class="form-notice mb-5" role="status"><p>{{ i18n.t("services.folder_deleted_notice") }}</p></div>

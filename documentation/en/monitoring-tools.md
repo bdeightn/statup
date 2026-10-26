@@ -69,6 +69,16 @@ Statup reads the message of these tools as they send it.
 
 ### Uptime Kuma
 
+Statup finds a service by the name of its monitor. To create the services under the same names, import them first: on the Services page, **New**, then **Import from Uptime Kuma**.
+
+1. **Status page URL**: the address of a Kuma status page as a browser shows it, such as `https://kuma.example.com/status/infra`. For a status page on its own domain, write the address of the Kuma server with `/status/` and the page's slug: the domain alone does not name the page. Tick **Accept an internal certificate** for a Kuma whose certificate Statup cannot verify.
+2. **Read the page**: each group of the page shows its monitors, how many are to import, how many already exist in Statup, and the names over 100 characters, which Statup cannot take as they are.
+3. Tick the groups, then **Import**. Each group becomes a folder of the same name, or fills the folder that already has it, whose visibility its new services take. Each monitor becomes a service under its name in Kuma, in the order of the page.
+
+Statup sees only the monitors of a status page: Kuma shows the others to its own users only. Kuma keeps a page for 5 minutes, so a monitor just added shows after up to 5 minutes. When Kuma gains monitors, import again: the URL is kept, only what is new is created, and nothing is renamed, moved or deleted.
+
+Then send Kuma's alerts to Statup:
+
 1. In **Settings**, **Notifications**, **Set Up Notification**, choose **Webhook**.
 2. **Post URL**: `https://status.example.com/api/v1/reports`, with **HTTP Method** left at `POST`.
 3. **Request Body**: choose **Preset - application/json**. The multipart preset is refused, and a custom body goes out as a form, which Statup does not read as JSON.

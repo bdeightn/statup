@@ -82,15 +82,17 @@ pub enum Doc {
     Webhook,
     MailServer,
     Api,
+    KumaAlerts,
 }
 
 impl Doc {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Home,
         Self::ResetFromServer,
         Self::Webhook,
         Self::MailServer,
         Self::Api,
+        Self::KumaAlerts,
     ];
 
     /// The page, and the address of its English heading, the same in every
@@ -102,6 +104,7 @@ impl Doc {
             Self::Webhook => ("webhook", ""),
             Self::MailServer => ("configuration", "email"),
             Self::Api => ("api", ""),
+            Self::KumaAlerts => ("monitoring-tools", "uptime-kuma"),
         }
     }
 }

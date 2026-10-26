@@ -243,7 +243,6 @@ pub async fn test_check(
 /// monitoring counts as an answer, red for a failure.
 fn verdict(report: &Report, i18n: &I18n) -> (Tone, String) {
     let ms = report.elapsed.as_millis().to_string();
-    let failure = |key: &str| (Tone::Crit, i18n.t(key).to_string());
     match report.finding {
         Finding::Answered {
             status: Some(status),
@@ -265,12 +264,21 @@ fn verdict(report: &Report, i18n: &I18n) -> (Tone, String) {
                 &[("status", &status.to_string())],
             ),
         ),
-        Finding::Refused => failure("services.check_result_refused"),
-        Finding::TimedOut => failure("services.check_result_timeout"),
-        Finding::NameNotFound => failure("services.check_result_name"),
-        Finding::Certificate => failure("services.check_result_certificate"),
-        Finding::TooManyRedirects => failure("services.check_result_redirects"),
-        Finding::Unreachable => failure("services.check_result_unreachable"),
+        failed => (Tone::Crit, i18n.t(failure_key(failed)).to_string()),
+    }
+}
+
+/// Why an address could not be reached, for any form that reads one.
+pub(super) fn failure_key(finding: Finding) -> &'static str {
+    match finding {
+        Finding::Refused => "services.check_result_refused",
+        Finding::TimedOut => "services.check_result_timeout",
+        Finding::NameNotFound => "services.check_result_name",
+        Finding::Certificate => "services.check_result_certificate",
+        Finding::TooManyRedirects => "services.check_result_redirects",
+        Finding::Answered { .. } | Finding::ServerError(_) | Finding::Unreachable => {
+            "services.check_result_unreachable"
+        }
     }
 }
 

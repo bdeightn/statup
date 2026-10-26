@@ -1,0 +1,85 @@
+{% extends "_layout.html" %}
+{% import "components/macros.html" as ui %}
+
+{% block title %}{{ i18n.t("kuma_import.title") }} | {{ crate::brand_name() }}{% endblock %}
+{% block section %}services{% endblock %}
+
+{% block content %}
+<div class="page">
+    <header class="page-head">
+        <div>
+            <a href="/services" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("services.heading") }}</a>
+            <h1 class="page-title">{{ i18n.t("kuma_import.title") }}</h1>
+        </div>
+    </header>
+
+    <div class="kuma-import">
+        <section class="card" aria-labelledby="kuma-url-title">
+            <header class="card-head">
+                <h2 class="card-title"><label for="kuma-url" id="kuma-url-title">{{ i18n.t("kuma_import.url_label") }}</label></h2>
+            </header>
+            <form class="card-body" method="post" action="/services/import/read">
+                <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                <div class="check-target">
+                    <input id="kuma-url" name="address" type="text" class="input" inputmode="url" autocomplete="off" spellcheck="false" maxlength="2000" required
+                           value="{{ address }}" placeholder="{{ i18n.t("kuma_import.url_placeholder") }}"
+                           {% if error.is_some() %}aria-invalid="true" aria-describedby="kuma-url-error" autofocus{% endif %}>
+                    {# The black button of the screen until the page is read,
+                       then Import takes that place. #}
+                    <button type="submit" class="btn {% if read.is_some() %}btn-ghost{% else %}btn-primary{% endif %}">{{ i18n.t("kuma_import.read") }}</button>
+                </div>
+                {% if let Some(message) = error %}
+                <p id="kuma-url-error" class="field-error" role="alert">{{ message }}</p>
+                {% endif %}
+                <label class="check-row mt-3">
+                    <input type="checkbox" name="internal_cert" value="on" class="checkbox"{% if internal_cert %} checked{% endif %}>
+                    <span>{{ i18n.t("services.check_internal_cert") }}</span>
+                </label>
+            </form>
+        </section>
+
+        {% if let Some(page) = read %}
+        {# Ticked groups are read again on import, from the same URL: the
+           form carries nothing else. #}
+        <section class="card" aria-labelledby="kuma-groups-title">
+            <form method="post" action="/services/import">
+                <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                <input type="hidden" name="address" value="{{ address }}">
+                {% if internal_cert %}<input type="hidden" name="internal_cert" value="on">{% endif %}
+                <header class="card-head">
+                    <h2 id="kuma-groups-title" class="card-title wrap-anywhere">{% if let Some(title) = page.title %}{{ title }}{% else %}{{ i18n.t("kuma_import.groups") }}{% endif %} <span class="count">{{ page.groups.len() }}</span></h2>
+                </header>
+                {% if nothing_ticked %}
+                <p class="field-error kuma-groups-error" role="alert">{{ i18n.t("kuma_import.tick_one") }}</p>
+                {% endif %}
+                {% if page.groups.is_empty() %}
+                <p class="groups-empty">{{ i18n.t("kuma_import.no_group") }}</p>
+                {% else %}
+                <ul class="kuma-groups">
+                    {% for group in page.groups %}
+                    <li class="kuma-group">
+                        <label class="check-row">
+                            <input type="checkbox" name="groups" value="{{ group.name }}" class="checkbox"{% if group.new_services() > 0 %}{% if !nothing_ticked %} checked{% endif %}{% else %} disabled{% endif %}>
+                            <span class="kuma-group-name wrap-anywhere">{{ group.name }}</span>
+                        </label>
+                        <p class="kuma-group-meta">{% for fact in self.group_facts(group) %}{% if !loop.first %}&nbsp;<span aria-hidden="true">·</span> {% endif %}{{ fact }}{% endfor %}</p>
+                        {% if !group.monitors.is_empty() %}
+                        <span class="svc-tags kuma-monitors">{% for monitor in group.monitors %}<span class="svc-tag{% if !monitor.is_new() %} is-kept{% endif %}">{{ monitor.name }}{% if !monitor.is_new() %}<span class="sr-only">&nbsp;: {{ self.kept_reason(monitor) }}</span>{% endif %}</span>{% endfor %}</span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+                {% if page.importable() %}
+                <div class="kuma-import-foot">
+                    <button type="submit" class="btn btn-primary">{{ i18n.t("kuma_import.submit") }}</button>
+                </div>
+                {% else if !page.groups.is_empty() %}
+                <p class="groups-empty kuma-nothing-new">{{ i18n.t("kuma_import.nothing_new") }}</p>
+                {% endif %}
+            </form>
+        </section>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -69,6 +69,16 @@ Statup lit le message de ces outils tel qu'ils l'envoient.
 
 ### Uptime Kuma
 
+Statup trouve un service par le nom de sa sonde. Pour créer les services sous les mêmes noms, importez-les d'abord : sur la page Services, **Nouveau**, puis **Importer d'Uptime Kuma**.
+
+1. **URL de la page d'état** : l'adresse d'une page d'état de Kuma telle qu'un navigateur l'affiche, comme `https://kuma.example.com/status/infra`. Pour une page d'état sur son propre domaine, écrivez l'adresse du serveur Kuma avec `/status/` et le slug de la page : le domaine seul ne nomme pas la page. Cochez **Accepter un certificat interne** pour un Kuma dont Statup ne peut pas vérifier le certificat.
+2. **Lire la page** : chaque groupe de la page montre ses sondes, combien sont à importer, combien existent déjà dans Statup, et les noms de plus de 100 caractères, que Statup ne peut pas reprendre tels quels.
+3. Cochez les groupes, puis **Importer**. Chaque groupe devient un dossier du même nom, ou remplit le dossier qui le porte déjà, dont ses nouveaux services prennent la visibilité. Chaque sonde devient un service sous son nom dans Kuma, dans l'ordre de la page.
+
+Statup ne voit que les sondes d'une page d'état : Kuma ne montre les autres qu'à ses propres utilisateurs. Kuma garde une page 5 minutes en mémoire, si bien qu'une sonde tout juste ajoutée apparaît au plus 5 minutes après. Quand Kuma gagne des sondes, importez de nouveau : l'URL est gardée, seul le nouveau est créé, et rien n'est renommé, déplacé ni supprimé.
+
+Envoyez ensuite les alertes de Kuma à Statup :
+
 1. Dans **Settings**, **Notifications**, **Set Up Notification**, choisissez **Webhook**.
 2. **Post URL** : `https://status.example.com/api/v1/reports`, avec **HTTP Method** laissé à `POST`.
 3. **Request Body** : choisissez **Preset - application/json**. Le format multipart est refusé, et un corps personnalisé part en formulaire, que Statup ne lit pas comme du JSON.

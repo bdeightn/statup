@@ -23,6 +23,8 @@ Les éditeurs et les administrateurs gèrent les services depuis la page **Servi
 
 Pour modifier un service par la suite, ouvrez-le par son nom ou par son crayon sur la page Services, puis validez avec **Enregistrer**. Son état ne figure pas dans le formulaire : il se règle depuis la liste.
 
+Pour créer d'un coup les services d'une page d'état d'Uptime Kuma, sous les noms de ses sondes : **Nouveau**, puis **Importer d'Uptime Kuma**. Voir [Uptime Kuma](monitoring-tools.md#uptime-kuma).
+
 ## Icônes
 
 - 24 icônes fournies, de Serveur à Impression.

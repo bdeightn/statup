@@ -60,8 +60,14 @@ impl GroupPlan {
     pub fn new_services(&self) -> usize {
         self.monitors
             .iter()
-            .filter(|monitor| monitor.fate == MonitorFate::New)
+            .filter(|monitor| monitor.is_new())
             .count()
+    }
+}
+
+impl MonitorPlan {
+    pub fn is_new(&self) -> bool {
+        self.fate == MonitorFate::New
     }
 }
 
@@ -220,7 +226,7 @@ impl Run<'_> {
         let new: Vec<&str> = group
             .monitors
             .iter()
-            .filter(|monitor| monitor.fate == MonitorFate::New)
+            .filter(|monitor| monitor.is_new())
             .map(|monitor| monitor.name.as_str())
             .collect();
         if new.is_empty() {

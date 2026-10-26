@@ -56,6 +56,8 @@ struct ServiceListTemplate {
     chosen_places: HashMap<i64, usize>,
     deleted: bool,
     folder_deleted: bool,
+    /// What an import from Uptime Kuma created.
+    imported: Option<String>,
     new_folder: NewFolderForm,
     error: Option<String>,
     i18n: I18n,
@@ -181,6 +183,21 @@ pub struct ListQuery {
     saved: Option<i64>,
     deleted: Option<String>,
     folder_deleted: Option<String>,
+    imported: Option<usize>,
+    folders: Option<usize>,
+}
+
+impl ListQuery {
+    /// "5 services imported. 2 folders created."
+    fn imported(&self, i18n: &I18n) -> Option<String> {
+        let services = self.imported.filter(|n| *n > 0)?;
+        let mut text = i18n.plural("services.imported", services);
+        if let Some(folders) = self.folders.filter(|n| *n > 0) {
+            text.push(' ');
+            text.push_str(&i18n.plural("services.folders_created", folders));
+        }
+        Some(text)
+    }
 }
 
 async fn render_list(
@@ -231,6 +248,7 @@ async fn render_list(
         chosen_places,
         deleted: query.deleted.is_some(),
         folder_deleted: query.folder_deleted.is_some(),
+        imported: query.imported(&i18n),
         new_folder,
         error,
         i18n,
