@@ -79,9 +79,9 @@ Statup lit le message de ces outils tel qu'ils l'envoient.
 
 Le **Test** de la notification répond sans rien changer. Une sonde en attente ou en maintenance ne change rien non plus.
 
-### Prometheus Alertmanager
+### Prometheus
 
-Donnez à chaque règle d'alerte une étiquette `service` qui nomme le service :
+Prometheus envoie ses alertes par Alertmanager, son gestionnaire d'alertes : Statup lit ce qu'Alertmanager envoie. Donnez à chaque règle d'alerte une étiquette `service` qui nomme le service :
 
 ```yaml
 groups:
@@ -121,7 +121,7 @@ Grafana envoie les alertes résolues par défaut ; gardez-le ainsi, sinon les s
 
 ## Les outils dont vous écrivez le message
 
-Ces outils envoient un corps que vous écrivez : écrivez-le dans le format de Statup.
+Zabbix envoie un corps que vous écrivez : écrivez-le dans le format de Statup.
 
 ### Zabbix
 
@@ -159,63 +159,17 @@ return 'OK';
 
 Donnez au type de média un modèle de message pour **Problem** et un pour **Problem recovery**, puis, dans l'action qui doit prévenir Statup, envoyez le problème par ce type de média et ajoutez une **Recovery operation** qui l'envoie aussi. Ici, le service porte le nom de l'hôte : mettez une autre macro dans `service` pour le nommer autrement. `{EVENT.UPDATE.STATUS}` évite qu'un acquittement soit pris pour une panne.
 
-### UptimeRobot
+## Tout autre outil
 
-Sur une offre qui a les webhooks, dans **Integrations**, ajoutez un **Webhook** :
+Les outils ci-dessus sont ceux dont la marche à suivre a été essayée sur de vraies installations. Tout autre outil joint Statup de la même façon, dans le format de Statup.
 
-1. L'URL `https://status.example.com/api/v1/reports`.
-2. Un en-tête personnalisé `Authorization` avec la valeur `Bearer` suivie de la clé.
-3. Un corps POST personnalisé, envoyé en JSON :
+### Un outil qui appelle une adresse web
 
-```json
-{"service": "*monitorFriendlyName*", "state": "*alertTypeFriendlyName*", "message": "*alertDetails*"}
-```
+S'il sait envoyer un message à une adresse quand une alerte commence et quand elle se termine, donnez-lui l'adresse `https://status.example.com/api/v1/reports`, l'en-tête `Authorization: Bearer` suivi de la clé, et un corps dans le [format de Statup](#statups-format) : le nom du service, `down` ou `up`, et un message si vous voulez. Un outil qui ne sait poser aucun en-tête met la clé dans un champ `key` du corps, envoyé en formulaire.
 
-4. Les événements **Down** et **Up**.
+### Un outil qui lance un script
 
-UptimeRobot envoie chacun une seule fois, sans nouvel essai.
-
-### Datadog
-
-Dans l'intégration **Webhooks**, ajoutez deux webhooks avec l'URL `https://status.example.com/api/v1/reports` et les en-têtes personnalisés :
-
-```json
-{"Authorization": "Bearer stp_your_key"}
-```
-
-Le premier, `statup-down`, avec ce corps, et le second, `statup-up`, avec `up` pour état :
-
-```json
-{"service": "$TAGS[service]", "state": "down", "message": "$EVENT_TITLE"}
-```
-
-Donnez à chaque moniteur un tag `service`, et appelez les webhooks depuis son message :
-
-```text
-{{#is_alert}}@webhook-statup-down{{/is_alert}}
-{{#is_recovery}}@webhook-statup-up{{/is_recovery}}
-```
-
-## Les outils qui ne savent pas poser d'en-tête
-
-### PRTG
-
-L'action HTTP de PRTG ne pose aucun en-tête et envoie son contenu en formulaire : la clé va dans le contenu.
-
-1. Dans **Setup**, **Account Settings**, **Notification Templates**, ajoutez un modèle avec la méthode **Execute HTTP Action**, l'URL `https://status.example.com/api/v1/reports`, la méthode `POST`, et ce contenu :
-
-```text
-key=stp_your_key&service=%device&state=down&message=%message
-```
-
-2. Ajoutez un second modèle, le même avec `state=up`.
-3. Sur l'appareil ou le capteur, ajoutez un déclencheur d'état : quand le capteur est **Down**, le premier modèle ; quand il ne l'est plus, le second.
-
-Ici, le service porte le nom de l'appareil. Le manuel de PRTG ne dit pas s'il encode les variables : évitez `&`, `=` et `+` dans ces noms d'appareils.
-
-## Les outils qui lancent un script
-
-Nagios, Icinga, Centreon et Checkmk lancent une commande à chaque notification. Un seul script sert à tous. Enregistrez l'en-tête de la clé dans un fichier que seul l'utilisateur de la supervision lit, pour que la clé n'apparaisse jamais dans la liste des processus :
+S'il lance une commande à chaque notification, comme Nagios et ses cousins, ce script prévient Statup. Enregistrez l'en-tête de la clé dans un fichier que seul l'utilisateur de la supervision lit, pour que la clé n'apparaisse jamais dans la liste des processus :
 
 ```bash
 printf 'Authorization: Bearer %s\n' "stp_your_key" > /etc/statup/header
@@ -240,39 +194,4 @@ curl -fsS --max-time 10 https://status.example.com/api/v1/reports \
     --data-urlencode "message=$3"
 ```
 
-Les acquittements, les oscillations et les arrêts planifiés laissent Statup tel quel.
-
-### Nagios et Centreon
-
-Une commande de notification, dans Centreon depuis **Configuration**, **Commands** :
-
-```text
-define command {
-    command_name    notify-statup
-    command_line    /usr/local/bin/statup-report "$SERVICEDESC$" "$NOTIFICATIONTYPE$" "$SERVICEOUTPUT$"
-}
-```
-
-Donnez-la à un contact dans `service_notification_commands`, avec `service_notification_options c,r` : les problèmes critiques et les rétablissements seulement, car un avertissement est aussi un problème. Un rétablissement n'est envoyé qu'après son problème.
-
-### Icinga 2
-
-```text
-object NotificationCommand "statup" {
-    command = [ "/usr/local/bin/statup-report", "$service.name$", "$notification.type$", "$service.output$" ]
-}
-```
-
-Appliquez-la dans une `Notification` avec `types = [ Problem, Recovery ]`.
-
-### Checkmk
-
-Enregistrez ceci sous `~/local/share/check_mk/notifications/statup`, exécutable, puis choisissez **Statup** comme méthode d'une règle de notification :
-
-```bash
-#!/bin/sh
-# Statup
-exec /usr/local/bin/statup-report "${NOTIFY_SERVICEDESC:-$NOTIFY_HOSTNAME}" "$NOTIFY_NOTIFICATIONTYPE"
-```
-
-La notification d'un hôte nomme le service d'après l'hôte.
+Faites-le appeler par l'outil avec le nom du service, `PROBLEM` ou `RECOVERY`, et un message : tout autre second mot laisse Statup tel quel. Une tâche planifiée (cron) peut l'appeler de la même façon.

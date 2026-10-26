@@ -79,9 +79,9 @@ Statup reads the message of these tools as they send it.
 
 The notification's **Test** answers without changing anything. A monitor that is pending or in maintenance changes nothing either.
 
-### Prometheus Alertmanager
+### Prometheus
 
-Give each alert rule a `service` label that names the service:
+Prometheus sends its alerts through Alertmanager, its alert manager: Statup reads what Alertmanager sends. Give each alert rule a `service` label that names the service:
 
 ```yaml
 groups:
@@ -121,7 +121,7 @@ Grafana sends resolved alerts by default; keep it so, or services never come bac
 
 ## Tools with a message you write
 
-These tools post a body you write: write it in Statup's format.
+Zabbix posts a body you write: write it in Statup's format.
 
 ### Zabbix
 
@@ -159,63 +159,17 @@ return 'OK';
 
 Give the media type a message template for **Problem** and one for **Problem recovery**, then, in the action that should tell Statup, send the problem with this media type and add a **Recovery operation** that sends it too. Here the service is named after the host: write another macro in `service` to name it otherwise. `{EVENT.UPDATE.STATUS}` keeps an acknowledgement from being taken for an outage.
 
-### UptimeRobot
+## Any other tool
 
-On a plan that has webhooks, in **Integrations**, add a **Webhook**:
+The tools above are the ones whose steps were tried on real instances. Any other tool reaches Statup the same way, in Statup's format.
 
-1. The URL `https://status.example.com/api/v1/reports`.
-2. A custom header `Authorization` with the value `Bearer` followed by the key.
-3. A custom POST value, sent as JSON:
+### A tool that calls a web address
 
-```json
-{"service": "*monitorFriendlyName*", "state": "*alertTypeFriendlyName*", "message": "*alertDetails*"}
-```
+If it can post to an address when an alert starts and when it ends, give it the address `https://status.example.com/api/v1/reports`, the header `Authorization: Bearer` followed by the key, and a body in [Statup's format](#statups-format): the name of the service, `down` or `up`, and a message if you like. A tool that can set no header puts the key in a `key` field of the body, sent as a form.
 
-4. The events **Down** and **Up**.
+### A tool that runs a script
 
-UptimeRobot sends each of these once, without retrying.
-
-### Datadog
-
-In the **Webhooks** integration, add two webhooks with the URL `https://status.example.com/api/v1/reports` and the custom headers:
-
-```json
-{"Authorization": "Bearer stp_your_key"}
-```
-
-The first, `statup-down`, with this payload, and the second, `statup-up`, with `up` as its state:
-
-```json
-{"service": "$TAGS[service]", "state": "down", "message": "$EVENT_TITLE"}
-```
-
-Give each monitor a `service` tag, and call the webhooks from its message:
-
-```text
-{{#is_alert}}@webhook-statup-down{{/is_alert}}
-{{#is_recovery}}@webhook-statup-up{{/is_recovery}}
-```
-
-## Tools that cannot set a header
-
-### PRTG
-
-PRTG's HTTP action sets no header and sends its payload as a form: the key goes in the payload.
-
-1. In **Setup**, **Account Settings**, **Notification Templates**, add a template with the method **Execute HTTP Action**, the URL `https://status.example.com/api/v1/reports`, the method `POST`, and this payload:
-
-```text
-key=stp_your_key&service=%device&state=down&message=%message
-```
-
-2. Add a second template, the same with `state=up`.
-3. On the device or the sensor, add a state trigger: when the sensor is **Down**, the first template; when it is no longer down, the second.
-
-Here the service is named after the device. PRTG's manual does not say whether it encodes the placeholders: keep `&`, `=` and `+` out of those device names.
-
-## Tools that run a script
-
-Nagios, Icinga, Centreon and Checkmk run a command on each notification. One script serves them all. Save the key's header in a file only the monitoring user reads, so the key never shows in the list of processes:
+If it runs a command on each notification, as Nagios and its relatives do, this script tells Statup. Save the key's header in a file only the monitoring user reads, so the key never shows in the list of processes:
 
 ```bash
 printf 'Authorization: Bearer %s\n' "stp_your_key" > /etc/statup/header
@@ -240,39 +194,4 @@ curl -fsS --max-time 10 https://status.example.com/api/v1/reports \
     --data-urlencode "message=$3"
 ```
 
-Acknowledgements, flapping and downtimes leave Statup as it is.
-
-### Nagios and Centreon
-
-A notification command, in Centreon from **Configuration**, **Commands**:
-
-```text
-define command {
-    command_name    notify-statup
-    command_line    /usr/local/bin/statup-report "$SERVICEDESC$" "$NOTIFICATIONTYPE$" "$SERVICEOUTPUT$"
-}
-```
-
-Give it to a contact in `service_notification_commands`, with `service_notification_options c,r`: critical problems and recoveries only, since a warning is a problem too. A recovery is sent only after its problem was.
-
-### Icinga 2
-
-```text
-object NotificationCommand "statup" {
-    command = [ "/usr/local/bin/statup-report", "$service.name$", "$notification.type$", "$service.output$" ]
-}
-```
-
-Apply it in a `Notification` with `types = [ Problem, Recovery ]`.
-
-### Checkmk
-
-Save this as `~/local/share/check_mk/notifications/statup`, executable, then pick **Statup** as the method of a notification rule:
-
-```bash
-#!/bin/sh
-# Statup
-exec /usr/local/bin/statup-report "${NOTIFY_SERVICEDESC:-$NOTIFY_HOSTNAME}" "$NOTIFY_NOTIFICATIONTYPE"
-```
-
-A host's notification names the service after the host.
+Have the tool call it with the name of the service, `PROBLEM` or `RECOVERY`, and a message: any other second word leaves Statup as it is. A cron job can call it the same way.
