@@ -6,6 +6,7 @@ mod dashboard_layout_service;
 mod event_service;
 mod event_template_service;
 mod icon_service;
+mod kuma_import;
 mod link_token;
 mod login_rate_limiter;
 mod logo_service;
@@ -27,6 +28,9 @@ pub use dashboard_layout_service::*;
 pub use event_service::*;
 pub use event_template_service::*;
 pub use icon_service::*;
+pub use kuma_import::{
+    KumaError, KumaGroup, KumaMonitor, KumaPage, kuma_client, read_status_page, status_page_api,
+};
 pub use login_rate_limiter::{LoginRateLimiter, RequestCheck};
 pub use logo_service::*;
 pub use member_notices::*;

@@ -120,7 +120,7 @@ impl Prober for Probes {
     }
 }
 
-fn client_builder(timeout: Duration) -> reqwest::ClientBuilder {
+pub(crate) fn client_builder(timeout: Duration) -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .timeout(timeout)
         .redirect(reqwest::redirect::Policy::limited(MAX_REDIRECTS))

@@ -203,14 +203,6 @@ async fn answer_one(
     Ok(refused.map_or_else(|| Json(outcome).into_response(), Refusal::answer))
 }
 
-/// The service a tool names, by its name or its slug, whatever the case.
-fn find<'s>(services: &'s [Service], named: &str) -> Option<&'s Service> {
-    let wanted = named.trim().to_lowercase();
-    services
-        .iter()
-        .find(|service| service.name.to_lowercase() == wanted || service.slug == wanted)
-}
-
 /// Two reports racing to declare the same outage: the second meets the one
 /// open outage a service may have, and changes nothing.
 fn already_open(error: &AppError) -> bool {
@@ -311,7 +303,11 @@ impl<'a> Applying<'a> {
     /// One service, one source: a service Statup checks itself is left to
     /// its checks, which would undo the report the next minute.
     fn judge(&self, signal: &Signal) -> Verdict<'_> {
-        let Some(service) = find(&self.services, &signal.service) else {
+        let Some(service) = self
+            .services
+            .iter()
+            .find(|service| service.answers_to(&signal.service))
+        else {
             return Verdict::Refused(Refusal::UnknownService);
         };
         if service.check_kind.is_some() {

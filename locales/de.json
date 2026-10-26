@@ -999,6 +999,8 @@
   "validation.check_url_required": "Geben Sie die zu prüfende Webadresse ein.",
   "validation.check_url_invalid": "Geben Sie eine vollständige Webadresse ein, zum Beispiel https://intranet.example.com.",
   "validation.check_url_credentials": "Entfernen Sie Benutzername und Passwort aus der Adresse: Statup speichert keine.",
+  "validation.kuma_url_required": "Geben Sie die URL der Statusseite ein.",
+  "validation.kuma_url_invalid": "Geben Sie die URL einer Statusseite von Uptime Kuma ein, zum Beispiel https://kuma.example.com/status/infra.",
   "validation.check_address_required": "Geben Sie den zu überwachenden Host ein.",
   "validation.check_address_invalid": "Geben Sie einen Host wie 192.168.1.1 oder nas.local ein, ohne http:// und ohne Pfad.",
   "validation.check_port_invalid": "Geben Sie einen Port zwischen 1 und 65535 ein, zum Beispiel 443.",
