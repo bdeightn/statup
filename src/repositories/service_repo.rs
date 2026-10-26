@@ -240,19 +240,30 @@ impl ServiceRepository {
         tx.commit().await
     }
 
-    /// Records that the service answers again since `ended_at`.
+    /// Records that the service answers again since `ended_at`. Returns
+    /// false when no outage was under way: two reports racing to end the
+    /// same one tell it once.
     pub async fn mark_detected_up(
         pool: &DbPool,
         id: i64,
         ended_at: DateTime<Utc>,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<bool, sqlx::Error> {
         let mut tx = pool.begin().await?;
-        sqlx::query("UPDATE services SET detected_status = NULL WHERE id = ?")
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
+        let ended = sqlx::query(
+            "UPDATE services SET detected_status = NULL \
+             WHERE id = ? AND detected_status IS NOT NULL",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+            == 1;
+        if !ended {
+            return Ok(false);
+        }
         close_outage(&mut tx, id, ended_at).await?;
-        tx.commit().await
+        tx.commit().await?;
+        Ok(true)
     }
 
     pub async fn has_events(pool: &DbPool, service_id: i64) -> Result<bool, sqlx::Error> {
@@ -673,14 +684,23 @@ mod tests {
                 .await
                 .is_err()
         );
-        ServiceRepository::mark_detected_up(&pool, svc.id, at(11))
-            .await
-            .unwrap();
+        assert!(
+            ServiceRepository::mark_detected_up(&pool, svc.id, at(11))
+                .await
+                .unwrap()
+        );
+        assert!(
+            !ServiceRepository::mark_detected_up(&pool, svc.id, at(11))
+                .await
+                .unwrap(),
+            "an outage ends once"
+        );
         ServiceRepository::mark_detected_down(&pool, svc.id, at(12))
             .await
             .unwrap();
         let spans = OutageRepository::since(&pool, at(0)).await.unwrap();
         assert_eq!(spans[&svc.id].len(), 2);
+        assert_eq!(spans[&svc.id][0].end, Some(at(11)));
     }
 
     #[tokio::test]

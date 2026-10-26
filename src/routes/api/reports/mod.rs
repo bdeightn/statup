@@ -274,7 +274,11 @@ impl<'a> Applying<'a> {
 
     async fn take_all(mut self, signals: Vec<Signal>) -> Result<Outcome, AppError> {
         for signal in signals {
-            self.take(signal).await?;
+            if let Err(e) = self.take(signal).await {
+                // What the report already changed is told all the same.
+                self.finish().await;
+                return Err(e);
+            }
         }
         Ok(self.finish().await)
     }
@@ -306,7 +310,14 @@ impl<'a> Applying<'a> {
                 }
                 Err(e) => return Err(e),
             },
-            Reported::Up => Some(end_outage(self.pool, service_id, self.now).await?),
+            Reported::Up => {
+                let Some(told) = end_outage(self.pool, service_id, self.now).await? else {
+                    // Another report ended it since this one started.
+                    self.ignore(signal.service, "unchanged");
+                    return Ok(None);
+                };
+                Some(told)
+            }
         };
         self.changed.insert(service_id);
         self.changes

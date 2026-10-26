@@ -323,7 +323,7 @@ async fn apply(
             checked
                 .record(pool, JournalKind::OutageEnded, failures, detailed)
                 .await;
-            Some(told)
+            told
         }
     };
     Ok(told)
@@ -346,15 +346,18 @@ pub(crate) async fn declare_outage(
     Ok(told)
 }
 
-/// Records that a service answers again since `now`, and shows it.
+/// Records that a service answers again since `now`, and shows it. Nothing
+/// to tell when no outage was under way.
 pub(crate) async fn end_outage(
     pool: &DbPool,
     service_id: i64,
     now: DateTime<Utc>,
-) -> Result<Happening, AppError> {
-    ServiceRepository::mark_detected_up(pool, service_id, now).await?;
+) -> Result<Option<Happening>, AppError> {
+    if !ServiceRepository::mark_detected_up(pool, service_id, now).await? {
+        return Ok(None);
+    }
     ServiceService::recalculate_status(pool, service_id).await?;
-    Ok(Happening::ServiceUp)
+    Ok(Some(Happening::ServiceUp))
 }
 
 /// Queues what the round, or a monitoring tool, found to tell, every
