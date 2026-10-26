@@ -58,7 +58,7 @@ Un signalement répond 200 avec ce qu'il a changé et ce qu'il a laissé :
 | `no_monitor_name` | Un message d'Uptime Kuma sans sa sonde. |
 | `not_down_or_up` | Un état qui n'est ni l'un ni l'autre, comme en attente. |
 
-Dans le format de Statup, les trois refus répondent une erreur à la place, pour qu'un script voie l'échec : 404 `unknown_service`, 409 `monitored_by_statup`, 409 `under_maintenance`. Un nom absent répond 400 `service_required`, un état autre que `down` ou `up` 400 `invalid_state`, un corps dans aucun format que Statup lit 400 `unknown_format`. Sans clé valable, la réponse est 401 ; un corps que Statup ne peut pas lire répond 400 `invalid_data`, même s'il contient la clé. Voir [API](api.md#errors) pour les autres.
+Dans le format de Statup, les trois refus répondent une erreur à la place, pour qu'un script voie l'échec : 404 `unknown_service`, 409 `monitored_by_statup`, 409 `under_maintenance`. Un nom absent répond 400 `service_required`, un état autre que `down` ou `up` 400 `invalid_state`, un corps dans aucun format que Statup lit 400 `unknown_format`. Sans clé valable, la réponse est 401 et rien n'est écrit au Journal : le journal de l'outil montre le refus. Un corps que Statup ne peut pas lire répond 400 `invalid_data`, même s'il contient la clé. Parmi les raisons ci-dessus, `unknown_service`, `monitored_by_statup` et `under_maintenance` laissent aussi une ligne au Journal ; les autres non. Voir [API](api.md#errors) pour les autres.
 
 ## Les outils qui envoient leur propre format
 
@@ -81,7 +81,7 @@ Le **Test** de la notification répond sans rien changer. Une sonde en attente o
 
 ### Prometheus
 
-Prometheus envoie ses alertes par Alertmanager, son gestionnaire d'alertes : Statup lit ce qu'Alertmanager envoie. Donnez à chaque règle d'alerte une étiquette `service` qui nomme le service :
+Prometheus envoie ses alertes par Alertmanager, son gestionnaire d'alertes : Statup lit ce qu'Alertmanager envoie. Donnez à chaque règle d'alerte une étiquette `service` qui nomme le service. `probe_success` vient d'une sonde du blackbox exporter ; pour une cible que Prometheus collecte lui-même, écrivez `up{job="mail"} == 0`.
 
 ```yaml
 groups:
@@ -96,9 +96,13 @@ groups:
           summary: SMTP does not answer
 ```
 
-Puis envoyez ces alertes à Statup, avec la clé dans un fichier que seul Alertmanager lit :
+Puis envoyez ces alertes à Statup, groupées par service, avec la clé dans un fichier. Dans une configuration qui a déjà ses destinataires, ajoutez Statup comme route fille de l'existante.
 
 ```yaml
+route:
+  receiver: statup
+  group_by: [service]
+
 receivers:
   - name: statup
     webhook_configs:
@@ -108,16 +112,23 @@ receivers:
             credentials_file: /etc/alertmanager/statup-key
 ```
 
-Les alertes résolues sont envoyées par défaut, et rétablissent le service. `summary` va dans la ligne du Journal, sinon le nom de l'alerte. Une alerte sans étiquette `service`, comme le Watchdog, est laissée de côté. Un corps fait 64 Ko au plus : groupez les alertes par `service` dans la route plutôt que d'en envoyer des centaines d'un coup. Alertmanager répète une alerte toutes les quatre heures par défaut : une étiquette qui ne nomme aucun service laisse une ligne au Journal à chaque fois, jusqu'à ce qu'elle soit corrigée.
+Le fichier de la clé doit être lisible par l'utilisateur sous lequel tourne Alertmanager, `65534` dans l'image officielle, et par personne d'autre ; sinon chaque message échoue avec `permission denied` dans le journal d'Alertmanager, alors qu'il démarre sans rien dire :
+
+```bash
+chown 65534 /etc/alertmanager/statup-key
+chmod 400 /etc/alertmanager/statup-key
+```
+
+Les alertes résolues sont envoyées par défaut, et rétablissent le service. `summary` va dans la ligne du Journal de la panne, sinon le nom de l'alerte. Une alerte sans étiquette `service`, comme le Watchdog, est laissée de côté, sans ligne au Journal. Un corps fait 64 Ko au plus : grouper par `service` garde chacun petit. Alertmanager répète une alerte toutes les quatre heures par défaut : une étiquette qui ne nomme aucun service laisse une ligne au Journal à chaque fois, jusqu'à ce qu'elle soit corrigée. Avec une mauvaise clé, le journal d'Alertmanager affiche `unexpected status code 401`, et il réessaie au prochain intervalle de groupe.
 
 ### Grafana
 
-1. Dans chaque règle d'alerte, parmi ses étiquettes, ajoutez `service` avec le nom du service.
-2. Dans **Alerting**, **Contact points**, ajoutez un point de contact avec l'intégration **Webhook** et l'URL `https://status.example.com/api/v1/reports`.
-3. Dans ses réglages facultatifs, mettez le schéma de l'en-tête d'autorisation à `Bearer` et ses identifiants à la clé. Gardez l'URL sans la clé : Grafana la stocke en clair.
-4. Envoyez les notifications des règles vers ce point de contact.
+1. Dans chaque règle d'alerte, sous **Add folder and labels**, ajoutez l'étiquette `service` avec le nom du service. Sous **Set evaluation behavior**, mettez **Alert state if no data or all values are null** et **Alert state if execution error or timeout** à **Keep Last State** : sinon Statup affiche une panne dès que Grafana ne peut plus lire sa source de données.
+2. Dans **Alerting**, **Notification configuration**, onglet **Contact points**, ajoutez un point de contact avec l'intégration **Webhook** et l'URL `https://status.example.com/api/v1/reports`.
+3. Dans **Optional Webhook settings**, laissez **Authorization Header - Scheme** à `Bearer` et mettez la clé dans **Authorization Header - Credentials**. Gardez l'URL sans la clé : Grafana la stocke en clair.
+4. Envoyez vers ce point de contact les règles qui nomment un service : dans chaque règle, **Select contact point**, ou une politique de notification qui filtre `service =~ .+`. Les règles sans l'étiquette atteindraient Statup pour rien.
 
-Grafana envoie les alertes résolues par défaut ; gardez-le ainsi, sinon les services ne sont jamais rétablis.
+Grafana envoie les alertes résolues par défaut ; gardez-le ainsi, sinon les services ne sont jamais rétablis. Un service revient quand le message de résolution part, au **Group interval** de la politique, cinq minutes par défaut : raccourcissez-le dans ses **Timing options** si c'est trop lent. `summary` va dans la ligne du Journal de la panne. Le **Test** du point de contact ne change rien, sauf un test personnalisé qui porte une étiquette `service` : il met alors ce service en panne pour de vrai.
 
 ## Les outils dont vous écrivez le message
 

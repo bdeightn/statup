@@ -58,7 +58,7 @@ A report answers 200 with what it changed and what it left:
 | `no_monitor_name` | An Uptime Kuma message without its monitor. |
 | `not_down_or_up` | A state that is neither, such as pending. |
 
-In Statup's format, the three refusals answer an error instead, so a script sees it failed: 404 `unknown_service`, 409 `monitored_by_statup`, 409 `under_maintenance`. A missing name answers 400 `service_required`, a state other than `down` or `up` 400 `invalid_state`, a body in no format Statup reads 400 `unknown_format`. Without a valid key, the answer is 401; a body Statup cannot read answers 400 `invalid_data`, even when it holds the key. See [API](api.md#errors) for the others.
+In Statup's format, the three refusals answer an error instead, so a script sees it failed: 404 `unknown_service`, 409 `monitored_by_statup`, 409 `under_maintenance`. A missing name answers 400 `service_required`, a state other than `down` or `up` 400 `invalid_state`, a body in no format Statup reads 400 `unknown_format`. Without a valid key, the answer is 401 and nothing is written in the Journal: the tool's own log shows the refusal. A body Statup cannot read answers 400 `invalid_data`, even when it holds the key. Of the reasons above, `unknown_service`, `monitored_by_statup` and `under_maintenance` also leave a line in the Journal; the others do not. See [API](api.md#errors) for the others.
 
 ## Tools that send their own format
 
@@ -81,7 +81,7 @@ The notification's **Test** answers without changing anything. A monitor that is
 
 ### Prometheus
 
-Prometheus sends its alerts through Alertmanager, its alert manager: Statup reads what Alertmanager sends. Give each alert rule a `service` label that names the service:
+Prometheus sends its alerts through Alertmanager, its alert manager: Statup reads what Alertmanager sends. Give each alert rule a `service` label that names the service. `probe_success` comes from a probe of the blackbox exporter; for a target Prometheus scrapes itself, write `up{job="mail"} == 0`.
 
 ```yaml
 groups:
@@ -96,9 +96,13 @@ groups:
           summary: SMTP does not answer
 ```
 
-Then send those alerts to Statup, with the key in a file only Alertmanager reads:
+Then send those alerts to Statup, grouped by service, with the key in a file. In a setup that already has its receivers, add Statup as a child route of the existing one.
 
 ```yaml
+route:
+  receiver: statup
+  group_by: [service]
+
 receivers:
   - name: statup
     webhook_configs:
@@ -108,16 +112,23 @@ receivers:
             credentials_file: /etc/alertmanager/statup-key
 ```
 
-Resolved alerts are sent by default, and bring the service back up. `summary` goes in the Journal line, else the alert's name. An alert without a `service` label, such as the Watchdog, is left out. A body is 64 KB at most: group the alerts by `service` in the route rather than sending hundreds at once. Alertmanager repeats an alert every four hours by default: a label that names no service leaves a Journal line each time, until it is fixed.
+The key file must be readable by the user Alertmanager runs as, `65534` in the official image, and by no one else; otherwise every message fails with `permission denied` in Alertmanager's log, while it starts without a word:
+
+```bash
+chown 65534 /etc/alertmanager/statup-key
+chmod 400 /etc/alertmanager/statup-key
+```
+
+Resolved alerts are sent by default, and bring the service back up. `summary` goes in the Journal line of the outage, else the alert's name. An alert without a `service` label, such as the Watchdog, is left out, without a Journal line. A body is 64 KB at most: grouping by `service` keeps each one small. Alertmanager repeats an alert every four hours by default: a label that names no service leaves a Journal line each time, until it is fixed. With a wrong key, Alertmanager's log shows `unexpected status code 401`, and it tries again at the next group interval.
 
 ### Grafana
 
-1. In each alert rule, under its labels, add `service` with the name of the service.
-2. In **Alerting**, **Contact points**, add a contact point with the integration **Webhook** and the URL `https://status.example.com/api/v1/reports`.
-3. In its optional settings, set the authorization header scheme to `Bearer` and its credentials to the key. Keep the URL without the key: Grafana stores it in plain text.
-4. Route the rules' notifications to this contact point.
+1. In each alert rule, under **Add folder and labels**, add the label `service` with the name of the service. Under **Set evaluation behavior**, set **Alert state if no data or all values are null** and **Alert state if execution error or timeout** to **Keep Last State**: otherwise Statup shows an outage whenever Grafana cannot read its data source.
+2. In **Alerting**, **Notification configuration**, tab **Contact points**, add a contact point with the integration **Webhook** and the URL `https://status.example.com/api/v1/reports`.
+3. In **Optional Webhook settings**, leave **Authorization Header - Scheme** at `Bearer` and put the key in **Authorization Header - Credentials**. Keep the URL without the key: Grafana stores it in plain text.
+4. Send the rules that name a service to this contact point: in each rule, **Select contact point**, or a notification policy that matches `service =~ .+`. Rules without the label would reach Statup for nothing.
 
-Grafana sends resolved alerts by default; keep it so, or services never come back up.
+Grafana sends resolved alerts by default; keep it so, or services never come back up. A service comes back when the resolved message leaves, at the policy's **Group interval**, five minutes by default: shorten it in the policy's **Timing options** if that is too slow. `summary` goes in the Journal line of the outage. The contact point's **Test** changes nothing, unless a custom test carries a `service` label: then it marks that service down for real.
 
 ## Tools with a message you write
 
