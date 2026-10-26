@@ -13,9 +13,13 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use common::TestApp;
-use statup::models::{Category, CreateEventInput, Kind, Lifecycle, Role, Severity, User};
+use statup::models::{
+    Category, ChannelInput, ChannelKind, CreateEventInput, Happening, Kind, Lifecycle, Role,
+    Severity, User,
+};
 use statup::repositories::{
-    ApiKeyRepository, EventRepository, ServiceRepository, SettingsRepository, UserRepository,
+    ApiKeyRepository, EventRepository, NotificationRepository, ServiceRepository,
+    SettingsRepository, UserRepository,
 };
 use statup::services::{ApiKeyService, EventService, NewApiKey};
 
@@ -833,4 +837,287 @@ async fn every_write_endpoint_wants_a_key() {
         assert_refused(&answer(resp).await);
     }
     assert_eq!(service_count(&app).await, 0);
+}
+
+const EVENT_JSON: &str = "application/json";
+
+/// The Slack channel an admin would add, taking every kind of event.
+async fn add_channel(app: &TestApp) {
+    let input = ChannelInput {
+        name: "IT team".to_string(),
+        kind: ChannelKind::Slack,
+        target: "https://hooks.slack.com/services/team".to_string(),
+        locale: "en".to_string(),
+        on_incidents: true,
+        on_maintenances: true,
+        on_publications: true,
+        on_detected: false,
+    };
+    NotificationRepository::create_channel(&app.pool, &input)
+        .await
+        .unwrap();
+}
+
+async fn queued(app: &TestApp) -> Vec<Happening> {
+    sqlx::query_scalar("SELECT happening FROM notification_deliveries ORDER BY id")
+        .fetch_all(&app.pool)
+        .await
+        .unwrap()
+}
+
+async fn event_count(app: &TestApp) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM events")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap()
+}
+
+/// Publishes an incident on Mail through the API and returns its id.
+async fn publish_incident(app: &TestApp, made: &NewApiKey, mail: i64) -> i64 {
+    let body = format!(
+        r#"{{"kind": "incident", "title": "Mail down", "severity": "critical", "services": [{mail}]}}"#
+    );
+    let answer = send(app, Method::POST, EVENTS, made, &body).await;
+    assert_eq!(answer.status, StatusCode::CREATED, "{}", answer.body);
+    answer.body["id"].as_i64().expect("an id")
+}
+
+#[tokio::test]
+async fn a_key_publishes_an_incident_as_the_screen_does_signed_with_its_name() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+    let creator = admin(&app).await;
+    SettingsRepository::set(&app.pool, "journal_detailed", "true")
+        .await
+        .unwrap();
+    add_channel(&app).await;
+    let mail = ServiceRepository::create(&app.pool, "Mail", "mail", None, None, None)
+        .await
+        .unwrap();
+
+    let body = format!(
+        r#"{{"kind": "incident", "title": " Mail down ", "description": "Looking.",
+            "severity": "critical", "services": [{}], "next_update": "30 min"}}"#,
+        mail.id
+    );
+    let created = send(&app, Method::POST, EVENTS, &made, &body).await;
+    assert_eq!(created.status, StatusCode::CREATED);
+    assert_eq!(header(&created, "content-type"), Some(EVENT_JSON));
+    assert_eq!(created.body["title"], "Mail down");
+    assert_eq!(created.body["state"], "investigating");
+    assert_eq!(created.body["services"][0]["name"], "Mail");
+    assert!(created.body["next_update_at"].is_string());
+    let id = created.body["id"].as_i64().expect("an id");
+    let signature: (i64, Option<i64>) =
+        sqlx::query_as("SELECT author_id, api_key_id FROM events WHERE id = ?")
+            .bind(id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(signature, (creator.id, Some(made.id)));
+    let service = ServiceRepository::find_by_id(&app.pool, mail.id)
+        .await
+        .unwrap()
+        .expect("the service");
+    assert_eq!(service.status.as_str(), "major_outage");
+
+    let resolve = r#"{"message": "Back **up**.", "state": "resolved"}"#;
+    let path = format!("{EVENTS}/{id}/updates");
+    let updated = send(&app, Method::POST, &path, &made, resolve).await;
+    assert_eq!(updated.status, StatusCode::CREATED);
+    assert_eq!(updated.body["state"], "resolved");
+    assert_eq!(updated.body["updates"][0]["author"], "Zabbix");
+    assert_eq!(updated.body["updates"][0]["message"], "Back up.");
+
+    assert_eq!(queued(&app).await, [Happening::Opened, Happening::Closed]);
+    let events: Vec<Line> = journal_lines(&app)
+        .await
+        .into_iter()
+        .filter(|line| line.0.starts_with("event_"))
+        .collect();
+    assert_eq!(
+        events,
+        [
+            line("event_created", "Mail down", None),
+            line("event_update_posted", "Mail down", Some("resolved")),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn the_event_page_names_the_key_not_the_admin_who_made_it() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+    let mail = ServiceRepository::create(&app.pool, "Mail", "mail", None, None, None)
+        .await
+        .unwrap();
+    let id = publish_incident(&app, &made, mail.id).await;
+    let path = format!("{EVENTS}/{id}/updates");
+    let posted = send(&app, Method::POST, &path, &made, r#"{"message": "On it."}"#).await;
+    assert_eq!(posted.status, StatusCode::CREATED);
+
+    app.login(ADMIN_EMAIL, ADMIN_PASSWORD).await;
+    let (status, page) = app.get(&format!("/events/{id}")).await;
+    assert_eq!(status, StatusCode::OK);
+    // The opening of the incident and the update, each signed.
+    let signed = r#"<span class="moment-author">Zabbix</span>"#;
+    assert_eq!(page.matches(signed).count(), 2, "{page}");
+    assert!(!page.contains(r#"<span class="moment-author">Admin</span>"#));
+}
+
+/// A key acts as an editor even when an admin made it: a closed event stays
+/// closed to it.
+#[tokio::test]
+async fn a_key_cannot_change_a_closed_event_even_when_an_admin_made_it() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+    let mail = ServiceRepository::create(&app.pool, "Mail", "mail", None, None, None)
+        .await
+        .unwrap();
+    let id = publish_incident(&app, &made, mail.id).await;
+    let path = format!("{EVENTS}/{id}/updates");
+    let resolved = send(&app, Method::POST, &path, &made, r#"{"state": "resolved"}"#).await;
+    assert_eq!(resolved.status, StatusCode::CREATED);
+
+    let refused = send(
+        &app,
+        Method::POST,
+        &path,
+        &made,
+        r#"{"message": "One more."}"#,
+    )
+    .await;
+    assert_refusal(
+        &refused,
+        StatusCode::FORBIDDEN,
+        "event_closed_admin_only",
+        "validation.event_closed_admin_only",
+    );
+}
+
+#[tokio::test]
+async fn each_kind_keeps_the_fields_that_fit_it() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+
+    let maintenance = r#"{"kind": "maintenance", "title": "Upgrade", "severity": "critical",
+        "planned_start": "2040-01-01T09:00:00Z", "planned_end": "2040-01-01T10:00:00Z"}"#;
+    let answer = send(&app, Method::POST, EVENTS, &made, maintenance).await;
+    assert_eq!(answer.status, StatusCode::CREATED);
+    assert_eq!(answer.body["state"], "scheduled");
+    assert_eq!(answer.body["severity"], Value::Null);
+    assert_eq!(answer.body["planned_start"], "2040-01-01T09:00:00Z");
+    assert_eq!(answer.body["planned_end"], "2040-01-01T10:00:00Z");
+
+    let urgent = r#"{"kind": "maintenance", "title": "Reboot"}"#;
+    let answer = send(&app, Method::POST, EVENTS, &made, urgent).await;
+    assert_eq!(answer.body["state"], "in_progress");
+
+    let note = r#"{"kind": "publication", "title": "New release", "state": "monitoring"}"#;
+    let answer = send(&app, Method::POST, EVENTS, &made, note).await;
+    assert_eq!(answer.status, StatusCode::CREATED);
+    assert_eq!(answer.body["category"], "info");
+    assert_eq!(answer.body["state"], Value::Null);
+
+    let further = r#"{"kind": "incident", "title": "Slow", "severity": "minor",
+        "state": "monitoring"}"#;
+    let answer = send(&app, Method::POST, EVENTS, &made, further).await;
+    assert_eq!(answer.body["state"], "monitoring");
+}
+
+#[tokio::test]
+async fn a_new_event_is_refused_with_the_rule_it_breaks_and_nothing_is_saved() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+
+    let refusals = [
+        (
+            r#"{"kind": "incident", "severity": "minor"}"#,
+            "title_empty",
+            "validation.title_empty",
+        ),
+        (
+            r#"{"kind": "incident", "title": "Down"}"#,
+            "severity_required",
+            "validation.severity_required",
+        ),
+        (
+            r#"{"kind": "incident", "title": "Down", "severity": "minor", "next_update": "soon"}"#,
+            "next_update",
+            "validation.next_update",
+        ),
+    ];
+    for (body, code, key) in refusals {
+        let answer = send(&app, Method::POST, EVENTS, &made, body).await;
+        assert_refusal(&answer, StatusCode::BAD_REQUEST, code, key);
+    }
+
+    let unknown_service = r#"{"kind": "incident", "title": "Down", "severity": "minor",
+        "services": [999]}"#;
+    let answer = send(&app, Method::POST, EVENTS, &made, unknown_service).await;
+    assert_eq!(answer.status, StatusCode::BAD_REQUEST);
+    assert_eq!(error_code(&answer), "invalid_data");
+
+    for body in [
+        r#"{"kind": "outage", "title": "Down"}"#,
+        r#"{"title": "Down"}"#,
+        r#"{"kind": "publication", "title": "Note", "author": "Someone"}"#,
+    ] {
+        let answer = send(&app, Method::POST, EVENTS, &made, body).await;
+        assert_eq!(answer.status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(error_code(&answer), "invalid_data");
+    }
+    assert_eq!(event_count(&app).await, 0);
+}
+
+#[tokio::test]
+async fn an_update_is_refused_with_the_rule_it_breaks() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+    let mail = ServiceRepository::create(&app.pool, "Mail", "mail", None, None, None)
+        .await
+        .unwrap();
+    let incident = publish_incident(&app, &made, mail.id).await;
+    let note = send(
+        &app,
+        Method::POST,
+        EVENTS,
+        &made,
+        r#"{"kind": "publication", "title": "Note"}"#,
+    )
+    .await;
+    let note = note.body["id"].as_i64().expect("an id");
+
+    let refusals = [
+        (incident, "{}", "update_required"),
+        (incident, r#"{"state": "completed"}"#, "invalid_transition"),
+        (note, r#"{"state": "resolved"}"#, "event_has_no_lifecycle"),
+    ];
+    for (id, body, code) in refusals {
+        let path = format!("{EVENTS}/{id}/updates");
+        let answer = send(&app, Method::POST, &path, &made, body).await;
+        let key = format!("validation.{code}");
+        assert_refusal(&answer, StatusCode::BAD_REQUEST, code, &key);
+    }
+
+    let missing = format!("{EVENTS}/{}/updates", note + 100);
+    let answer = send(&app, Method::POST, &missing, &made, r#"{"message": "Hi"}"#).await;
+    assert_eq!(answer.status, StatusCode::NOT_FOUND);
+    assert_eq!(error_code(&answer), "not_found");
+}
+
+#[tokio::test]
+async fn publishing_wants_a_key() {
+    let app = TestApp::spawn().await;
+    for path in [EVENTS.to_string(), format!("{EVENTS}/1/updates")] {
+        let resp = app
+            .client
+            .post(app.url(&path))
+            .header("Content-Type", "application/json")
+            .body(r#"{"kind": "publication", "title": "Note"}"#)
+            .send()
+            .await
+            .unwrap();
+        assert_refused(&answer(resp).await);
+    }
 }

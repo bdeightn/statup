@@ -2,6 +2,7 @@
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -10,10 +11,12 @@ use crate::clock;
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{
-    Category, Event, EventFilters, EventSummary, EventUpdateWithAuthor, EventWithServices, Kind,
-    Lifecycle, LifecycleGroup, NAME_SEPARATOR, Scope, Service, Severity, html_to_text,
+    ApiKeyHolder, Category, CreateEventInput, Event, EventFilters, EventSummary,
+    EventUpdateWithAuthor, EventWithServices, JournalKind, Kind, Lifecycle, LifecycleGroup,
+    NAME_SEPARATOR, Scope, Service, Severity, html_to_text,
 };
-use crate::repositories::EventRepository;
+use crate::repositories::{EventRepository, NewJournalEntry};
+use crate::services::{EventService, read_next_update};
 
 const DEFAULT_LIMIT: i64 = 20;
 const MAX_LIMIT: i64 = 100;
@@ -193,14 +196,141 @@ pub(super) async fn show(
     State(pool): State<DbPool>,
     Path(id): Path<i64>,
 ) -> Result<Json<EventDetail>, AppError> {
+    Ok(Json(detail(&pool, id).await?))
+}
+
+/// One event with its updates, as reading it and every write answer.
+async fn detail(pool: &DbPool, id: i64) -> Result<EventDetail, AppError> {
     let EventWithServices { event, services } =
-        EventRepository::find_with_services(&pool, id, &Scope::All)
+        EventRepository::find_with_services(pool, id, &Scope::All)
             .await?
             .ok_or(AppError::NotFound)?;
-    let updates = EventRepository::list_updates(&pool, id).await?;
+    let updates = EventRepository::list_updates(pool, id).await?;
     let services = services.into_iter().map(ServiceRef::from).collect();
-    Ok(Json(EventDetail {
+    Ok(EventDetail {
         event: EventBody::of_event(event, services),
         updates: updates.into_iter().map(UpdateBody::from).collect(),
-    }))
+    })
+}
+
+/// The fields the API takes on a new event. Each kind keeps only those that
+/// fit it, as the form does; a field the API does not take is refused.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct NewEvent {
+    kind: Kind,
+    /// A missing title is refused by the event rules, as an empty one is.
+    #[serde(default)]
+    title: String,
+    /// Markdown, as on the event page.
+    #[serde(default)]
+    description: String,
+    severity: Option<Severity>,
+    category: Option<Category>,
+    #[serde(default)]
+    services: Vec<i64>,
+    /// The step an incident opens at, when its team already works on it.
+    state: Option<Lifecycle>,
+    /// When an incident declared late began.
+    started_at: Option<DateTime<Utc>>,
+    /// A maintenance with a start is announced; without one it begins now.
+    planned_start: Option<DateTime<Utc>>,
+    planned_end: Option<DateTime<Utc>>,
+    #[serde(default)]
+    keeps_services_up: bool,
+    /// A delay or a time of day, as the form takes it: "30 min", "14:30".
+    #[serde(default)]
+    next_update: String,
+}
+
+impl NewEvent {
+    fn into_input(self, key: &ApiKeyHolder) -> Result<CreateEventInput, AppError> {
+        let kind = self.kind;
+        let incident = kind == Kind::Incident;
+        let maintenance = kind == Kind::Maintenance;
+        let planned = maintenance && self.planned_start.is_some();
+        let next_update = if incident {
+            read_next_update(&self.next_update)?
+        } else {
+            None
+        };
+        Ok(CreateEventInput {
+            kind,
+            severity: self.severity.filter(|_| incident),
+            planned,
+            category: (kind == Kind::Publication).then(|| self.category.unwrap_or(Category::Info)),
+            title: self.title.trim().to_string(),
+            description: self.description.trim().to_string(),
+            planned_start: self.planned_start.filter(|_| planned),
+            planned_end: self.planned_end.filter(|_| maintenance),
+            started_at: self.started_at.filter(|_| incident),
+            opening_step: self.state.filter(|_| incident),
+            keeps_services_up: maintenance && self.keeps_services_up,
+            service_ids: self.services,
+            follows_event_id: None,
+            author_id: key.created_by,
+            api_key_id: Some(key.id),
+            next_update,
+        })
+    }
+}
+
+/// What the API takes on an update: a message, a new state, or both.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct NewUpdate {
+    /// Markdown, as on the event page.
+    #[serde(default)]
+    message: String,
+    state: Option<Lifecycle>,
+    /// A delay or a time of day, as the form takes it: "30 min", "14:30".
+    #[serde(default)]
+    next_update: String,
+}
+
+/// Publishes an event signed with the key, with the notifications the
+/// screen sends.
+pub(super) async fn create(
+    caller: ApiCaller,
+    State(pool): State<DbPool>,
+    Json(input): Json<NewEvent>,
+) -> Result<(StatusCode, Json<EventDetail>), AppError> {
+    let event = EventService::create(&pool, input.into_input(&caller.key)?).await?;
+    NewJournalEntry::new(JournalKind::EventCreated)
+        .by_key(&caller.key)
+        .about(&event.title)
+        .record(&pool)
+        .await;
+    Ok((StatusCode::CREATED, Json(detail(&pool, event.id).await?)))
+}
+
+/// Posts an update as an editor would, signed with the key.
+pub(super) async fn post_update(
+    caller: ApiCaller,
+    State(pool): State<DbPool>,
+    Path(id): Path<i64>,
+    Json(input): Json<NewUpdate>,
+) -> Result<(StatusCode, Json<EventDetail>), AppError> {
+    let next_update = read_next_update(&input.next_update)?;
+    let editor = caller.editor(&pool).await?;
+    let key_id = Some(caller.key.id);
+    EventService::post_update(
+        &pool,
+        id,
+        &input.message,
+        input.state,
+        next_update,
+        &editor,
+        key_id,
+    )
+    .await?;
+    let detail = detail(&pool, id).await?;
+    let mut entry = NewJournalEntry::new(JournalKind::EventUpdatePosted)
+        .by_key(&caller.key)
+        .about(&detail.event.title);
+    if let Some(state) = input.state {
+        entry = entry.with_detail(state.as_str());
+    }
+    entry.record(&pool).await;
+    Ok((StatusCode::CREATED, Json(detail)))
 }

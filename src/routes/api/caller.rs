@@ -9,12 +9,14 @@ use chrono::Utc;
 
 use crate::db::DbPool;
 use crate::error::AppError;
-use crate::models::ApiKeyHolder;
+use crate::models::{ApiKeyHolder, Role, User};
+use crate::repositories::UserRepository;
 use crate::services::ApiKeyService;
 
 /// A request made with a key in use. Refused with a 401 otherwise.
 pub(super) struct ApiCaller {
-    /// The key, for the lines a write leaves in the Journal.
+    /// The key, which signs what a write leaves in the Journal and on the
+    /// page.
     pub(super) key: ApiKeyHolder,
 }
 
@@ -37,6 +39,21 @@ where
             tracing::warn!(error = %e, "The use of an API key was not recorded");
         }
         Ok(Self { key: holder })
+    }
+}
+
+impl ApiCaller {
+    /// The administrator who made the key, with an editor's rights only: a
+    /// key does what an editor may, never what only an administrator may,
+    /// such as changing a closed event.
+    pub(super) async fn editor(&self, pool: &DbPool) -> Result<User, AppError> {
+        let mut owner = UserRepository::find_by_id(pool, self.key.created_by)
+            .await?
+            .ok_or_else(|| {
+                AppError::Internal(anyhow::anyhow!("API key {} has no creator", self.key.id))
+            })?;
+        owner.role = Role::Publisher;
+        Ok(owner)
     }
 }
 
