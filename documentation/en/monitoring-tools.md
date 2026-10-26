@@ -16,6 +16,9 @@ Every tool posts to one address, `/api/v1/reports` on the address of your page, 
 
 A report is ignored, and a line written in the [Journal](journal.md), for a service Statup does not know, a service Statup checks itself (its own checks would undo the report the next minute), and a service reported down during a maintenance under way that names it.
 
+> [!IMPORTANT]
+> A tool does not send again a report refused during a maintenance: a service still down when the maintenance ends would show as working. Schedule the same window in the tool, ending no earlier than Statup's: a maintenance in Uptime Kuma or Zabbix, a silence in Alertmanager or Grafana. Once its window is over, the tool reports a service still down after its usual delay: the next check in Uptime Kuma, about a minute in Zabbix, the group interval in Alertmanager and Grafana (5 minutes by default).
+
 ## Statup's format
 
 A script, or a tool whose message you write, sends the name, the state and an optional message, in JSON or as a form:
@@ -78,6 +81,8 @@ Statup reads the message of these tools as they send it.
 5. Turn the notification on for each monitor whose name is a service in Statup, under the monitor's **Notifications**, or at once with **Apply on all existing monitors**.
 
 The notification's **Test** answers 200 without changing anything. A monitor that is pending or in maintenance changes nothing either.
+
+A monitor that comes back up during a maintenance in Kuma says nothing when it ends: leave out of that maintenance a monitor already down when it begins, or Statup never hears it is back.
 
 ### Prometheus
 
@@ -173,6 +178,8 @@ Then:
 1. In the media type's **Message templates**, add one for **Problem** and one for **Problem recovery**; Zabbix's default texts do.
 2. Give a user a media of this type: **Users**, **Users**, the user, tab **Media**, **Add**, this type, any text in **Send to**, enabled. Take a user of its own rather than one of **Zabbix administrators**: the default action that tells them every problem would send every host to Statup.
 3. In **Alerts**, **Actions**, **Trigger actions**, **Create action** on the triggers that should tell Statup. In its **Operations** tab, add an operation that sends to that user with this media type, and a **Recovery operation** that does the same.
+
+Keep **Pause operations for suppressed problems** checked in the action's **Operations** tab, as it is by default: a problem raised during a maintenance in Zabbix then waits for the end of the maintenance instead of reaching Statup during it.
 
 Here the service is named after the host's visible name: write another macro in `service` to name it otherwise. `{EVENT.UPDATE.STATUS}` keeps an acknowledgement from being taken for an outage. The media type's **Test**, with its default values, fails with `Statup answered 404` and leaves a "report ignored" line in the Journal: Statup knows no service called `{HOST.NAME}`.
 

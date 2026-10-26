@@ -16,6 +16,9 @@ Chaque outil envoie à une seule adresse, `/api/v1/reports` sur l'adresse de vot
 
 Un signalement est ignoré, et une ligne écrite dans le [Journal](journal.md), pour un service que Statup ne connaît pas, un service que Statup vérifie lui-même (sa propre vérification annulerait le signalement la minute suivante), et un service signalé en panne pendant une maintenance en cours qui le cite.
 
+> [!IMPORTANT]
+> Un outil ne renvoie pas un signalement refusé pendant une maintenance : un service encore en panne à la fin de la maintenance paraîtrait en état de marche. Planifiez la même fenêtre dans l'outil, sans la finir avant celle de Statup : une maintenance dans Uptime Kuma ou Zabbix, un silence dans Alertmanager ou Grafana. Une fois sa fenêtre passée, l'outil signale un service encore en panne après son délai habituel : la vérification suivante dans Uptime Kuma, environ une minute dans Zabbix, l'intervalle de groupe dans Alertmanager et Grafana (5 minutes par défaut).
+
 ## Le format de Statup
 
 Un script, ou un outil dont vous écrivez le message, envoie le nom, l'état et un message facultatif, en JSON ou en formulaire :
@@ -78,6 +81,8 @@ Statup lit le message de ces outils tel qu'ils l'envoient.
 5. Activez la notification sur chaque sonde dont le nom est un service de Statup, dans les **Notifications** de la sonde, ou d'un coup avec **Apply on all existing monitors**.
 
 Le **Test** de la notification répond 200 sans rien changer. Une sonde en attente ou en maintenance ne change rien non plus.
+
+Une sonde qui revient pendant une maintenance dans Kuma ne dit rien à la fin de celle-ci : laissez hors de cette maintenance une sonde déjà en panne quand elle commence, sinon Statup n'apprend jamais son retour.
 
 ### Prometheus
 
@@ -173,6 +178,8 @@ Puis :
 1. Dans les **Message templates** du type de média, ajoutez-en un pour **Problem** et un pour **Problem recovery** ; les textes par défaut de Zabbix conviennent.
 2. Donnez à un utilisateur un média de ce type : **Users**, **Users**, l'utilisateur, onglet **Media**, **Add**, ce type, n'importe quel texte dans **Send to**, activé. Prenez un utilisateur à part plutôt qu'un des **Zabbix administrators** : l'action par défaut qui leur signale chaque problème enverrait chaque hôte à Statup.
 3. Dans **Alerts**, **Actions**, **Trigger actions**, **Create action** sur les déclencheurs qui doivent prévenir Statup. Dans son onglet **Operations**, ajoutez une opération qui envoie à cet utilisateur par ce type de média, et une **Recovery operation** qui fait de même.
+
+Gardez **Pause operations for suppressed problems** coché dans l'onglet **Operations** de l'action, comme il l'est par défaut : un problème levé pendant une maintenance dans Zabbix attend alors la fin de la maintenance au lieu d'arriver à Statup pendant celle-ci.
 
 Ici, le service porte le nom visible de l'hôte : mettez une autre macro dans `service` pour le nommer autrement. `{EVENT.UPDATE.STATUS}` évite qu'un acquittement soit pris pour une panne. Le **Test** du type de média, avec ses valeurs par défaut, échoue avec `Statup answered 404` et laisse une ligne « signalement ignoré » au Journal : Statup ne connaît aucun service nommé `{HOST.NAME}`.
 
