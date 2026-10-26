@@ -1,15 +1,14 @@
 //! Reading a public status page of Uptime Kuma: its groups and the names of
-//! their monitors. The names are the ones its webhook sends, so a service
-//! imported under one receives the reports of that monitor.
+//! their monitors, the ones its webhook sends.
 
 use std::time::Duration;
 
 use reqwest::Url;
 use serde::Deserialize;
 
-use super::probe::{Finding, classify_http, client_builder};
-use super::service_service::target_allowed;
 use crate::models::CheckKind;
+use crate::services::probe::{classify_http, client_builder};
+use crate::services::{Finding, target_allowed};
 
 /// Largest page read, in bytes: a page of a few hundred monitors takes a
 /// few dozen kilobytes.
