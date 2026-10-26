@@ -9,10 +9,14 @@ use chrono::Utc;
 
 use crate::db::DbPool;
 use crate::error::AppError;
+use crate::models::ApiKeyHolder;
 use crate::services::ApiKeyService;
 
 /// A request made with a key in use. Refused with a 401 otherwise.
-pub(super) struct ApiCaller;
+pub(super) struct ApiCaller {
+    /// The key, for the lines a write leaves in the Journal.
+    pub(super) key: ApiKeyHolder,
+}
 
 impl<S> FromRequestParts<S> for ApiCaller
 where
@@ -32,7 +36,7 @@ where
         if let Err(e) = ApiKeyService::record_use(&pool, &holder, Utc::now()).await {
             tracing::warn!(error = %e, "The use of an API key was not recorded");
         }
-        Ok(Self)
+        Ok(Self { key: holder })
     }
 }
 

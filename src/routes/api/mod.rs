@@ -14,7 +14,7 @@ use axum::Router;
 use axum::http::header::CACHE_CONTROL;
 use axum::http::{HeaderValue, StatusCode};
 use axum::middleware;
-use axum::routing::get;
+use axum::routing::{get, put};
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
@@ -32,8 +32,12 @@ const BODY_LIMIT: usize = 64 * 1024;
 /// address.
 pub(super) fn api_routes(rate_limit: &RateLimit) -> Router<AppState> {
     Router::new()
-        .route("/v1/services", get(services::list))
-        .route("/v1/services/{id}", get(services::show))
+        .route("/v1/services", get(services::list).post(services::create))
+        .route(
+            "/v1/services/{id}",
+            get(services::show).patch(services::update),
+        )
+        .route("/v1/services/{id}/status", put(services::set_status))
         .route("/v1/events", get(events::list))
         .route("/v1/events/{id}", get(events::show))
         .fallback(not_found)

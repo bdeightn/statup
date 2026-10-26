@@ -5,7 +5,7 @@
 mod common;
 
 use chrono::Utc;
-use reqwest::StatusCode;
+use reqwest::{Method, StatusCode};
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -14,7 +14,9 @@ use tokio::task::JoinSet;
 
 use common::TestApp;
 use statup::models::{Category, CreateEventInput, Kind, Lifecycle, Role, Severity, User};
-use statup::repositories::{ApiKeyRepository, EventRepository, ServiceRepository, UserRepository};
+use statup::repositories::{
+    ApiKeyRepository, EventRepository, ServiceRepository, SettingsRepository, UserRepository,
+};
 use statup::services::{ApiKeyService, EventService, NewApiKey};
 
 const ADMIN_EMAIL: &str = "admin@test.com";
@@ -549,4 +551,277 @@ async fn the_api_shares_the_rate_limit_of_the_pages() {
         StatusCode::TOO_MANY_REQUESTS,
         "one budget per address"
     );
+}
+
+async fn send(app: &TestApp, method: Method, path: &str, key: &NewApiKey, body: &str) -> Answer {
+    let resp = app
+        .client
+        .request(method, app.url(path))
+        .header("Authorization", bearer(&key.key))
+        .header("Content-Type", "application/json")
+        .body(body.to_string())
+        .send()
+        .await
+        .expect("API request failed");
+    answer(resp).await
+}
+
+fn english(key: &str) -> String {
+    statup::i18n::I18n::new("en").t(key).to_string()
+}
+
+fn assert_refusal(answer: &Answer, status: StatusCode, code: &str, key: &str) {
+    assert_eq!(answer.status, status);
+    assert_eq!(error_code(answer), code);
+    assert_eq!(answer.body["error"]["message"], english(key));
+}
+
+async fn service_count(app: &TestApp) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM services")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap()
+}
+
+/// Kind, actor name, actor id, subject and detail of each Journal line.
+type Line = (
+    String,
+    Option<String>,
+    Option<i64>,
+    Option<String>,
+    Option<String>,
+);
+
+async fn journal_lines(app: &TestApp) -> Vec<Line> {
+    sqlx::query_as(
+        "SELECT kind, actor_name, actor_id, subject, detail FROM journal_entries ORDER BY id",
+    )
+    .fetch_all(&app.pool)
+    .await
+    .unwrap()
+}
+
+fn line(kind: &str, subject: &str, detail: Option<&str>) -> Line {
+    (
+        kind.to_string(),
+        Some("Zabbix".to_string()),
+        None,
+        Some(subject.to_string()),
+        detail.map(str::to_string),
+    )
+}
+
+#[tokio::test]
+async fn a_key_creates_a_public_unmonitored_service_and_signs_the_journal() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+
+    let body = r#"{"name": "  Mail ", "description": "Outlook"}"#;
+    let answer = send(&app, Method::POST, SERVICES, &made, body).await;
+    assert_eq!(answer.status, StatusCode::CREATED);
+    assert_eq!(answer.body["name"], "Mail");
+    assert_eq!(answer.body["slug"], "mail");
+    assert_eq!(answer.body["description"], "Outlook");
+    assert_eq!(answer.body["status"], "operational");
+    assert_eq!(answer.body["manual_status"], "operational");
+    assert_eq!(answer.body["monitored"], false);
+
+    let (visibility, folder): (String, Option<i64>) =
+        sqlx::query_as("SELECT visibility, folder_id FROM services")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(visibility, "everyone");
+    assert_eq!(folder, None);
+    assert_eq!(
+        journal_lines(&app).await,
+        [line("service_created", "Mail", None)]
+    );
+
+    let bare = send(&app, Method::POST, SERVICES, &made, r#"{"name": "VPN"}"#).await;
+    assert_eq!(bare.status, StatusCode::CREATED);
+    assert_eq!(bare.body["description"], Value::Null);
+}
+
+#[tokio::test]
+async fn a_service_the_rules_refuse_is_not_created() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+    let long_name = format!(r#"{{"name": "{}"}}"#, "n".repeat(101));
+    let long_description = format!(
+        r#"{{"name": "Mail", "description": "{}"}}"#,
+        "d".repeat(501)
+    );
+
+    for (body, code) in [
+        ("{}", "service_name_required"),
+        (r#"{"name": "   "}"#, "service_name_required"),
+        (long_name.as_str(), "service_name_too_long"),
+        (long_description.as_str(), "description_max_length"),
+    ] {
+        let answer = send(&app, Method::POST, SERVICES, &made, body).await;
+        assert_refusal(
+            &answer,
+            StatusCode::BAD_REQUEST,
+            code,
+            &format!("validation.{code}"),
+        );
+    }
+    assert_eq!(service_count(&app).await, 0);
+    assert!(journal_lines(&app).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_body_the_api_cannot_read_is_refused_and_creates_nothing() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+
+    let unknown = r#"{"name": "Mail", "visibility": "members"}"#;
+    let extra = send(&app, Method::POST, SERVICES, &made, unknown).await;
+    assert_eq!(extra.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(error_code(&extra), "invalid_data");
+
+    let malformed = send(&app, Method::POST, SERVICES, &made, r#"{"name": "#).await;
+    assert_eq!(malformed.status, StatusCode::BAD_REQUEST);
+    assert_eq!(error_code(&malformed), "invalid_data");
+
+    let resp = app
+        .client
+        .post(app.url(SERVICES))
+        .header("Authorization", bearer(&made.key))
+        .header("Content-Type", "text/plain")
+        .body(r#"{"name": "Mail"}"#)
+        .send()
+        .await
+        .unwrap();
+    let plain = answer(resp).await;
+    assert_eq!(plain.status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    assert_eq!(error_code(&plain), "unsupported_media_type");
+    assert_eq!(
+        plain.body["error"]["message"],
+        "Send the body as JSON, with Content-Type: application/json."
+    );
+    assert_eq!(service_count(&app).await, 0);
+}
+
+#[tokio::test]
+async fn a_patch_changes_what_it_names_and_keeps_the_rest() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+    let mail = ServiceRepository::create(
+        &app.pool,
+        "Mail",
+        "mail",
+        Some("Outlook"),
+        None,
+        Some("server"),
+    )
+    .await
+    .unwrap();
+    let path = format!("{SERVICES}/{}", mail.id);
+
+    let renamed = send(&app, Method::PATCH, &path, &made, r#"{"name": "Mailbox"}"#).await;
+    assert_eq!(renamed.status, StatusCode::OK);
+    assert_eq!(renamed.body["name"], "Mailbox");
+    assert_eq!(renamed.body["description"], "Outlook");
+    let kept = ServiceRepository::find_by_id(&app.pool, mail.id)
+        .await
+        .unwrap()
+        .expect("the service exists");
+    assert_eq!(kept.icon_name.as_deref(), Some("server"));
+
+    let nothing = send(&app, Method::PATCH, &path, &made, "{}").await;
+    assert_eq!(nothing.status, StatusCode::OK);
+    assert_eq!(nothing.body["name"], "Mailbox");
+    assert_eq!(nothing.body["description"], "Outlook");
+
+    let cleared = send(&app, Method::PATCH, &path, &made, r#"{"description": ""}"#).await;
+    assert_eq!(cleared.status, StatusCode::OK);
+    assert_eq!(cleared.body["name"], "Mailbox");
+    assert_eq!(cleared.body["description"], Value::Null);
+
+    let blank = send(&app, Method::PATCH, &path, &made, r#"{"name": " "}"#).await;
+    assert_refusal(
+        &blank,
+        StatusCode::BAD_REQUEST,
+        "service_name_required",
+        "validation.service_name_required",
+    );
+
+    let missing = send(&app, Method::PATCH, &format!("{SERVICES}/999"), &made, "{}").await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
+    assert_eq!(error_code(&missing), "not_found");
+
+    let lines = journal_lines(&app).await;
+    assert_eq!(lines.len(), 3, "the refusals leave nothing");
+    assert_eq!(lines[0], line("service_updated", "Mailbox", None));
+}
+
+#[tokio::test]
+async fn a_status_set_by_a_key_shows_and_is_journaled_with_detail() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+    SettingsRepository::set(&app.pool, "journal_detailed", "true")
+        .await
+        .unwrap();
+    let mail = ServiceRepository::create(&app.pool, "Mail", "mail", None, None, None)
+        .await
+        .unwrap();
+    let path = format!("{SERVICES}/{}/status", mail.id);
+
+    let answer = send(
+        &app,
+        Method::PUT,
+        &path,
+        &made,
+        r#"{"status": "major_outage"}"#,
+    )
+    .await;
+    assert_eq!(answer.status, StatusCode::OK);
+    assert_eq!(answer.body["status"], "major_outage");
+    assert_eq!(answer.body["manual_status"], "major_outage");
+    assert_eq!(
+        journal_lines(&app).await,
+        [line("service_status_set", "Mail", Some("major_outage"))]
+    );
+
+    for body in [r#"{"status": "nonsense"}"#, "{}"] {
+        let refused = send(&app, Method::PUT, &path, &made, body).await;
+        assert_eq!(refused.status, StatusCode::BAD_REQUEST);
+        assert_eq!(error_code(&refused), "invalid_data");
+    }
+    let still = read(&app, &format!("{SERVICES}/{}", mail.id), &made).await;
+    assert_eq!(still.body["manual_status"], "major_outage");
+    assert_eq!(journal_lines(&app).await.len(), 1);
+
+    let missing = send(
+        &app,
+        Method::PUT,
+        &format!("{SERVICES}/999/status"),
+        &made,
+        r#"{"status": "degraded"}"#,
+    )
+    .await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn every_write_endpoint_wants_a_key() {
+    let app = TestApp::spawn().await;
+    for (method, path) in [
+        (Method::POST, SERVICES.to_string()),
+        (Method::PATCH, format!("{SERVICES}/1")),
+        (Method::PUT, format!("{SERVICES}/1/status")),
+    ] {
+        let resp = app
+            .client
+            .request(method, app.url(&path))
+            .header("Content-Type", "application/json")
+            .body(r#"{"name": "Mail"}"#)
+            .send()
+            .await
+            .unwrap();
+        assert_refused(&answer(resp).await);
+    }
+    assert_eq!(service_count(&app).await, 0);
 }

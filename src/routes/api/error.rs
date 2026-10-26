@@ -69,6 +69,7 @@ fn code_of_status(status: StatusCode) -> &'static str {
         StatusCode::METHOD_NOT_ALLOWED => "method_not_allowed",
         StatusCode::REQUEST_TIMEOUT => "timeout",
         StatusCode::PAYLOAD_TOO_LARGE => "payload_too_large",
+        StatusCode::UNSUPPORTED_MEDIA_TYPE => "unsupported_media_type",
         status if status.is_server_error() => "internal",
         _ => "invalid_data",
     }
@@ -79,16 +80,15 @@ fn code_of_status(status: StatusCode) -> &'static str {
 fn message_of(code: &str, key: Option<&str>) -> String {
     let message = match code {
         "unauthorized" => "Send a valid API key in the Authorization header: Bearer <key>.",
-        "forbidden" => "This key cannot do that.",
         "not_found" => "Nothing exists at this address.",
         "method_not_allowed" => "This address does not take this method.",
         "invalid_data" => "The request could not be read.",
+        "unsupported_media_type" => "Send the body as JSON, with Content-Type: application/json.",
         "payload_too_large" => "The request body is larger than 64 KB.",
         "timeout" => "The server took too long to answer.",
         "rate_limited" => {
             "Too many requests from this address. Retry after the delay in Retry-After."
         }
-        "busy" => "The server is busy. Retry in a moment.",
         "internal" => "An internal error occurred.",
         _ => return key.map_or(code, |key| I18n::new("en").t(key)).to_string(),
     };
@@ -133,6 +133,10 @@ mod tests {
         );
         assert_eq!(
             code_of_status(StatusCode::UNSUPPORTED_MEDIA_TYPE),
+            "unsupported_media_type"
+        );
+        assert_eq!(
+            code_of_status(StatusCode::UNPROCESSABLE_ENTITY),
             "invalid_data"
         );
         assert_eq!(code_of_status(StatusCode::BAD_GATEWAY), "internal");

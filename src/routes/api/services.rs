@@ -2,14 +2,16 @@
 
 use axum::Json;
 use axum::extract::{Path, State};
-use serde::Serialize;
+use axum::http::StatusCode;
+use serde::{Deserialize, Serialize};
 
 use super::caller::ApiCaller;
 use crate::clock;
 use crate::db::DbPool;
 use crate::error::AppError;
-use crate::models::Service;
-use crate::repositories::ServiceRepository;
+use crate::models::{JournalKind, Service, ServiceStatus};
+use crate::repositories::{NewJournalEntry, ServiceRepository};
+use crate::services::ServiceService;
 
 #[derive(Serialize)]
 pub(super) struct ServiceList {
@@ -68,4 +70,109 @@ pub(super) async fn show(
         .await?
         .ok_or(AppError::NotFound)?;
     Ok(Json(ServiceBody::from(service)))
+}
+
+/// The fields the API takes on a new service. Anything else is refused: the
+/// visibility, folder and icon are not set from here.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct NewService {
+    /// A missing name is refused by the service rules, as an empty one is.
+    #[serde(default)]
+    name: String,
+    description: Option<String>,
+}
+
+/// A field left out keeps its value.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ServiceChanges {
+    name: Option<String>,
+    description: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct StatusChange {
+    #[serde(default)]
+    status: String,
+}
+
+async fn read_back(pool: &DbPool, id: i64) -> Result<Json<ServiceBody>, AppError> {
+    let service = ServiceRepository::find_by_id(pool, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    Ok(Json(ServiceBody::from(service)))
+}
+
+/// A new service is public, outside any folder and not monitored.
+pub(super) async fn create(
+    caller: ApiCaller,
+    State(pool): State<DbPool>,
+    Json(input): Json<NewService>,
+) -> Result<(StatusCode, Json<ServiceBody>), AppError> {
+    let service =
+        ServiceService::create(&pool, &input.name, input.description.as_deref(), None, None)
+            .await?;
+    NewJournalEntry::new(JournalKind::ServiceCreated)
+        .by_key(&caller.key)
+        .about(&service.name)
+        .record(&pool)
+        .await;
+    Ok((StatusCode::CREATED, read_back(&pool, service.id).await?))
+}
+
+/// The icon is not part of the API: it stays as it is.
+pub(super) async fn update(
+    caller: ApiCaller,
+    State(pool): State<DbPool>,
+    Path(id): Path<i64>,
+    Json(changes): Json<ServiceChanges>,
+) -> Result<Json<ServiceBody>, AppError> {
+    let service = ServiceRepository::find_by_id(&pool, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let name = changes.name.as_deref().unwrap_or(&service.name);
+    let description = changes
+        .description
+        .as_deref()
+        .or(service.description.as_deref());
+    ServiceService::update(
+        &pool,
+        id,
+        name,
+        description,
+        service.icon_id,
+        service.icon_name.as_deref(),
+    )
+    .await?;
+    NewJournalEntry::new(JournalKind::ServiceUpdated)
+        .by_key(&caller.key)
+        .about(name.trim())
+        .record(&pool)
+        .await;
+    read_back(&pool, id).await
+}
+
+pub(super) async fn set_status(
+    caller: ApiCaller,
+    State(pool): State<DbPool>,
+    Path(id): Path<i64>,
+    Json(change): Json<StatusChange>,
+) -> Result<Json<ServiceBody>, AppError> {
+    let status: ServiceStatus = change
+        .status
+        .parse()
+        .map_err(|()| AppError::validation("error.invalid_data"))?;
+    let service = ServiceRepository::find_by_id(&pool, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    ServiceService::set_manual_status(&pool, id, status).await?;
+    NewJournalEntry::new(JournalKind::ServiceStatusSet)
+        .by_key(&caller.key)
+        .about(&service.name)
+        .with_detail(status.as_str())
+        .record(&pool)
+        .await;
+    read_back(&pool, id).await
 }
