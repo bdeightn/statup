@@ -1,7 +1,7 @@
 //! Services, as the API reads them.
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Path, State};
 use serde::Serialize;
 
 use super::caller::ApiCaller;
@@ -19,12 +19,17 @@ pub(super) struct ServiceList {
 /// A service in the API. Its own shape, so the contract does not move with
 /// the database.
 #[derive(Serialize)]
-struct ServiceBody {
+pub(super) struct ServiceBody {
     id: i64,
     name: String,
     slug: String,
     description: Option<String>,
+    /// The shown state: the worst of the one set by hand and open events.
     status: &'static str,
+    /// The state set by hand, the one a later write changes.
+    manual_status: &'static str,
+    /// Statup checks the service itself.
+    monitored: bool,
     updated_at: String,
 }
 
@@ -36,6 +41,8 @@ impl From<Service> for ServiceBody {
             slug: service.slug,
             description: service.description,
             status: service.status.as_str(),
+            manual_status: service.manual_status.as_str(),
+            monitored: service.check_kind.is_some(),
             updated_at: clock::rfc3339(service.updated_at),
         }
     }
@@ -50,4 +57,15 @@ pub(super) async fn list(
     Ok(Json(ServiceList {
         services: services.into_iter().map(ServiceBody::from).collect(),
     }))
+}
+
+pub(super) async fn show(
+    _caller: ApiCaller,
+    State(pool): State<DbPool>,
+    Path(id): Path<i64>,
+) -> Result<Json<ServiceBody>, AppError> {
+    let service = ServiceRepository::find_by_id(&pool, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    Ok(Json(ServiceBody::from(service)))
 }

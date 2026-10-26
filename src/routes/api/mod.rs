@@ -5,6 +5,7 @@
 
 mod caller;
 mod error;
+mod events;
 mod services;
 
 use std::any::Any;
@@ -32,6 +33,9 @@ const BODY_LIMIT: usize = 64 * 1024;
 pub(super) fn api_routes(rate_limit: &RateLimit) -> Router<AppState> {
     Router::new()
         .route("/v1/services", get(services::list))
+        .route("/v1/services/{id}", get(services::show))
+        .route("/v1/events", get(events::list))
+        .route("/v1/events/{id}", get(events::show))
         .fallback(not_found)
         .layer(RequestBodyLimitLayer::new(BODY_LIMIT))
         .layer(TimeoutLayer::with_status_code(

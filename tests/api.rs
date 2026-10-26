@@ -13,13 +13,14 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use common::TestApp;
-use statup::models::Role;
-use statup::repositories::{ApiKeyRepository, ServiceRepository, UserRepository};
-use statup::services::{ApiKeyService, NewApiKey};
+use statup::models::{Category, CreateEventInput, Kind, Lifecycle, Role, Severity, User};
+use statup::repositories::{ApiKeyRepository, EventRepository, ServiceRepository, UserRepository};
+use statup::services::{ApiKeyService, EventService, NewApiKey};
 
 const ADMIN_EMAIL: &str = "admin@test.com";
 const ADMIN_PASSWORD: &str = "admin_password_12";
 const SERVICES: &str = "/api/v1/services";
+const EVENTS: &str = "/api/v1/events";
 
 struct Answer {
     status: StatusCode,
@@ -101,11 +102,268 @@ async fn a_key_in_use_reads_the_services_in_their_order() {
     assert_eq!(services[0]["description"], "Outlook");
     assert_eq!(services[1]["description"], Value::Null);
     assert_eq!(services[0]["status"], "operational");
+    assert_eq!(services[0]["manual_status"], "operational");
+    assert_eq!(services[0]["monitored"], false);
     let updated_at = services[0]["updated_at"].as_str().unwrap_or_default();
     assert!(
         updated_at.ends_with('Z') && updated_at.len() == 20,
         "{updated_at}"
     );
+}
+
+async fn read(app: &TestApp, path: &str, key: &NewApiKey) -> Answer {
+    call(app, path, Some(&bearer(&key.key))).await
+}
+
+async fn admin(app: &TestApp) -> User {
+    UserRepository::find_by_email(&app.pool, ADMIN_EMAIL)
+        .await
+        .unwrap()
+        .expect("the admin exists")
+}
+
+fn incident(title: &str, author: &User, service_ids: Vec<i64>) -> CreateEventInput {
+    CreateEventInput {
+        kind: Kind::Incident,
+        severity: Some(Severity::Critical),
+        planned: false,
+        category: None,
+        title: title.to_string(),
+        description: "**Everything** is down".to_string(),
+        planned_start: None,
+        planned_end: None,
+        started_at: None,
+        opening_step: None,
+        keeps_services_up: false,
+        service_ids,
+        follows_event_id: None,
+        author_id: author.id,
+        next_update: None,
+    }
+}
+
+fn announcement(title: &str, author: &User) -> CreateEventInput {
+    CreateEventInput {
+        kind: Kind::Publication,
+        severity: None,
+        category: Some(Category::Info),
+        ..incident(title, author, Vec::new())
+    }
+}
+
+fn titles(answer: &Answer) -> Vec<&str> {
+    answer.body["events"]
+        .as_array()
+        .expect("a list")
+        .iter()
+        .filter_map(|event| event["title"].as_str())
+        .collect()
+}
+
+#[tokio::test]
+async fn one_service_is_read_by_its_id() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+    let mail = ServiceRepository::create(&app.pool, "Mail", "mail", Some("Outlook"), None, None)
+        .await
+        .unwrap();
+
+    let answer = read(&app, &format!("{SERVICES}/{}", mail.id), &made).await;
+    assert_eq!(answer.status, StatusCode::OK);
+    assert_eq!(answer.body["id"], mail.id);
+    assert_eq!(answer.body["name"], "Mail");
+    assert_eq!(answer.body["description"], "Outlook");
+    assert_eq!(answer.body["status"], "operational");
+    assert_eq!(answer.body["manual_status"], "operational");
+    assert_eq!(answer.body["monitored"], false);
+
+    let missing = read(&app, &format!("{SERVICES}/{}", mail.id + 100), &made).await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
+    assert_eq!(error_code(&missing), "not_found");
+
+    let malformed = read(&app, &format!("{SERVICES}/abc"), &made).await;
+    assert_eq!(malformed.status, StatusCode::BAD_REQUEST);
+    assert_eq!(error_code(&malformed), "invalid_data");
+}
+
+#[tokio::test]
+async fn an_open_incident_shows_on_the_status_and_not_on_the_manual_status() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+    let author = admin(&app).await;
+    let mail = ServiceRepository::create(&app.pool, "Mail", "mail", None, None, None)
+        .await
+        .unwrap();
+    EventService::create(&app.pool, incident("Mail is down", &author, vec![mail.id]))
+        .await
+        .unwrap();
+
+    let answer = read(&app, &format!("{SERVICES}/{}", mail.id), &made).await;
+    assert_eq!(answer.body["status"], "major_outage");
+    assert_eq!(answer.body["manual_status"], "operational");
+}
+
+#[tokio::test]
+async fn events_are_listed_newest_first_and_filtered() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+    let author = admin(&app).await;
+    let mail = ServiceRepository::create(&app.pool, "Mail", "mail", None, None, None)
+        .await
+        .unwrap();
+    let vpn = ServiceRepository::create(&app.pool, "VPN", "vpn", None, None, None)
+        .await
+        .unwrap();
+    let over = EventService::create(&app.pool, incident("Old outage", &author, vec![vpn.id]))
+        .await
+        .unwrap();
+    EventService::post_update(
+        &app.pool,
+        over.id,
+        "",
+        Some(Lifecycle::Resolved),
+        None,
+        &author,
+    )
+    .await
+    .unwrap();
+    EventService::create(&app.pool, incident("Mail outage", &author, vec![mail.id]))
+        .await
+        .unwrap();
+    EventService::create(&app.pool, announcement("New release", &author))
+        .await
+        .unwrap();
+
+    let all = read(&app, EVENTS, &made).await;
+    assert_eq!(all.status, StatusCode::OK);
+    assert_eq!(header(&all, "cache-control"), Some("no-store"));
+    assert_eq!(titles(&all), ["New release", "Mail outage", "Old outage"]);
+    assert_eq!(all.body["total"], 3);
+    let outage = &all.body["events"][1];
+    assert_eq!(outage["kind"], "incident");
+    assert_eq!(outage["severity"], "critical");
+    assert_eq!(outage["category"], Value::Null);
+    assert_eq!(outage["state"], "investigating");
+    assert_eq!(outage["services"][0]["id"], mail.id);
+    assert_eq!(outage["services"][0]["name"], "Mail");
+    assert_eq!(all.body["events"][0]["state"], Value::Null);
+    assert_eq!(all.body["events"][0]["category"], "info");
+    assert!(outage.get("updates").is_none());
+
+    let incidents = read(&app, &format!("{EVENTS}?kind=incident"), &made).await;
+    assert_eq!(titles(&incidents), ["Mail outage", "Old outage"]);
+    let open = read(&app, &format!("{EVENTS}?open=true"), &made).await;
+    assert_eq!(titles(&open), ["Mail outage"]);
+    let closed = read(&app, &format!("{EVENTS}?open=false"), &made).await;
+    assert_eq!(titles(&closed), ["Old outage"]);
+
+    let page = read(&app, &format!("{EVENTS}?limit=1&offset=1"), &made).await;
+    assert_eq!(titles(&page), ["Mail outage"]);
+    assert_eq!(page.body["total"], 3);
+}
+
+#[tokio::test]
+async fn a_bad_filter_is_refused_and_a_page_out_of_range_is_clamped() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+    let author = admin(&app).await;
+    EventService::create(&app.pool, announcement("New release", &author))
+        .await
+        .unwrap();
+
+    let unknown = read(&app, &format!("{EVENTS}?kind=nonsense"), &made).await;
+    assert_eq!(unknown.status, StatusCode::BAD_REQUEST);
+    assert_eq!(error_code(&unknown), "invalid_data");
+
+    for query in ["limit=0", "limit=1000", "offset=-5", "limit=-1&offset=-1"] {
+        let answer = read(&app, &format!("{EVENTS}?{query}"), &made).await;
+        assert_eq!(answer.status, StatusCode::OK, "{query}");
+        assert_eq!(titles(&answer), ["New release"], "{query}");
+    }
+}
+
+#[tokio::test]
+async fn one_event_comes_with_its_services_and_updates() {
+    let app = TestApp::spawn().await;
+    let made = admin_key(&app, "Zabbix").await;
+    let author = admin(&app).await;
+    let mail = ServiceRepository::create(&app.pool, "Mail", "mail", None, None, None)
+        .await
+        .unwrap();
+    let vpn = ServiceRepository::create(&app.pool, "VPN", "vpn", None, None, None)
+        .await
+        .unwrap();
+    let event = EventService::create(
+        &app.pool,
+        incident("Network outage", &author, vec![mail.id, vpn.id]),
+    )
+    .await
+    .unwrap();
+    EventRepository::add_update(&app.pool, event.id, "<p>Looking into it</p>", author.id)
+        .await
+        .unwrap();
+    EventRepository::add_update(
+        &app.pool,
+        event.id,
+        "<p>Back <strong>up</strong></p>",
+        author.id,
+    )
+    .await
+    .unwrap();
+
+    let answer = read(&app, &format!("{EVENTS}/{}", event.id), &made).await;
+    assert_eq!(answer.status, StatusCode::OK);
+    let body = &answer.body;
+    assert_eq!(body["id"], event.id);
+    assert_eq!(body["title"], "Network outage");
+    assert_eq!(body["description"], "**Everything** is down");
+    assert_eq!(body["kind"], "incident");
+    assert_eq!(body["state"], "investigating");
+    let mut services: Vec<(i64, &str)> = body["services"]
+        .as_array()
+        .expect("services")
+        .iter()
+        .map(|s| (s["id"].as_i64().unwrap(), s["name"].as_str().unwrap()))
+        .collect();
+    services.sort_unstable();
+    assert_eq!(services, [(mail.id, "Mail"), (vpn.id, "VPN")]);
+    assert!(
+        body["started_at"]
+            .as_str()
+            .is_some_and(|d| d.ends_with('Z'))
+    );
+    assert_eq!(body["ended_at"], Value::Null);
+
+    let updates = body["updates"].as_array().expect("updates");
+    assert_eq!(updates.len(), 2);
+    assert_eq!(updates[0]["message"], "Back up");
+    assert_eq!(
+        updates[0]["message_html"],
+        "<p>Back <strong>up</strong></p>"
+    );
+    assert_eq!(updates[0]["author"], "Admin");
+    assert_eq!(updates[1]["message"], "Looking into it");
+    assert!(
+        updates[0]["created_at"]
+            .as_str()
+            .is_some_and(|d| d.ends_with('Z'))
+    );
+
+    let missing = read(&app, &format!("{EVENTS}/{}", event.id + 100), &made).await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
+    assert_eq!(error_code(&missing), "not_found");
+}
+
+#[tokio::test]
+async fn every_read_endpoint_wants_a_key() {
+    let app = TestApp::spawn().await;
+    for path in [
+        format!("{SERVICES}/1"),
+        EVENTS.to_string(),
+        format!("{EVENTS}/1"),
+    ] {
+        assert_refused(&call(&app, &path, None).await);
+    }
 }
 
 #[tokio::test]
