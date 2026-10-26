@@ -2,9 +2,10 @@
 //! `OptionalUser` (public mode or signed in), `AuthUser`, `RequirePublisher`
 //! or `RequireAdmin`. Every dynamic route goes through the rate limit, the
 //! error pages, the CSRF check and the signed-in user lookup; files and the
-//! health check skip them.
+//! health check skip them. The API, under `/api`, has its own guards.
 
 mod admin;
+mod api;
 mod api_keys;
 mod audience;
 mod auth;
@@ -92,6 +93,7 @@ pub fn create_router(state: AppState, rate_limit: &RateLimit) -> Router {
     let app = dynamic_routes(&state, rate_limit)
         .layer(overriding(CONTENT_SECURITY_POLICY, APP_CSP))
         .merge(files)
+        .nest("/api", api::api_routes(rate_limit))
         .layer(access_log())
         .route("/health", get(health::check));
     with_security_headers(app, serves_https)
