@@ -23,7 +23,7 @@
     {% if let Some(made) = created %}
     <div class="form-notice notice-stack api-key-notice mb-5" data-replace-url="/admin/api-keys" role="status">
         <div>
-            <p>{% if regenerated %}{{ i18n.t("api_keys.regenerated_for") }}{% else %}{{ i18n.t("api_keys.created_for") }}{% endif %} <strong>{{ made.name }}</strong>.</p>
+            <p>{% if regenerated %}{{ i18n.t("api_keys.regenerated_for") }}{% else %}{{ i18n.t("api_keys.created_for") }}{% endif %} <strong>{{ made.name }}</strong></p>
             <div class="api-key-row">
                 <input id="api-key" class="input api-key-value" type="password" value="{{ made.key }}" readonly autocomplete="off" spellcheck="false" aria-label="{{ i18n.t("api_keys.key_label") }}">
                 <button type="button" class="btn btn-ghost" aria-controls="api-key" data-key-reveal data-hide-label="{{ i18n.t("api_keys.hide") }}" hidden>{{ i18n.t("api_keys.show") }}</button>

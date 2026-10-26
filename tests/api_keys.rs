@@ -112,7 +112,7 @@ async fn a_name_in_use_is_refused_with_the_form_open() {
         .post_form("/admin/api-keys", &csrf, &[("name", "ZABBIX")])
         .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body.contains("Une clé en service porte déjà ce nom."));
+    assert!(body.contains("Une clé porte déjà ce nom."));
     assert!(body.contains(r#"class="card-add key-add is-open""#));
     assert!(body.contains(r#"value="ZABBIX""#));
     assert!(!body.contains(r#"id="api-key""#));
@@ -188,7 +188,7 @@ async fn a_regenerated_key_keeps_its_name_and_the_old_secret_stops_at_once() {
         Some("no-store")
     );
     let body = resp.text().await.unwrap_or_default();
-    assert!(body.contains("Nouvelle clé pour <strong>Zabbix</strong>"));
+    assert!(body.contains("Clé régénérée\u{a0}: <strong>Zabbix</strong>"));
     let new = key_in(&body);
     assert_ne!(new, old);
 
