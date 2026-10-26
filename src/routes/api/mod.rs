@@ -6,6 +6,7 @@
 mod caller;
 mod error;
 mod events;
+mod reports;
 mod services;
 
 use std::any::Any;
@@ -41,6 +42,7 @@ pub(super) fn api_routes(rate_limit: &RateLimit) -> Router<AppState> {
         .route("/v1/events", get(events::list).post(events::create))
         .route("/v1/events/{id}", get(events::show))
         .route("/v1/events/{id}/updates", post(events::post_update))
+        .route("/v1/reports", post(reports::receive))
         .fallback(not_found)
         .layer(RequestBodyLimitLayer::new(BODY_LIMIT))
         .layer(TimeoutLayer::with_status_code(

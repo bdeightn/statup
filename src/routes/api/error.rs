@@ -27,10 +27,27 @@ struct ErrorDetail {
     message: String,
 }
 
+/// Marks a refusal a handler already said in JSON, with its own code.
+#[derive(Clone, Copy)]
+struct Said;
+
+/// A refusal with a code and a message of its own, for what no
+/// `AppError` names: a report on a service Statup does not know.
+pub(super) fn refusal(status: StatusCode, code: &str, message: &str) -> Response {
+    let error = ErrorDetail {
+        code: code.to_string(),
+        message: message.to_string(),
+    };
+    let mut response = (status, Json(ErrorBody { error })).into_response();
+    response.extensions_mut().insert(Said);
+    response
+}
+
 pub(super) async fn json_errors(request: Request, next: Next) -> Response {
     let response = next.run(request).await;
     let status = response.status();
-    if !status.is_client_error() && !status.is_server_error() {
+    let said = response.extensions().get::<Said>().is_some();
+    if said || (!status.is_client_error() && !status.is_server_error()) {
         return response;
     }
     let limited = response.extensions().get::<RateLimited>().copied();

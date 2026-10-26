@@ -154,6 +154,8 @@ pub enum JournalKind {
     CheckFailed,
     /// Every service failed at once: the round was ignored.
     MonitoringRoundSkipped,
+    /// A monitoring tool reported on a service Statup cannot act on.
+    ReportIgnored,
     /// A message left for an alert channel.
     AlertSent,
     /// A message did not leave and will be tried again.
@@ -278,6 +280,7 @@ impl JournalKind {
             Self::OutageEnded => row(Cat::Monitoring, true, Level::INFO, Tone::Ok, "Service back up", "journal.outage_ended"),
             Self::CheckFailed => row(Cat::Monitoring, false, Level::DEBUG, Tone::Minor, "Check failed", "journal.check_failed"),
             Self::MonitoringRoundSkipped => row(Cat::Monitoring, true, Level::WARN, Tone::Minor, "Monitoring round ignored: every service failed at once", "journal.monitoring_round_skipped"),
+            Self::ReportIgnored => row(Cat::Monitoring, true, Level::WARN, Tone::Minor, "Report from a monitoring tool ignored", "journal.report_ignored"),
             Self::AlertSent => row(Cat::Alerts, false, Level::DEBUG, Tone::Neutral, "Alert sent", "journal.alert_sent"),
             Self::AlertRetrying => row(Cat::Alerts, false, Level::WARN, Tone::Minor, "Alert not sent, will try again", "journal.alert_retrying"),
             Self::AlertAbandoned => row(Cat::Alerts, true, Level::WARN, Tone::Crit, "Alert given up", "journal.alert_abandoned"),

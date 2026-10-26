@@ -29,20 +29,25 @@ where
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let presented = bearer_key(&parts.headers).ok_or(AppError::Unauthorized)?;
-        let pool = DbPool::from_ref(state);
-        let holder = ApiKeyService::holder_of(&pool, presented)
-            .await?
-            .ok_or(AppError::Unauthorized)?;
-        // The date on the keys page is a convenience: missing it costs the
-        // request nothing.
-        if let Err(e) = ApiKeyService::record_use(&pool, &holder, Utc::now()).await {
-            tracing::warn!(error = %e, "The use of an API key was not recorded");
-        }
-        Ok(Self { key: holder })
+        Self::presenting(&DbPool::from_ref(state), presented).await
     }
 }
 
 impl ApiCaller {
+    /// The caller whose key this is, refused unless the key is in use. The
+    /// reports read it from the body when the tool cannot set a header.
+    pub(super) async fn presenting(pool: &DbPool, presented: &str) -> Result<Self, AppError> {
+        let holder = ApiKeyService::holder_of(pool, presented)
+            .await?
+            .ok_or(AppError::Unauthorized)?;
+        // The date on the keys page is a convenience: missing it costs the
+        // request nothing.
+        if let Err(e) = ApiKeyService::record_use(pool, &holder, Utc::now()).await {
+            tracing::warn!(error = %e, "The use of an API key was not recorded");
+        }
+        Ok(Self { key: holder })
+    }
+
     /// The administrator who made the key, with an editor's rights only: a
     /// key does what an editor may, never what only an administrator may,
     /// such as changing a closed event.
@@ -59,7 +64,7 @@ impl ApiCaller {
 
 /// The key of an `Authorization: Bearer <key>` header. The scheme is read
 /// without case, as HTTP schemes are.
-fn bearer_key(headers: &HeaderMap) -> Option<&str> {
+pub(super) fn bearer_key(headers: &HeaderMap) -> Option<&str> {
     let value = headers.get(AUTHORIZATION)?.to_str().ok()?;
     let (scheme, key) = value.trim().split_once(' ')?;
     scheme.eq_ignore_ascii_case("bearer").then(|| key.trim())
