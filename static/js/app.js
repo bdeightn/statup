@@ -473,10 +473,14 @@
         const text = "value" in field ? field.value : field.textContent.trim();
         // A page served over plain http has no clipboard interface; the
         // older command still copies there.
+        // A masked field gives nothing to copy: it is unmasked for the copy.
         const fallback = () => {
+            const masked = field.type === "password";
+            if (masked) field.type = "text";
             if ("select" in field) field.select();
             else window.getSelection().selectAllChildren(field);
             if (document.execCommand("copy")) done();
+            if (masked) field.type = "password";
         };
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(text).then(done, fallback);

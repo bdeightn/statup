@@ -281,6 +281,10 @@ fn admin_routes() -> Router<AppState> {
             "/admin/api-keys",
             get(api_keys::list).post(api_keys::create),
         )
+        .route(
+            "/admin/api-keys/{id}/regenerate",
+            post(api_keys::regenerate),
+        )
         .route("/admin/api-keys/{id}/revoke", post(api_keys::revoke))
         .route("/admin/users", get(admin::users_list))
         .route("/admin/users/new", post(admin::add_member))

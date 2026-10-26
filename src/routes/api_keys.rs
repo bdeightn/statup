@@ -23,8 +23,9 @@ use crate::state::AppState;
 struct ApiKeysTemplate {
     frame: Frame,
     rows: Vec<KeyRow>,
-    /// A key just made, shown this once.
+    /// A key just made, or given a new secret, shown this once.
     created: Option<NewApiKey>,
+    regenerated: bool,
     revoked: bool,
     /// A refused name: why, and the name to show again in the open form.
     error: Option<String>,
@@ -65,6 +66,7 @@ impl KeyRow {
 #[derive(Default)]
 struct Page {
     created: Option<NewApiKey>,
+    regenerated: bool,
     revoked: bool,
     error: Option<String>,
     name: String,
@@ -135,6 +137,31 @@ pub async fn create(
     }
 }
 
+/// A new secret for a key, shown once like a new key; the old one stops
+/// working at once.
+pub async fn regenerate(
+    RequireAdmin(admin): RequireAdmin,
+    State(state): State<AppState>,
+    CsrfToken(csrf_token): CsrfToken,
+    Locale(i18n): Locale,
+    Path(id): Path<i64>,
+) -> Result<Response, AppError> {
+    let made = ApiKeyService::regenerate(&state.pool, id).await?;
+    NewJournalEntry::new(JournalKind::ApiKeyRegenerated)
+        .by(&admin)
+        .about(&made.name)
+        .record(&state.pool)
+        .await;
+    let page = Page {
+        created: Some(made),
+        regenerated: true,
+        ..Page::default()
+    };
+    Ok(no_store(
+        render_page(&state, &admin, csrf_token, i18n, page).await?,
+    ))
+}
+
 pub async fn revoke(
     RequireAdmin(admin): RequireAdmin,
     State(state): State<AppState>,
@@ -170,6 +197,7 @@ async fn render_page(
         frame,
         rows,
         created: page.created,
+        regenerated: page.regenerated,
         revoked: page.revoked,
         add_open: page.error.is_some(),
         error: page.error,

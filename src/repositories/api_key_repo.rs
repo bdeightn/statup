@@ -100,6 +100,27 @@ impl ApiKeyRepository {
         Ok(result.rows_affected() == 1)
     }
 
+    /// Gives a key in use a new secret, which stops the old one at once.
+    /// Returns false when no key in use has this id. The key keeps its row,
+    /// so its name still signs what it published before.
+    pub async fn replace_secret(
+        pool: &DbPool,
+        id: i64,
+        prefix: &str,
+        secret_hash: &str,
+    ) -> Result<bool, sqlx::Error> {
+        let result = sqlx::query(
+            "UPDATE api_keys SET prefix = ?, secret_hash = ?, last_used_at = NULL \
+             WHERE id = ? AND revoked_at IS NULL",
+        )
+        .bind(prefix)
+        .bind(secret_hash)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
     /// Records a use of the key, unless one was recorded in the last minute.
     pub async fn touch(pool: &DbPool, id: i64, now: DateTime<Utc>) -> Result<(), sqlx::Error> {
         sqlx::query(

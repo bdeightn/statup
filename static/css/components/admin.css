@@ -783,13 +783,23 @@
         user-select: all;
     }
 
-    /* An API key is long: it wraps on a phone rather than run off it. */
+    /* A key just made: its masked field as wide as the key, its buttons
+       beside it, under it on a phone. */
+    .api-key-notice > div {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .api-key-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+    }
+
     .api-key-value {
-        display: inline-block;
-        max-width: 100%;
-        font-size: var(--text-base);
-        letter-spacing: 0;
-        overflow-wrap: anywhere;
+        flex: 1 1 280px;
+        max-width: 440px;
     }
 
     .notice-stack > * + * {

@@ -20,13 +20,14 @@ async fn spawn_with_admin() -> TestApp {
     app
 }
 
-/// The key a creation page shows, read from its code element.
+/// The key a creation page holds, read from its masked field.
 fn key_in(page: &str) -> String {
     let start = page.find(r#"id="api-key""#).expect("the key is shown");
-    let after = &page[start..];
-    let open = after.find('>').expect("code element") + 1;
-    let close = after[open..].find('<').expect("end of the key");
-    after[open..open + close].to_string()
+    let field = &page[start..page[start..].find('>').expect("field") + start];
+    assert!(field.contains(r#"type="password""#), "the key is masked");
+    let value = field.find(r#"value=""#).expect("the key's value") + 7;
+    let end = field[value..].find('"').expect("end of the key");
+    field[value..value + end].to_string()
 }
 
 async fn journal_lines(app: &TestApp) -> Vec<(String, String)> {
@@ -157,4 +158,61 @@ async fn a_revoked_key_stops_working_and_leaves_the_list() {
         .post_form(&format!("/admin/api-keys/{}/revoke", holder.id), &csrf, &[])
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND, "a key is revoked once");
+}
+
+#[tokio::test]
+async fn a_regenerated_key_keeps_its_name_and_the_old_secret_stops_at_once() {
+    let app = spawn_with_admin().await;
+    let csrf = app.csrf_from("/admin/api-keys").await;
+    let (_, body, _) = app
+        .post_form("/admin/api-keys", &csrf, &[("name", "Zabbix")])
+        .await;
+    let old = key_in(&body);
+    let holder = ApiKeyService::holder_of(&app.pool, &old)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/admin/api-keys/{}/regenerate", holder.id)))
+        .form(&[("csrf_token", csrf.as_str())])
+        .send()
+        .await
+        .expect("POST failed");
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok()),
+        Some("no-store")
+    );
+    let body = resp.text().await.unwrap_or_default();
+    assert!(body.contains("Nouvelle clé pour <strong>Zabbix</strong>"));
+    let new = key_in(&body);
+    assert_ne!(new, old);
+
+    assert!(
+        ApiKeyService::holder_of(&app.pool, &old)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let renewed = ApiKeyService::holder_of(&app.pool, &new)
+        .await
+        .unwrap()
+        .expect("the new secret works");
+    assert_eq!((renewed.id, renewed.name.as_str()), (holder.id, "Zabbix"));
+    assert_eq!(
+        journal_lines(&app).await,
+        [
+            ("api_key_created".to_string(), "Zabbix".to_string()),
+            ("api_key_regenerated".to_string(), "Zabbix".to_string()),
+        ]
+    );
+
+    let (status, _, _) = app
+        .post_form("/admin/api-keys/999/regenerate", &csrf, &[])
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
