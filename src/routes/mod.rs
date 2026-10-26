@@ -5,6 +5,7 @@
 //! health check skip them.
 
 mod admin;
+mod api_keys;
 mod audience;
 mod auth;
 mod checks;
@@ -276,6 +277,11 @@ fn admin_routes() -> Router<AppState> {
         .route("/admin/journal", get(journal::page))
         .route("/admin/journal/export", get(journal::export))
         .route("/admin/journal/settings", post(journal::save_settings))
+        .route(
+            "/admin/api-keys",
+            get(api_keys::list).post(api_keys::create),
+        )
+        .route("/admin/api-keys/{id}/revoke", post(api_keys::revoke))
         .route("/admin/users", get(admin::users_list))
         .route("/admin/users/new", post(admin::add_member))
         .route("/admin/users/{id}/role", post(admin::update_role))

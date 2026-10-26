@@ -62,6 +62,10 @@ pub enum JournalKind {
     ChannelDeleted,
     /// A member tried an alert channel.
     ChannelTested,
+    /// An administrator made an API key.
+    ApiKeyCreated,
+    /// An administrator revoked an API key.
+    ApiKeyRevoked,
     /// A member added someone to the team.
     MemberAdded,
     /// A member changed the role of someone.
@@ -226,6 +230,8 @@ impl JournalKind {
             Self::ChannelUpdated => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Alert channel updated", "journal.channel_updated"),
             Self::ChannelDeleted => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Alert channel deleted", "journal.channel_deleted"),
             Self::ChannelTested => row(Cat::Members, false, Level::INFO, Tone::Neutral, "Alert channel tested", "journal.channel_tested"),
+            Self::ApiKeyCreated => row(Cat::Members, true, Level::INFO, Tone::Neutral, "API key created", "journal.api_key_created"),
+            Self::ApiKeyRevoked => row(Cat::Members, true, Level::INFO, Tone::Neutral, "API key revoked", "journal.api_key_revoked"),
             Self::MemberAdded => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Member added", "journal.member_added"),
             Self::MemberRoleChanged => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Member role changed", "journal.member_role_changed"),
             Self::MemberDisabled => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Member disabled", "journal.member_disabled"),

@@ -1,0 +1,82 @@
+{% extends "_layout.html" %}
+{% import "components/macros.html" as ui %}
+
+{% block title %}{{ i18n.t("api_keys.title") }} | {{ crate::brand_name() }}{% endblock %}
+{% block section %}admin{% endblock %}
+
+{% block content %}
+<div class="page">
+    <header class="page-head">
+        <div>
+            <a href="/admin/settings" class="back-link">{% call ui::arrow_left() %}{% endcall %}{{ i18n.t("admin.back_to_settings") }}</a>
+            <h1 class="page-title">{{ i18n.t("api_keys.title") }}</h1>
+        </div>
+    </header>
+
+    {# The key is shown once, in the answer to the form, and kept nowhere but
+       as a hash. The page then takes the list's address, so a reload does not
+       send the form again. #}
+    {% if let Some(made) = created %}
+    <div class="form-notice notice-stack mb-5" data-replace-url="/admin/api-keys" role="status">
+        <div>
+            <p>{{ i18n.t("api_keys.created_for") }} <strong>{{ made.name }}</strong>.</p>
+            <p class="temp-password-row"><code id="api-key" class="temp-password api-key-value">{{ made.key }}</code> <button type="button" class="btn btn-ghost" data-copy="#api-key" data-copied="{{ i18n.t("admin.password_copied") }}">{{ i18n.t("admin.copy_password") }}</button></p>
+            <p class="text-muted">{{ i18n.t("api_keys.created_hint") }}</p>
+        </div>
+    </div>
+    {% else if revoked %}
+    <div class="form-notice mb-5" role="status"><p>{{ i18n.t("api_keys.revoked_notice") }}</p></div>
+    {% endif %}
+
+    {% if let Some(message) = error %}
+    <div class="form-error mb-5" role="alert"><p>{{ message }}</p></div>
+    {% endif %}
+
+    {# The keys on a card with their count; "New key" opens the form at the
+       head of the card, closed on arrival. #}
+    <section class="card" aria-labelledby="keys-title">
+        <header class="card-head">
+            <h2 id="keys-title" class="card-title">{{ i18n.t("api_keys.keys_title") }} <span class="count">{{ rows.len() }}</span></h2>
+            <button type="button" class="card-action card-follow" aria-controls="add-key" aria-expanded="{{ add_open }}" data-composer-toggle>{% call ui::plus() %}{% endcall %}{{ i18n.t("api_keys.add") }}</button>
+        </header>
+        <form id="add-key" method="post" action="/admin/api-keys" class="card-add key-add{% if add_open %} is-open{% endif %}">
+            <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+            <div class="field">
+                <label for="key-name" class="field-label">{{ i18n.t("api_keys.name") }}</label>
+                <input id="key-name" name="name" type="text" class="input" required maxlength="{{ crate::models::API_KEY_NAME_MAX_CHARS }}" autocomplete="off" placeholder="{{ i18n.t("api_keys.name_placeholder") }}" value="{{ name }}">
+            </div>
+            <div class="card-add-foot">
+                <button type="button" class="text-action" aria-controls="add-key" data-composer-toggle>{{ i18n.t("common.cancel") }}</button>
+                <button type="submit" class="btn btn-primary">{{ i18n.t("api_keys.add_submit") }}</button>
+            </div>
+        </form>
+        {% if rows.is_empty() %}
+        <p class="groups-empty">{{ i18n.t("api_keys.empty") }}</p>
+        {% else %}
+        <ul class="admin-list">
+            {% for key in rows %}
+            <li class="admin-row key-row">
+                <div class="min-w-0">
+                    <p class="admin-row-name">{{ key.name }}</p>
+                    <p class="admin-row-sub"><code>{{ key.prefix }}…</code>&nbsp;<span aria-hidden="true">·</span> {{ key.made }}{% if key.creator_disabled %} ({{ i18n.t("api_keys.creator_disabled") }}){% endif %}</p>
+                    <p class="admin-row-sub">{{ i18n.t("api_keys.last_used") }} {% if let Some(used) = key.last_used %}{{ used }}{% else %}{{ i18n.t("admin.never") }}{% endif %}</p>
+                </div>
+                {# Revoking asks first, in a panel under its own button. #}
+                <div class="admin-row-actions">
+                    <details class="more-actions member-confirm" data-more-actions>
+                        <summary class="text-action text-action-delete" aria-label="{{ i18n.t("api_keys.revoke") }} {{ key.name }}">{{ i18n.t("api_keys.revoke") }}</summary>
+                        <form class="more-actions-menu confirm-panel" method="post" action="/admin/api-keys/{{ key.id }}/revoke" aria-label="{{ i18n.t("api_keys.confirm_revoke_aria") }}">
+                            <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                            <p class="confirm-panel-text">{{ i18n.t("common.question_open") }}{{ i18n.t("api_keys.revoke") }} <q>{{ key.name }}</q>{{ i18n.t("common.question_mark") }}</p>
+                            <p class="confirm-panel-desc">{{ i18n.t("api_keys.revoke_consequence") }}</p>
+                            <button type="submit" class="btn btn-danger confirm-panel-go">{{ i18n.t("api_keys.revoke") }}</button>
+                        </form>
+                    </details>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

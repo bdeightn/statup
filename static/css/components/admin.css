@@ -488,14 +488,27 @@
 
     }
 
-    /* A member's action asks first in a panel under the row's actions, as
-       wide as its question, so the row keeps its place. */
-    .member-row .admin-row-actions {
+    /* A member's action, or an API key's revocation, asks first in a panel
+       under the row's actions, as wide as its question, so the row keeps
+       its place. */
+    .member-row .admin-row-actions,
+    .key-row .admin-row-actions {
         position: relative;
     }
 
-    .member-row .member-confirm {
+    .member-row .member-confirm,
+    .key-row .member-confirm {
         position: static;
+    }
+
+    /* A key's one action stays on the right of its row. */
+    .key-row .admin-row-actions {
+        grid-column: auto;
+    }
+
+    /* A key's name is short: its field keeps to the width of a name. */
+    .key-add > .field {
+        max-width: 360px;
     }
 
     .member-confirm > .confirm-panel {
@@ -768,6 +781,15 @@
         border: 1px solid var(--line-strong);
         border-radius: 4px;
         user-select: all;
+    }
+
+    /* An API key is long: it wraps on a phone rather than run off it. */
+    .api-key-value {
+        display: inline-block;
+        max-width: 100%;
+        font-size: var(--text-base);
+        letter-spacing: 0;
+        overflow-wrap: anywhere;
     }
 
     .notice-stack > * + * {
