@@ -23,6 +23,8 @@ pub struct CreateEventInput {
     pub service_ids: Vec<i64>,
     pub follows_event_id: Option<i64>,
     pub author_id: i64,
+    /// The API key that publishes it, whose name signs it.
+    pub api_key_id: Option<i64>,
     /// When an incident's first update is due.
     pub next_update: Option<NextUpdate>,
 }

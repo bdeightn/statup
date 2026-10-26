@@ -3,7 +3,7 @@ title: Surveillance
 description: "Laisser Statup vérifier qu'un site web ou un serveur répond, et afficher de lui-même une panne quand il ne répond plus."
 ---
 
-Statup peut vérifier lui-même un service, chaque minute, depuis le serveur sur lequel il tourne : les adresses internes fonctionnent donc.
+Statup peut vérifier lui-même un service, chaque minute, depuis le serveur sur lequel il tourne : les adresses internes fonctionnent donc. Un outil de supervision que vous utilisez déjà peut aussi signaler les pannes, voir [Outils de supervision](monitoring-tools.md).
 
 ## Mettre en place une vérification
 

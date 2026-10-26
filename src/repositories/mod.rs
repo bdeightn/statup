@@ -1,5 +1,6 @@
 //! Data access: the SQL queries of each model.
 
+mod api_key_repo;
 mod dashboard_layout_repo;
 mod event_repo;
 mod event_review_repo;
@@ -19,6 +20,7 @@ mod subscriber_repo;
 mod subscription_request_repo;
 mod user_repo;
 
+pub use api_key_repo::*;
 pub use dashboard_layout_repo::*;
 pub use event_repo::*;
 pub use event_review_repo::*;

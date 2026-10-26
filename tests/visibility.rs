@@ -248,9 +248,17 @@ async fn seed_events(pool: &SqlitePool, admin: i64, open: i64, restricted: i64) 
         .await
         .unwrap()
         .unwrap();
-    EventService::post_update(pool, restricted_incident, UPDATE_TEXT, None, None, &author)
-        .await
-        .unwrap();
+    EventService::post_update(
+        pool,
+        restricted_incident,
+        UPDATE_TEXT,
+        None,
+        None,
+        &author,
+        None,
+    )
+    .await
+    .unwrap();
     EventService::post_update(
         pool,
         completed_maintenance,
@@ -258,6 +266,7 @@ async fn seed_events(pool: &SqlitePool, admin: i64, open: i64, restricted: i64) 
         Some(Lifecycle::Completed),
         None,
         &author,
+        None,
     )
     .await
     .unwrap();
@@ -293,6 +302,7 @@ fn incident(title: &str, author_id: i64, service_ids: Vec<i64>) -> CreateEventIn
         service_ids,
         follows_event_id: None,
         author_id,
+        api_key_id: None,
         next_update: None,
     }
 }

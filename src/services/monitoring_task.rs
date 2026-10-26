@@ -312,32 +312,59 @@ async fn apply(
     let told = match transition {
         Transition::Stay => return Ok(None),
         Transition::Down => {
-            ServiceRepository::mark_detected_down(pool, service_id, since).await?;
+            let told = declare_outage(pool, service_id, since).await?;
             checked
                 .record(pool, JournalKind::OutageDetected, failures, detailed)
                 .await;
-            // An incident being worked on already tells people.
-            EventRepository::status_drivers(pool, service_id)
-                .await?
-                .is_empty()
-                .then_some(Happening::ServiceDown)
+            told
         }
         Transition::Up => {
-            ServiceRepository::mark_detected_up(pool, service_id, now).await?;
+            let told = end_outage(pool, service_id, now).await?;
             checked
                 .record(pool, JournalKind::OutageEnded, failures, detailed)
                 .await;
-            Some(Happening::ServiceUp)
+            told
         }
     };
+    Ok(told)
+}
+
+/// Records that a service stopped answering at `since`, as the checks or a
+/// monitoring tool found, and shows it. What to tell, if anything: an
+/// incident being worked on already tells people.
+pub(crate) async fn declare_outage(
+    pool: &DbPool,
+    service_id: i64,
+    since: DateTime<Utc>,
+) -> Result<Option<Happening>, AppError> {
+    ServiceRepository::mark_detected_down(pool, service_id, since).await?;
+    let told = EventRepository::status_drivers(pool, service_id)
+        .await?
+        .is_empty()
+        .then_some(Happening::ServiceDown);
     ServiceService::recalculate_status(pool, service_id).await?;
     Ok(told)
 }
 
-/// Queues what the round found to tell, every message of the wave at one
-/// instant a little ahead: the delivery, which runs more often than the
-/// round, then finds the whole wave and sends it as one message.
-async fn announce(pool: &DbPool, changes: &[(Happening, i64)], now: DateTime<Utc>) {
+/// Records that a service answers again since `now`, and shows it. Nothing
+/// to tell when no outage was under way.
+pub(crate) async fn end_outage(
+    pool: &DbPool,
+    service_id: i64,
+    now: DateTime<Utc>,
+) -> Result<Option<Happening>, AppError> {
+    if !ServiceRepository::mark_detected_up(pool, service_id, now).await? {
+        return Ok(None);
+    }
+    ServiceService::recalculate_status(pool, service_id).await?;
+    Ok(Some(Happening::ServiceUp))
+}
+
+/// Queues what the round, or a monitoring tool, found to tell, every
+/// message of the wave at one instant a little ahead: the delivery, which
+/// runs more often than the round, then finds the whole wave and sends it
+/// as one message.
+pub(crate) async fn announce(pool: &DbPool, changes: &[(Happening, i64)], now: DateTime<Utc>) {
     // A lone change has nothing to wait for.
     let send_at = if changes.len() > 1 {
         now + WAVE_WAIT
@@ -564,6 +591,7 @@ mod tests {
             service_ids: vec![service_id],
             follows_event_id: None,
             author_id: author.id,
+            api_key_id: None,
             next_update: None,
         };
         EventRepository::create(pool, &input).await.unwrap().id
@@ -833,6 +861,7 @@ mod tests {
             service_ids: vec![explained],
             follows_event_id: None,
             author_id: lead.id,
+            api_key_id: None,
             next_update: None,
         };
         EventRepository::create(&pool, &incident).await.unwrap();

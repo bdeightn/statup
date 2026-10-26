@@ -115,6 +115,7 @@ mod tests {
             service_ids: Vec::new(),
             follows_event_id: None,
             author_id: author.id,
+            api_key_id: None,
             next_update: None,
         }
     }
@@ -167,7 +168,7 @@ mod tests {
             ("All good.", Some(Lifecycle::Resolved)),
         ];
         for (message, next) in steps {
-            EventService::post_update(&pool, event.id, message, next, None, &author)
+            EventService::post_update(&pool, event.id, message, next, None, &author, None)
                 .await
                 .unwrap();
         }
@@ -211,7 +212,7 @@ mod tests {
             .await
             .unwrap();
         let resolved = Some(Lifecycle::Resolved);
-        EventService::post_update(&pool, event.id, "Fixed.", resolved, None, &author)
+        EventService::post_update(&pool, event.id, "Fixed.", resolved, None, &author, None)
             .await
             .unwrap();
 
@@ -276,9 +277,17 @@ mod tests {
         let note = EventService::create(&pool, new_event(Kind::Publication, &author))
             .await
             .unwrap();
-        EventService::post_update(&pool, note.id, "Now open on Mondays.", None, None, &author)
-            .await
-            .unwrap();
+        EventService::post_update(
+            &pool,
+            note.id,
+            "Now open on Mondays.",
+            None,
+            None,
+            &author,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             queued(&pool).await,
@@ -406,7 +415,7 @@ mod tests {
             ("All good.", resolved),
         ];
         for (message, next) in steps {
-            EventService::post_update(&pool, event.id, message, next, None, &author)
+            EventService::post_update(&pool, event.id, message, next, None, &author, None)
                 .await
                 .unwrap();
         }

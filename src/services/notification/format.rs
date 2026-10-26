@@ -1,10 +1,11 @@
 //! A notice in the format of each tool: the JSON a destination takes.
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::{Mark, Notice, Origin, Subject};
+use crate::clock::rfc3339;
 use crate::models::{Category, ChannelKind, Event, Happening, Lifecycle, Severity, excerpt};
 
 /// Longest title of a Discord embed, in characters.
@@ -55,10 +56,6 @@ pub struct EventFacts {
 pub struct ServiceFacts {
     pub name: String,
     pub down_since: Option<String>,
-}
-
-fn rfc3339(at: DateTime<Utc>) -> String {
-    at.to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
 impl Facts {

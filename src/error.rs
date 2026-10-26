@@ -181,6 +181,15 @@ pub async fn render_error_pages(
     }
 }
 
+/// The translation key of the `AppError` a response answers with, for the
+/// API, which says it in JSON instead of a page.
+pub(crate) fn error_key(response: &Response) -> Option<&str> {
+    response
+        .extensions()
+        .get::<ErrorPayload>()
+        .map(|payload| payload.key.as_str())
+}
+
 fn error_to_render(response: &Response) -> Option<(StatusCode, String)> {
     if let Some(payload) = response.extensions().get::<ErrorPayload>() {
         return Some((payload.status, payload.key.clone()));

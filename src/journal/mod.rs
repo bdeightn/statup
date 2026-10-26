@@ -13,7 +13,7 @@ use std::ops::RangeInclusive;
 
 use crate::db::DbPool;
 use crate::error::AppError;
-use crate::models::{JournalKind, User, excerpt};
+use crate::models::{ApiKeyHolder, JournalKind, User, excerpt};
 use crate::repositories::{JournalRepository, NewJournalEntry, SettingsRepository};
 
 pub use layer::{JournalInbox, JournalLayer, journal_layer};
@@ -75,6 +75,13 @@ impl NewJournalEntry {
     pub fn by(mut self, member: &User) -> Self {
         self.actor_id = Some(member.id);
         self.actor_name = Some(member.display_name.clone());
+        self
+    }
+
+    /// An API key, named as it was at the time. No member did it.
+    #[must_use]
+    pub fn by_key(mut self, key: &ApiKeyHolder) -> Self {
+        self.actor_name = Some(key.name.clone());
         self
     }
 

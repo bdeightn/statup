@@ -39,8 +39,13 @@ const LATEST_UPDATE_COLUMNS: &str = "\
      (SELECT u.created_at FROM event_updates u WHERE u.event_id = e.id \
       ORDER BY u.created_at DESC, u.id DESC LIMIT 1) AS latest_update_at";
 
+/// An update is signed with the name of the API key that posted it, else
+/// with its author's.
 const UPDATE_COLUMNS: &str = "eu.id, eu.event_id, eu.message, eu.author_id, eu.created_at, \
-     u.display_name AS author_name";
+     COALESCE(k.name, u.display_name) AS author_name";
+
+const UPDATE_AUTHORS: &str = "INNER JOIN users u ON u.id = eu.author_id \
+     LEFT JOIN api_keys k ON k.id = eu.api_key_id";
 
 /// Longest search text and number of words kept from it.
 const MAX_QUERY_CHARS: usize = 200;
@@ -69,8 +74,8 @@ impl EventRepository {
         let event = sqlx::query_as::<_, Event>(
             "INSERT INTO events (kind, severity, planned, lifecycle, category, title, \
              description, planned_start, planned_end, started_at, follows_event_id, author_id, \
-             keeps_services_up, next_update_at, update_every_minutes, next_update_by) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+             api_key_id, keeps_services_up, next_update_at, update_every_minutes, next_update_by) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
         )
         .bind(input.kind)
         .bind(input.severity)
@@ -84,6 +89,7 @@ impl EventRepository {
         .bind(input.initial_started_at().map(clock::db))
         .bind(input.follows_event_id)
         .bind(input.author_id)
+        .bind(input.api_key_id)
         .bind(input.kind == Kind::Maintenance && input.keeps_services_up)
         .bind(input.next_update.map(|next| clock::db(next.at)))
         .bind(input.next_update.and_then(|next| next.every_minutes))
@@ -514,21 +520,38 @@ impl EventRepository {
         Ok(done.rows_affected() == 1)
     }
 
-    /// Returns the id of the update.
+    /// Returns the id of the update. `api_key_id` is the key that posts it,
+    /// which signs it.
     pub async fn add_update(
         pool: &DbPool,
         event_id: i64,
         html: &str,
         author_id: i64,
+        api_key_id: Option<i64>,
     ) -> Result<i64, sqlx::Error> {
         sqlx::query_scalar(
-            "INSERT INTO event_updates (event_id, message, author_id) VALUES (?, ?, ?) \
-             RETURNING id",
+            "INSERT INTO event_updates (event_id, message, author_id, api_key_id) \
+             VALUES (?, ?, ?, ?) RETURNING id",
         )
         .bind(event_id)
         .bind(html)
         .bind(author_id)
+        .bind(api_key_id)
         .fetch_one(pool)
+        .await
+    }
+
+    /// The name that signs an event: the API key that published it, else
+    /// its author. `None` when no such event exists.
+    pub async fn author_name(pool: &DbPool, event_id: i64) -> Result<Option<String>, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT COALESCE(k.name, u.display_name) FROM events e \
+             INNER JOIN users u ON u.id = e.author_id \
+             LEFT JOIN api_keys k ON k.id = e.api_key_id \
+             WHERE e.id = ?",
+        )
+        .bind(event_id)
+        .fetch_optional(pool)
         .await
     }
 
@@ -538,8 +561,7 @@ impl EventRepository {
         update_id: i64,
     ) -> Result<Option<EventUpdateWithAuthor>, sqlx::Error> {
         sqlx::query_as::<_, EventUpdateWithAuthor>(&format!(
-            "SELECT {UPDATE_COLUMNS} FROM event_updates eu \
-             INNER JOIN users u ON u.id = eu.author_id \
+            "SELECT {UPDATE_COLUMNS} FROM event_updates eu {UPDATE_AUTHORS} \
              WHERE eu.event_id = ? AND eu.id = ?"
         ))
         .bind(event_id)
@@ -573,8 +595,8 @@ impl EventRepository {
             return Ok(Vec::new());
         }
         let mut qb = QueryBuilder::<Sqlite>::new(format!(
-            "SELECT {UPDATE_COLUMNS} FROM event_updates eu \
-             INNER JOIN users u ON u.id = eu.author_id WHERE eu.event_id IN ("
+            "SELECT {UPDATE_COLUMNS} FROM event_updates eu {UPDATE_AUTHORS} \
+             WHERE eu.event_id IN ("
         ));
         let mut ids = qb.separated(", ");
         for id in event_ids {
@@ -806,6 +828,7 @@ mod tests {
             service_ids,
             follows_event_id: None,
             author_id,
+            api_key_id: None,
             next_update: None,
         }
     }
@@ -830,6 +853,7 @@ mod tests {
             service_ids,
             follows_event_id: None,
             author_id,
+            api_key_id: None,
             next_update: None,
         }
     }
@@ -1124,6 +1148,55 @@ mod tests {
         assert!(reopened.ended_at.is_none());
     }
 
+    /// What a key publishes is signed with its name; what a member writes,
+    /// with theirs.
+    #[tokio::test]
+    async fn a_key_signs_what_it_publishes() {
+        let pool = test_pool().await;
+        let (uid, sid) = seed_user_and_service(&pool).await;
+        let key =
+            crate::repositories::ApiKeyRepository::create(&pool, "Zabbix", "stp_a", "hash", uid)
+                .await
+                .unwrap();
+        let by_key = EventRepository::create(
+            &pool,
+            &CreateEventInput {
+                api_key_id: Some(key),
+                ..incident("Mail down", uid, vec![sid])
+            },
+        )
+        .await
+        .unwrap();
+        let by_member = EventRepository::create(&pool, &incident("VPN down", uid, vec![sid]))
+            .await
+            .unwrap();
+        assert_eq!(by_key.author_id, uid, "the key's creator stays the author");
+        let signed = |id| EventRepository::author_name(&pool, id);
+        assert_eq!(signed(by_key.id).await.unwrap().as_deref(), Some("Zabbix"));
+        assert_eq!(
+            signed(by_member.id).await.unwrap().as_deref(),
+            Some("Tester")
+        );
+        assert_eq!(signed(by_member.id + 100).await.unwrap(), None);
+
+        EventRepository::add_update(&pool, by_key.id, "<p>member</p>", uid, None)
+            .await
+            .unwrap();
+        let posted = EventRepository::add_update(&pool, by_key.id, "<p>key</p>", uid, Some(key))
+            .await
+            .unwrap();
+        let updates = EventRepository::list_updates(&pool, by_key.id)
+            .await
+            .unwrap();
+        let authors: Vec<&str> = updates.iter().map(|u| u.author_name.as_str()).collect();
+        assert_eq!(authors, ["Zabbix", "Tester"]);
+        let found = EventRepository::find_update(&pool, by_key.id, posted)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(found.author_name, "Zabbix");
+    }
+
     #[tokio::test]
     async fn updates_list_newest_first() {
         let pool = test_pool().await;
@@ -1131,10 +1204,10 @@ mod tests {
         let event = EventRepository::create(&pool, &incident("Bug", uid, vec![sid]))
             .await
             .unwrap();
-        EventRepository::add_update(&pool, event.id, "<p>first</p>", uid)
+        EventRepository::add_update(&pool, event.id, "<p>first</p>", uid, None)
             .await
             .unwrap();
-        EventRepository::add_update(&pool, event.id, "<p>second</p>", uid)
+        EventRepository::add_update(&pool, event.id, "<p>second</p>", uid, None)
             .await
             .unwrap();
         let updates = EventRepository::list_updates(&pool, event.id)

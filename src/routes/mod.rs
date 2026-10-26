@@ -2,9 +2,11 @@
 //! `OptionalUser` (public mode or signed in), `AuthUser`, `RequirePublisher`
 //! or `RequireAdmin`. Every dynamic route goes through the rate limit, the
 //! error pages, the CSRF check and the signed-in user lookup; files and the
-//! health check skip them.
+//! health check skip them. The API, under `/api`, has its own guards.
 
 mod admin;
+mod api;
+mod api_keys;
 mod audience;
 mod auth;
 mod checks;
@@ -91,6 +93,7 @@ pub fn create_router(state: AppState, rate_limit: &RateLimit) -> Router {
     let app = dynamic_routes(&state, rate_limit)
         .layer(overriding(CONTENT_SECURITY_POLICY, APP_CSP))
         .merge(files)
+        .nest("/api", api::api_routes(rate_limit))
         .layer(access_log())
         .route("/health", get(health::check));
     with_security_headers(app, serves_https)
@@ -276,6 +279,15 @@ fn admin_routes() -> Router<AppState> {
         .route("/admin/journal", get(journal::page))
         .route("/admin/journal/export", get(journal::export))
         .route("/admin/journal/settings", post(journal::save_settings))
+        .route(
+            "/admin/api-keys",
+            get(api_keys::list).post(api_keys::create),
+        )
+        .route(
+            "/admin/api-keys/{id}/regenerate",
+            post(api_keys::regenerate),
+        )
+        .route("/admin/api-keys/{id}/revoke", post(api_keys::revoke))
         .route("/admin/users", get(admin::users_list))
         .route("/admin/users/new", post(admin::add_member))
         .route("/admin/users/{id}/role", post(admin::update_role))

@@ -3,7 +3,7 @@ title: Monitoring
 description: "Let Statup check that a website or a server answers, and show an outage on its own when it stops."
 ---
 
-A service can be checked by Statup itself, every minute, from the server it runs on, so internal addresses work.
+A service can be checked by Statup itself, every minute, from the server it runs on, so internal addresses work. A monitoring tool you already run can report outages instead, see [Monitoring tools](monitoring-tools.md).
 
 ## Set a check
 

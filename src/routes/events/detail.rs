@@ -224,7 +224,7 @@ async fn load_view(
     let updates = EventRepository::list_updates(&state.pool, id).await?;
     let last_posted = updates.iter().map(|update| update.created_at).max();
     let author = match user {
-        Some(_) => Some(author_name(state, ews.event.author_id, i18n).await?),
+        Some(_) => Some(author_name(state, ews.event.id, i18n).await?),
         None => None,
     };
     let follows = load_follows(state, &ews.event, &viewer.scope, i18n).await?;
@@ -285,15 +285,11 @@ async fn load_review(
     Ok(review.map(|review| ReviewView::new(review, user, i18n)))
 }
 
-async fn author_name(state: &AppState, author_id: i64, i18n: &I18n) -> Result<String, AppError> {
-    Ok(
-        crate::repositories::UserRepository::find_by_id(&state.pool, author_id)
-            .await?
-            .map_or_else(
-                || i18n.t("date.unknown_author").to_string(),
-                |u| u.display_name,
-            ),
-    )
+/// The member who published the event, or the API key that did.
+async fn author_name(state: &AppState, event_id: i64, i18n: &I18n) -> Result<String, AppError> {
+    Ok(EventRepository::author_name(&state.pool, event_id)
+        .await?
+        .unwrap_or_else(|| i18n.t("date.unknown_author").to_string()))
 }
 
 fn state_line(event: &Event, last_posted: Option<DateTime<Utc>>, i18n: &I18n) -> Option<StateLine> {

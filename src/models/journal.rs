@@ -62,6 +62,12 @@ pub enum JournalKind {
     ChannelDeleted,
     /// A member tried an alert channel.
     ChannelTested,
+    /// An administrator made an API key.
+    ApiKeyCreated,
+    /// An administrator gave an API key a new secret.
+    ApiKeyRegenerated,
+    /// An administrator revoked an API key.
+    ApiKeyRevoked,
     /// A member added someone to the team.
     MemberAdded,
     /// A member changed the role of someone.
@@ -148,6 +154,8 @@ pub enum JournalKind {
     CheckFailed,
     /// Every service failed at once: the round was ignored.
     MonitoringRoundSkipped,
+    /// A monitoring tool reported on a service Statup cannot act on.
+    ReportIgnored,
     /// A message left for an alert channel.
     AlertSent,
     /// A message did not leave and will be tried again.
@@ -226,6 +234,9 @@ impl JournalKind {
             Self::ChannelUpdated => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Alert channel updated", "journal.channel_updated"),
             Self::ChannelDeleted => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Alert channel deleted", "journal.channel_deleted"),
             Self::ChannelTested => row(Cat::Members, false, Level::INFO, Tone::Neutral, "Alert channel tested", "journal.channel_tested"),
+            Self::ApiKeyCreated => row(Cat::Members, true, Level::INFO, Tone::Neutral, "API key created", "journal.api_key_created"),
+            Self::ApiKeyRegenerated => row(Cat::Members, true, Level::INFO, Tone::Neutral, "API key regenerated", "journal.api_key_regenerated"),
+            Self::ApiKeyRevoked => row(Cat::Members, true, Level::INFO, Tone::Neutral, "API key revoked", "journal.api_key_revoked"),
             Self::MemberAdded => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Member added", "journal.member_added"),
             Self::MemberRoleChanged => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Member role changed", "journal.member_role_changed"),
             Self::MemberDisabled => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Member disabled", "journal.member_disabled"),
@@ -269,6 +280,7 @@ impl JournalKind {
             Self::OutageEnded => row(Cat::Monitoring, true, Level::INFO, Tone::Ok, "Service back up", "journal.outage_ended"),
             Self::CheckFailed => row(Cat::Monitoring, false, Level::DEBUG, Tone::Minor, "Check failed", "journal.check_failed"),
             Self::MonitoringRoundSkipped => row(Cat::Monitoring, true, Level::WARN, Tone::Minor, "Monitoring round ignored: every service failed at once", "journal.monitoring_round_skipped"),
+            Self::ReportIgnored => row(Cat::Monitoring, true, Level::WARN, Tone::Minor, "Report from a monitoring tool ignored", "journal.report_ignored"),
             Self::AlertSent => row(Cat::Alerts, false, Level::DEBUG, Tone::Neutral, "Alert sent", "journal.alert_sent"),
             Self::AlertRetrying => row(Cat::Alerts, false, Level::WARN, Tone::Minor, "Alert not sent, will try again", "journal.alert_retrying"),
             Self::AlertAbandoned => row(Cat::Alerts, true, Level::WARN, Tone::Crit, "Alert given up", "journal.alert_abandoned"),

@@ -14,7 +14,7 @@ use crate::middleware::headers::no_store;
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
 use crate::models::{JournalKind, Role, User, check_display_name};
 use crate::repositories::{
-    GroupRepository, NewJournalEntry, NotificationRepository, UserRepository,
+    ApiKeyRepository, GroupRepository, NewJournalEntry, NotificationRepository, UserRepository,
 };
 use crate::services::{AuthService, CURRENT_VERSION, LogoService, NewerRelease};
 use crate::state::AppState;
@@ -36,6 +36,7 @@ struct SettingsPageTemplate {
     users_count: i64,
     admins_count: i64,
     notifications_count: i64,
+    api_keys_count: i64,
     /// What the journal captures and for how long.
     journal_label: String,
     /// A newer published version, once the daily check finds one.
@@ -76,6 +77,11 @@ impl SettingsPageTemplate {
     fn notifications_label(&self) -> String {
         let count = usize::try_from(self.notifications_count).unwrap_or(0);
         self.i18n.plural("notifications.destinations", count)
+    }
+
+    fn api_keys_label(&self) -> String {
+        let count = usize::try_from(self.api_keys_count).unwrap_or(0);
+        self.i18n.plural("api_keys.count", count)
     }
 }
 
@@ -300,6 +306,7 @@ async fn render_settings(
         users_count: UserRepository::count_all(&state.pool).await?,
         admins_count: UserRepository::count_admins(&state.pool).await?,
         notifications_count: NotificationRepository::count_channels(&state.pool).await?,
+        api_keys_count: ApiKeyRepository::count_in_use(&state.pool).await?,
         journal_label: super::journal::tile_label(state, &i18n).await,
         newer: state.update.newer(),
         i18n,

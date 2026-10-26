@@ -27,6 +27,7 @@ impl EventService {
     pub async fn create(pool: &DbPool, input: CreateEventInput) -> Result<Event, AppError> {
         if let Some(key) = event_field_error(&input.title)
             .or_else(|| severity_error(input.kind, input.severity))
+            .or_else(|| opening_step_error(input.kind, input.opening_step))
             .or_else(|| began_error(input.started_at))
             .or_else(|| {
                 let start = if input.planned {
@@ -96,6 +97,7 @@ impl EventService {
 
     /// Posts a message, moves the event to `next`, or both at once. An
     /// incident's next update becomes `next_update`, none once it is over.
+    /// A message posted through the API is signed with `api_key_id`.
     pub async fn post_update(
         pool: &DbPool,
         id: i64,
@@ -103,6 +105,7 @@ impl EventService {
         next: Option<Lifecycle>,
         next_update: Option<NextUpdate>,
         author: &User,
+        api_key_id: Option<i64>,
     ) -> Result<(), AppError> {
         let event = find(pool, id).await?;
         check_modification_allowed(&event, author.role)?;
@@ -114,7 +117,7 @@ impl EventService {
             None
         } else {
             let html = sanitize_markdown(message);
-            Some(EventRepository::add_update(pool, id, &html, author.id).await?)
+            Some(EventRepository::add_update(pool, id, &html, author.id, api_key_id).await?)
         };
         if let Some(next) = next {
             let current = event
@@ -305,6 +308,12 @@ fn began_error(started_at: Option<DateTime<Utc>>) -> Option<&'static str> {
 
 fn severity_error(kind: Kind, severity: Option<Severity>) -> Option<&'static str> {
     (kind == Kind::Incident && severity.is_none()).then_some("validation.severity_required")
+}
+
+/// An incident opens at a step its team may already be on, never at its end.
+fn opening_step_error(kind: Kind, step: Option<Lifecycle>) -> Option<&'static str> {
+    let opens = step.is_none_or(Lifecycle::opens_incident);
+    (kind == Kind::Incident && !opens).then_some("validation.invalid_transition")
 }
 
 /// An announced maintenance needs a start; any maintenance ends after it

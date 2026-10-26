@@ -1,5 +1,6 @@
 //! Business logic layer: authentication, events, services, icons, templates.
 
+mod api_key_service;
 mod auth_service;
 mod dashboard_layout_service;
 mod event_service;
@@ -20,6 +21,7 @@ mod subscription_service;
 mod update_check;
 mod visibility;
 
+pub use api_key_service::*;
 pub use auth_service::*;
 pub use dashboard_layout_service::*;
 pub use event_service::*;
@@ -30,6 +32,7 @@ pub use logo_service::*;
 pub use member_notices::*;
 pub use monitoring::*;
 pub use monitoring_task::{LastCheck, LastChecks, MonitorState, run_round, spawn_monitoring};
+pub(crate) use monitoring_task::{announce, declare_outage, end_outage};
 pub use notification::*;
 pub use password_reset_service::*;
 pub use probe::{CHECK_TIMEOUT, Finding, Prober, Probes, Report};

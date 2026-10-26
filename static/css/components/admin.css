@@ -488,14 +488,27 @@
 
     }
 
-    /* A member's action asks first in a panel under the row's actions, as
-       wide as its question, so the row keeps its place. */
-    .member-row .admin-row-actions {
+    /* A member's action, or an API key's revocation, asks first in a panel
+       under the row's actions, as wide as its question, so the row keeps
+       its place. */
+    .member-row .admin-row-actions,
+    .key-row .admin-row-actions {
         position: relative;
     }
 
-    .member-row .member-confirm {
+    .member-row .member-confirm,
+    .key-row .member-confirm {
         position: static;
+    }
+
+    /* A key's one action stays on the right of its row. */
+    .key-row .admin-row-actions {
+        grid-column: auto;
+    }
+
+    /* A key's name is short: its field keeps to the width of a name. */
+    .key-add > .field {
+        max-width: 360px;
     }
 
     .member-confirm > .confirm-panel {
@@ -768,6 +781,25 @@
         border: 1px solid var(--line-strong);
         border-radius: 4px;
         user-select: all;
+    }
+
+    /* A key just made: its masked field as wide as the key, its buttons
+       beside it, under it on a phone. */
+    .api-key-notice > div {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .api-key-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .api-key-value {
+        flex: 1 1 280px;
+        max-width: 440px;
     }
 
     .notice-stack > * + * {

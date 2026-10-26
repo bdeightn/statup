@@ -133,6 +133,12 @@ fn detail_facts(kind: JournalKind, detail: &str, i18n: &I18n) -> Vec<String> {
         }
         K::CheckFailed | K::OutageDetected | K::OutageEnded => check_facts(detail, i18n),
         K::MonitoringRoundSkipped => round_skipped(detail, i18n),
+        K::ReportIgnored => match detail {
+            "unknown service" => said("journal.fact_unknown_service"),
+            "checked by Statup" => said("journal.fact_checked_by_statup"),
+            "under maintenance" => said("journal.fact_under_maintenance"),
+            other => vec![other.to_string()],
+        },
         _ => vec![detail.to_string()],
     }
 }

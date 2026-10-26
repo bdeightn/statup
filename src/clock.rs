@@ -6,7 +6,7 @@
 
 use std::sync::{OnceLock, PoisonError, RwLock};
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Offset, SecondsFormat, TimeZone, Utc};
 use chrono_tz::Tz;
 
 /// The zone chosen in the settings, once there is one.
@@ -65,6 +65,12 @@ pub fn zone_names() -> Vec<&'static str> {
 /// `datetime()` writes, so stored values compare correctly as text.
 pub fn db(dt: DateTime<Utc>) -> String {
     dt.format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+/// A timestamp as tools read it, in UTC to the second:
+/// `2026-10-07T09:00:00Z`. The webhook body and the API use it.
+pub fn rfc3339(dt: DateTime<Utc>) -> String {
+    dt.to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
 pub fn local(dt: &DateTime<Utc>) -> DateTime<Tz> {
