@@ -1,5 +1,6 @@
 //! Domain models: users, services, events, icons and templates.
 
+mod api_key;
 mod builtin_icon;
 mod event;
 mod event_template;
@@ -14,6 +15,7 @@ mod subscriber;
 mod user;
 mod visibility;
 
+pub use api_key::*;
 pub use builtin_icon::*;
 pub use event::*;
 pub use event_template::*;

@@ -42,6 +42,7 @@ askama = { version = "0.16", features = ["serde_json"] }
 # Authentication
 argon2 = "0.5"
 subtle = "2"
+sha2 = "0.10"
 tower-sessions = "0.14"
 tower-sessions-sqlx-store = { version = "0.15", features = ["sqlite"] }
 rmp-serde = "1"
