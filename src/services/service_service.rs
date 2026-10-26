@@ -6,7 +6,8 @@ use crate::error::AppError;
 use crate::models::{CheckKind, Service, ServiceCheck, ServiceStatus, derive_status};
 use crate::repositories::{EventRepository, ServiceRepository, SettingsRepository};
 
-const MAX_NAME_CHARS: usize = 100;
+/// Longest service name, in characters.
+pub const SERVICE_NAME_MAX_CHARS: usize = 100;
 const MAX_DESCRIPTION_CHARS: usize = 500;
 const MAX_CHECK_TARGET_CHARS: usize = 2000;
 const PROBLEMS_FIRST_SETTING: &str = "services_problems_first";
@@ -166,7 +167,7 @@ pub fn service_field_error(name: &str, description: Option<&str>) -> Option<&'st
     if name.is_empty() {
         return Some("validation.service_name_required");
     }
-    if name.chars().count() > MAX_NAME_CHARS {
+    if name.chars().count() > SERVICE_NAME_MAX_CHARS {
         return Some("validation.service_name_too_long");
     }
     if name.chars().any(char::is_control) {

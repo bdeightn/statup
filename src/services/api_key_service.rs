@@ -47,18 +47,11 @@ impl ApiKeyService {
     /// A new secret for a key in use, under the same name: the old secret
     /// stops working at once.
     pub async fn regenerate(pool: &DbPool, id: i64) -> Result<NewApiKey, AppError> {
-        let current = ApiKeyRepository::find_in_use(pool, id)
+        let key = new_key();
+        let name = ApiKeyRepository::replace_secret(pool, id, &key[..SHOWN_LENGTH], &hash(&key))
             .await?
             .ok_or(AppError::NotFound)?;
-        let key = new_key();
-        if !ApiKeyRepository::replace_secret(pool, id, &key[..SHOWN_LENGTH], &hash(&key)).await? {
-            return Err(AppError::NotFound);
-        }
-        Ok(NewApiKey {
-            id,
-            name: current.name,
-            key,
-        })
+        Ok(NewApiKey { id, name, key })
     }
 
     /// The key in use that a request presents. A malformed key is refused

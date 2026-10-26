@@ -26,25 +26,13 @@ use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{ApiKeyHolder, Happening, JournalKind, Service, excerpt};
 use crate::repositories::{EventRepository, NewJournalEntry, ServiceRepository};
-use crate::services::{announce, declare_outage, end_outage};
+use crate::services::{SERVICE_NAME_MAX_CHARS, announce, declare_outage, end_outage};
 
-/// Longest service name a Journal line keeps from a report, as long as a
-/// service's own.
-const MAX_NAME_CHARS: usize = 100;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 enum Reported {
     Down,
     Up,
-}
-
-impl Reported {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Down => "down",
-            Self::Up => "up",
-        }
-    }
 }
 
 /// What a tool says about one service, named as the tool names it.
@@ -72,7 +60,7 @@ struct Reading {
 #[derive(Serialize)]
 struct Applied {
     service: String,
-    state: &'static str,
+    state: Reported,
 }
 
 #[derive(Serialize)]
@@ -111,23 +99,18 @@ impl Refusal {
 
     /// What the Statup format answers, so a script sees it failed.
     fn answer(self) -> Response {
-        match self {
-            Self::UnknownService => refusal(
-                StatusCode::NOT_FOUND,
-                self.code(),
-                "No service has this name or slug.",
-            ),
-            Self::CheckedByStatup => refusal(
+        let (status, message) = match self {
+            Self::UnknownService => (StatusCode::NOT_FOUND, "No service has this name or slug."),
+            Self::CheckedByStatup => (
                 StatusCode::CONFLICT,
-                self.code(),
                 "Statup checks this service itself: its own checks decide its state.",
             ),
-            Self::UnderMaintenance => refusal(
+            Self::UnderMaintenance => (
                 StatusCode::CONFLICT,
-                self.code(),
                 "A maintenance under way covers this service.",
             ),
-        }
+        };
+        refusal(status, self.code(), message)
     }
 }
 
@@ -301,23 +284,18 @@ impl<'a> Applying<'a> {
                 return Ok(Some(refusal));
             }
         };
-        let told = match signal.state {
+        // `None` when another report made the change since this one started.
+        let applied = match signal.state {
             Reported::Down => match declare_outage(self.pool, service_id, self.now).await {
-                Ok(told) => told,
-                Err(e) if already_open(&e) => {
-                    self.ignore(signal.service, "unchanged");
-                    return Ok(None);
-                }
+                Ok(told) => Some(told),
+                Err(e) if already_open(&e) => None,
                 Err(e) => return Err(e),
             },
-            Reported::Up => {
-                let Some(told) = end_outage(self.pool, service_id, self.now).await? else {
-                    // Another report ended it since this one started.
-                    self.ignore(signal.service, "unchanged");
-                    return Ok(None);
-                };
-                Some(told)
-            }
+            Reported::Up => end_outage(self.pool, service_id, self.now).await?.map(Some),
+        };
+        let Some(told) = applied else {
+            self.ignore(signal.service, "unchanged");
+            return Ok(None);
         };
         self.changed.insert(service_id);
         self.changes
@@ -325,7 +303,7 @@ impl<'a> Applying<'a> {
         self.record(&name, &signal).await;
         self.outcome.applied.push(Applied {
             service: name,
-            state: signal.state.as_str(),
+            state: signal.state,
         });
         Ok(None)
     }
@@ -365,7 +343,7 @@ impl<'a> Applying<'a> {
     async fn refuse(&mut self, service: String, refusal: Refusal) {
         NewJournalEntry::new(JournalKind::ReportIgnored)
             .by_key(self.key)
-            .about(excerpt(service.trim(), MAX_NAME_CHARS))
+            .about(excerpt(service.trim(), SERVICE_NAME_MAX_CHARS))
             .with_detail(refusal.words())
             .record(self.pool)
             .await;

@@ -27,6 +27,7 @@ impl EventService {
     pub async fn create(pool: &DbPool, input: CreateEventInput) -> Result<Event, AppError> {
         if let Some(key) = event_field_error(&input.title)
             .or_else(|| severity_error(input.kind, input.severity))
+            .or_else(|| opening_step_error(input.kind, input.opening_step))
             .or_else(|| began_error(input.started_at))
             .or_else(|| {
                 let start = if input.planned {
@@ -307,6 +308,12 @@ fn began_error(started_at: Option<DateTime<Utc>>) -> Option<&'static str> {
 
 fn severity_error(kind: Kind, severity: Option<Severity>) -> Option<&'static str> {
     (kind == Kind::Incident && severity.is_none()).then_some("validation.severity_required")
+}
+
+/// An incident opens at a step its team may already be on, never at its end.
+fn opening_step_error(kind: Kind, step: Option<Lifecycle>) -> Option<&'static str> {
+    let opens = step.is_none_or(Lifecycle::opens_incident);
+    (kind == Kind::Incident && !opens).then_some("validation.invalid_transition")
 }
 
 /// An announced maintenance needs a start; any maintenance ends after it

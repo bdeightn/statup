@@ -10,7 +10,7 @@ use crate::models::{ApiKey, ApiKeyHolder};
 pub struct ApiKeyRepository;
 
 /// A key with the name and state of the administrator who made it.
-const KEY_COLUMNS: &str = "SELECT k.id, k.name, k.prefix, k.created_by, \
+const KEY_COLUMNS: &str = "SELECT k.id, k.name, k.prefix, \
      u.display_name AS creator_name, u.is_active AS creator_active, \
      k.created_at, k.last_used_at \
      FROM api_keys k JOIN users u ON u.id = k.created_by";
@@ -59,15 +59,6 @@ impl ApiKeyRepository {
         .await
     }
 
-    pub async fn find_in_use(pool: &DbPool, id: i64) -> Result<Option<ApiKey>, sqlx::Error> {
-        sqlx::query_as::<_, ApiKey>(&format!(
-            "{KEY_COLUMNS} WHERE k.id = ? AND k.revoked_at IS NULL"
-        ))
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-    }
-
     pub async fn count_in_use(pool: &DbPool) -> Result<i64, sqlx::Error> {
         sqlx::query_scalar("SELECT COUNT(*) FROM api_keys WHERE revoked_at IS NULL")
             .fetch_one(pool)
@@ -88,37 +79,41 @@ impl ApiKeyRepository {
         .await
     }
 
-    /// Returns false when no key in use has this id. The row stays: its
-    /// name still signs what the key published.
-    pub async fn revoke(pool: &DbPool, id: i64, now: DateTime<Utc>) -> Result<bool, sqlx::Error> {
-        let result =
-            sqlx::query("UPDATE api_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
-                .bind(clock::db(now))
-                .bind(id)
-                .execute(pool)
-                .await?;
-        Ok(result.rows_affected() == 1)
+    /// The name of the key revoked, `None` when no key in use has this id.
+    /// The row stays: its name still signs what the key published.
+    pub async fn revoke(
+        pool: &DbPool,
+        id: i64,
+        now: DateTime<Utc>,
+    ) -> Result<Option<String>, sqlx::Error> {
+        sqlx::query_scalar(
+            "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL \
+             RETURNING name",
+        )
+        .bind(clock::db(now))
+        .bind(id)
+        .fetch_optional(pool)
+        .await
     }
 
     /// Gives a key in use a new secret, which stops the old one at once.
-    /// Returns false when no key in use has this id. The key keeps its row,
-    /// so its name still signs what it published before.
+    /// Returns its name, `None` when no key in use has this id. The key
+    /// keeps its row, so its name still signs what it published before.
     pub async fn replace_secret(
         pool: &DbPool,
         id: i64,
         prefix: &str,
         secret_hash: &str,
-    ) -> Result<bool, sqlx::Error> {
-        let result = sqlx::query(
+    ) -> Result<Option<String>, sqlx::Error> {
+        sqlx::query_scalar(
             "UPDATE api_keys SET prefix = ?, secret_hash = ?, last_used_at = NULL \
-             WHERE id = ? AND revoked_at IS NULL",
+             WHERE id = ? AND revoked_at IS NULL RETURNING name",
         )
         .bind(prefix)
         .bind(secret_hash)
         .bind(id)
-        .execute(pool)
-        .await?;
-        Ok(result.rows_affected() == 1)
+        .fetch_optional(pool)
+        .await
     }
 
     /// Records a use of the key, unless one was recorded in the last minute.
@@ -181,8 +176,14 @@ mod tests {
                 .is_none()
         );
 
-        assert!(ApiKeyRepository::revoke(&pool, id, at(0)).await.unwrap());
-        assert!(!ApiKeyRepository::revoke(&pool, id, at(1)).await.unwrap());
+        assert_eq!(
+            ApiKeyRepository::revoke(&pool, id, at(0)).await.unwrap(),
+            Some("Zabbix".to_string())
+        );
+        assert_eq!(
+            ApiKeyRepository::revoke(&pool, id, at(1)).await.unwrap(),
+            None
+        );
         assert!(
             ApiKeyRepository::find_by_hash(&pool, "hash-1")
                 .await
@@ -253,10 +254,6 @@ mod tests {
         assert_eq!(keys[0].creator_name, "Karl");
         assert!(!keys[0].creator_active);
         assert_eq!(keys[0].prefix, "stp_Ab3x");
-        assert_eq!(
-            ApiKeyRepository::find_in_use(&pool, id).await.unwrap(),
-            Some(keys[0].clone())
-        );
         // A disabled creator does not stop the key.
         assert!(
             ApiKeyRepository::find_by_hash(&pool, "hash-1")

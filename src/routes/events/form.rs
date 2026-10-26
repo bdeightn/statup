@@ -115,7 +115,6 @@ impl EventInput {
         (kind == Kind::Incident)
             .then_some(self.opening_step)
             .flatten()
-            .filter(|step| step.opens_incident())
     }
 }
 

@@ -202,9 +202,7 @@ pub(super) async fn show(
 /// One event with its updates, as reading it and every write answer.
 async fn detail(pool: &DbPool, id: i64) -> Result<EventDetail, AppError> {
     let EventWithServices { event, services } =
-        EventRepository::find_with_services(pool, id, &Scope::All)
-            .await?
-            .ok_or(AppError::NotFound)?;
+        EventService::find_with_services(pool, id, &Scope::All).await?;
     let updates = EventRepository::list_updates(pool, id).await?;
     let services = services.into_iter().map(ServiceRef::from).collect();
     Ok(EventDetail {
@@ -249,9 +247,6 @@ impl NewEvent {
         let incident = kind == Kind::Incident;
         let maintenance = kind == Kind::Maintenance;
         let planned = maintenance && self.planned_start.is_some();
-        if incident && self.state.is_some_and(|step| !step.opens_incident()) {
-            return Err(AppError::validation("validation.invalid_transition"));
-        }
         let next_update = if incident {
             read_next_update(&self.next_update)?
         } else {

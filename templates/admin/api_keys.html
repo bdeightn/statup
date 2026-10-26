@@ -20,10 +20,10 @@
     {# The key is shown once, masked, in the answer to the form, and kept
        nowhere but as a hash. Copying never needs it shown. The page then
        takes the list's address, so a reload does not send the form again. #}
-    {% if let Some(made) = created %}
+    {% if let Some(made) = page.created %}
     <div class="form-notice notice-stack api-key-notice mb-5" data-replace-url="/admin/api-keys" role="status">
         <div>
-            <p>{% if regenerated %}{{ i18n.t("api_keys.regenerated_for") }}{% else %}{{ i18n.t("api_keys.created_for") }}{% endif %} <strong>{{ made.name }}</strong></p>
+            <p>{% if page.regenerated %}{{ i18n.t("api_keys.regenerated_for") }}{% else %}{{ i18n.t("api_keys.created_for") }}{% endif %} <strong>{{ made.name }}</strong></p>
             <div class="api-key-row">
                 <input id="api-key" class="input api-key-value" type="password" value="{{ made.key }}" readonly autocomplete="off" spellcheck="false" aria-label="{{ i18n.t("api_keys.key_label") }}">
                 <button type="button" class="btn btn-ghost" aria-controls="api-key" data-key-reveal data-hide-label="{{ i18n.t("api_keys.hide") }}" hidden>{{ i18n.t("api_keys.show") }}</button>
@@ -32,11 +32,11 @@
             <p class="text-muted">{{ i18n.t("api_keys.created_hint") }} <a class="link" href="{{ crate::docs_url(i18n.locale(), crate::Doc::Api) }}">{{ i18n.t("api_keys.docs_link") }}</a></p>
         </div>
     </div>
-    {% else if revoked %}
+    {% else if page.revoked %}
     <div class="form-notice mb-5" role="status"><p>{{ i18n.t("api_keys.revoked_notice") }}</p></div>
     {% endif %}
 
-    {% if let Some(message) = error %}
+    {% if let Some(message) = page.error %}
     <div class="form-error mb-5" role="alert"><p>{{ message }}</p></div>
     {% endif %}
 
@@ -45,13 +45,13 @@
     <section class="card" aria-labelledby="keys-title">
         <header class="card-head">
             <h2 id="keys-title" class="card-title">{{ i18n.t("api_keys.keys_title") }} <span class="count">{{ rows.len() }}</span></h2>
-            <button type="button" class="card-action card-follow" aria-controls="add-key" aria-expanded="{{ add_open }}" data-composer-toggle>{% call ui::plus() %}{% endcall %}{{ i18n.t("api_keys.add") }}</button>
+            <button type="button" class="card-action card-follow" aria-controls="add-key" aria-expanded="{{ add_open() }}" data-composer-toggle>{% call ui::plus() %}{% endcall %}{{ i18n.t("api_keys.add") }}</button>
         </header>
-        <form id="add-key" method="post" action="/admin/api-keys" class="card-add key-add{% if add_open %} is-open{% endif %}">
+        <form id="add-key" method="post" action="/admin/api-keys" class="card-add key-add{% if add_open() %} is-open{% endif %}">
             <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
             <div class="field">
                 <label for="key-name" class="field-label">{{ i18n.t("api_keys.name") }}</label>
-                <input id="key-name" name="name" type="text" class="input" required maxlength="{{ crate::models::API_KEY_NAME_MAX_CHARS }}" autocomplete="off" placeholder="{{ i18n.t("api_keys.name_placeholder") }}" value="{{ name }}">
+                <input id="key-name" name="name" type="text" class="input" required maxlength="{{ crate::models::API_KEY_NAME_MAX_CHARS }}" autocomplete="off" placeholder="{{ i18n.t("api_keys.name_placeholder") }}" value="{{ page.name }}">
             </div>
             <div class="card-add-foot">
                 <button type="button" class="text-action" aria-controls="add-key" data-composer-toggle>{{ i18n.t("common.cancel") }}</button>

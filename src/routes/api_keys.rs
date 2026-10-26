@@ -23,15 +23,15 @@ use crate::state::AppState;
 struct ApiKeysTemplate {
     frame: Frame,
     rows: Vec<KeyRow>,
-    /// A key just made, or given a new secret, shown this once.
-    created: Option<NewApiKey>,
-    regenerated: bool,
-    revoked: bool,
-    /// A refused name: why, and the name to show again in the open form.
-    error: Option<String>,
-    name: String,
-    add_open: bool,
+    page: Page,
     i18n: I18n,
+}
+
+impl ApiKeysTemplate {
+    /// The form opens again to show why a name was refused.
+    fn add_open(&self) -> bool {
+        self.page.error.is_some()
+    }
 }
 
 /// A key in use as the list shows it.
@@ -65,9 +65,11 @@ impl KeyRow {
 /// What the page says above the keys.
 #[derive(Default)]
 struct Page {
+    /// A key just made, or given a new secret, shown this once.
     created: Option<NewApiKey>,
     regenerated: bool,
     revoked: bool,
+    /// A refused name: why, and the name to show again in the open form.
     error: Option<String>,
     name: String,
 }
@@ -167,16 +169,14 @@ pub async fn revoke(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Redirect, AppError> {
-    let key = ApiKeyRepository::find_in_use(&state.pool, id)
+    let name = ApiKeyRepository::revoke(&state.pool, id, Utc::now())
         .await?
         .ok_or(AppError::NotFound)?;
-    if ApiKeyRepository::revoke(&state.pool, id, Utc::now()).await? {
-        NewJournalEntry::new(JournalKind::ApiKeyRevoked)
-            .by(&admin)
-            .about(&key.name)
-            .record(&state.pool)
-            .await;
-    }
+    NewJournalEntry::new(JournalKind::ApiKeyRevoked)
+        .by(&admin)
+        .about(name)
+        .record(&state.pool)
+        .await;
     Ok(Redirect::to("/admin/api-keys?revoked=1"))
 }
 
@@ -196,12 +196,7 @@ async fn render_page(
     render(&ApiKeysTemplate {
         frame,
         rows,
-        created: page.created,
-        regenerated: page.regenerated,
-        revoked: page.revoked,
-        add_open: page.error.is_some(),
-        error: page.error,
-        name: page.name,
+        page,
         i18n,
     })
 }

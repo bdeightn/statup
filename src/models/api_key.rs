@@ -15,7 +15,6 @@ pub struct ApiKey {
     pub name: String,
     /// The first characters of the key.
     pub prefix: String,
-    pub created_by: i64,
     pub creator_name: String,
     /// A key keeps working when its creator's account is disabled; the page
     /// says so, for an administrator to decide.

@@ -66,10 +66,7 @@ pub(super) async fn show(
     State(pool): State<DbPool>,
     Path(id): Path<i64>,
 ) -> Result<Json<ServiceBody>, AppError> {
-    let service = ServiceRepository::find_by_id(&pool, id)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    Ok(Json(ServiceBody::from(service)))
+    read_back(&pool, id).await
 }
 
 /// The fields the API takes on a new service. Anything else is refused: the
@@ -119,7 +116,7 @@ pub(super) async fn create(
         .about(&service.name)
         .record(&pool)
         .await;
-    Ok((StatusCode::CREATED, read_back(&pool, service.id).await?))
+    Ok((StatusCode::CREATED, Json(ServiceBody::from(service))))
 }
 
 /// The icon is not part of the API: it stays as it is.
