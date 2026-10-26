@@ -48,10 +48,13 @@ fn take(alert: &Value, reading: &mut Reading) {
             return;
         }
     };
+    // A resolved alert keeps the words of the problem: they would read
+    // wrong on the line that says the service is back.
     let message = alert
         .pointer("/annotations/summary")
         .or_else(|| alert.pointer("/labels/alertname"))
         .and_then(Value::as_str)
+        .filter(|_| state == Reported::Down)
         .map(str::to_string);
     reading.signals.push(Signal {
         service: service.to_string(),
@@ -85,7 +88,7 @@ mod tests {
                 Signal {
                     service: "VPN".to_string(),
                     state: Reported::Up,
-                    message: Some("VPN answers".to_string()),
+                    message: None,
                 },
             ]
         );
