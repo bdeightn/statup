@@ -79,6 +79,10 @@ async fn a_key_is_shown_once_in_the_answer_and_works_from_then_on() {
     let body = resp.text().await.unwrap_or_default();
     assert!(body.contains(r#"data-replace-url="/admin/api-keys""#));
     assert!(body.contains("<strong>Zabbix</strong>"));
+    assert!(
+        body.contains(r#"href="https://statup.dev/fr/docs/api/">Documentation de l"#),
+        "the key comes with the way to use it"
+    );
     let key = key_in(&body);
     assert!(key.starts_with("stp_"));
 

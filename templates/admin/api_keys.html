@@ -29,7 +29,7 @@
                 <button type="button" class="btn btn-ghost" aria-controls="api-key" data-key-reveal data-hide-label="{{ i18n.t("api_keys.hide") }}" hidden>{{ i18n.t("api_keys.show") }}</button>
                 <button type="button" class="btn btn-ghost" data-copy="#api-key" data-copied="{{ i18n.t("admin.password_copied") }}">{{ i18n.t("admin.copy_password") }}</button>
             </div>
-            <p class="text-muted">{{ i18n.t("api_keys.created_hint") }}</p>
+            <p class="text-muted">{{ i18n.t("api_keys.created_hint") }} <a class="link" href="{{ crate::docs_url(i18n.locale(), crate::Doc::Api) }}">{{ i18n.t("api_keys.docs_link") }}</a></p>
         </div>
     </div>
     {% else if revoked %}

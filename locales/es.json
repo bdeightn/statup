@@ -863,6 +863,7 @@
   "api_keys.show": "Mostrar",
   "api_keys.hide": "Ocultar",
   "api_keys.created_hint": "Se muestra una sola vez.",
+  "api_keys.docs_link": "Documentación de la API",
   "api_keys.regenerate": "Regenerar",
   "api_keys.regenerate_consequence": "La clave anterior se desactiva de inmediato.",
   "api_keys.confirm_regenerate_aria": "Confirmar la regeneración de la clave",

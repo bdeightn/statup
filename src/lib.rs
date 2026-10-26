@@ -81,14 +81,16 @@ pub enum Doc {
     ResetFromServer,
     Webhook,
     MailServer,
+    Api,
 }
 
 impl Doc {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Home,
         Self::ResetFromServer,
         Self::Webhook,
         Self::MailServer,
+        Self::Api,
     ];
 
     /// The page, and the address of its English heading, the same in every
@@ -99,6 +101,7 @@ impl Doc {
             Self::ResetFromServer => ("forgotten-password", "from-the-server"),
             Self::Webhook => ("webhook", ""),
             Self::MailServer => ("configuration", "email"),
+            Self::Api => ("api", ""),
         }
     }
 }
