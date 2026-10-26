@@ -1046,6 +1046,11 @@ async fn a_new_event_is_refused_with_the_rule_it_breaks_and_nothing_is_saved() {
             "next_update",
             "validation.next_update",
         ),
+        (
+            r#"{"kind": "incident", "title": "Down", "severity": "minor", "state": "resolved"}"#,
+            "invalid_transition",
+            "validation.invalid_transition",
+        ),
     ];
     for (body, code, key) in refusals {
         let answer = send(&app, Method::POST, EVENTS, &made, body).await;

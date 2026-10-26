@@ -249,6 +249,9 @@ impl NewEvent {
         let incident = kind == Kind::Incident;
         let maintenance = kind == Kind::Maintenance;
         let planned = maintenance && self.planned_start.is_some();
+        if incident && self.state.is_some_and(|step| !step.opens_incident()) {
+            return Err(AppError::validation("validation.invalid_transition"));
+        }
         let next_update = if incident {
             read_next_update(&self.next_update)?
         } else {

@@ -168,7 +168,7 @@ curl https://status.example.com/api/v1/events \
 | `description` | all | Markdown. |
 | `services` | all | The ids of the services it concerns. |
 | `severity` | incident | Required: `minor` or `critical`. |
-| `state` | incident | `in_progress` or `monitoring` when the team already works on it; `investigating` by default. |
+| `state` | incident | `in_progress` or `monitoring` when the team already works on it; `investigating` by default. Any other state answers 400 `invalid_transition`. |
 | `started_at` | incident | When it began, for an incident declared late. |
 | `next_update` | incident | When the next update is due: a delay such as `30 min` or `1 h`, or a time of day such as `14:30`, in the page's time zone. |
 | `planned_start` | maintenance | Announces the maintenance for this time; without it, the maintenance starts now. |
