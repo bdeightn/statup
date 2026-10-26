@@ -473,6 +473,14 @@ async fn a_report_statup_cannot_act_on_is_refused_and_journaled() {
         .collect();
     assert_eq!(ignored, expected);
 
+    app.login("admin@test.com", "admin_password_12").await;
+    let (status, page) = app.get("/admin/journal").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(page.contains("Signalement ignoré"), "{page}");
+    assert!(page.contains("Payroll"));
+    assert!(page.contains("aucun service de ce nom"));
+    assert!(page.contains("Statup vérifie ce service lui-même"));
+
     let answer = report(&app, &key, r#"{"state": "down"}"#).await;
     assert_eq!(answer.code(), "service_required");
     let answer = report(&app, &key, r#"{"name": "Mail", "down": true}"#).await;
