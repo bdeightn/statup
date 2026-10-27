@@ -314,6 +314,11 @@ async fn a_service_reported_down_then_up_is_told_as_the_checks_tell() {
         .await
         .unwrap();
     assert_eq!(notices, 1, "the admin's bell offers the incident");
+    let source: String = sqlx::query_scalar("SELECT source FROM service_outages")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(source, "report", "the panel says a tool found it");
 
     let answer = report(&app, &key, r#"{"service": "Mail", "state": "up"}"#).await;
     assert_eq!(answer.applied(), [pair("Mail", "up")]);

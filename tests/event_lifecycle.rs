@@ -11,7 +11,7 @@ use reqwest::StatusCode;
 use common::{TestApp, extract_csrf_token};
 use statup::i18n::{I18n, LANGUAGES};
 use statup::models::{CheckKind, CheckedService, Lifecycle, Role, ServiceCheck, ServiceStatus};
-use statup::repositories::{EventRepository, ServiceRepository};
+use statup::repositories::{EventRepository, OutageCause, ServiceRepository};
 use statup::services::{Finding, MonitorState, Prober, Report, ServiceService, run_round};
 
 /// A page text with its `{minutes}` filled, in the language a client that asks for none gets.
@@ -783,7 +783,7 @@ async fn removing_the_check_clears_a_detected_outage() {
     ServiceRepository::set_check(&app.pool, id, Some(&check))
         .await
         .unwrap();
-    ServiceRepository::mark_detected_down(&app.pool, id, Utc::now())
+    ServiceRepository::mark_detected_down(&app.pool, id, Utc::now(), &OutageCause::Report)
         .await
         .unwrap();
     ServiceService::recalculate_status(&app.pool, id)
@@ -1083,7 +1083,7 @@ async fn detect_outage(app: &TestApp, id: i64, started_at: chrono::DateTime<Utc>
     ServiceRepository::set_check(&app.pool, id, Some(&check))
         .await
         .unwrap();
-    ServiceRepository::mark_detected_down(&app.pool, id, started_at)
+    ServiceRepository::mark_detected_down(&app.pool, id, started_at, &OutageCause::Report)
         .await
         .unwrap();
     ServiceService::recalculate_status(&app.pool, id)
@@ -1174,7 +1174,7 @@ async fn a_detected_outage_of_42_minutes_shows_in_the_strip() {
     let app = TestApp::spawn_public().await;
     let id = app.create_service("Messagerie").await;
     let day_start = statup::clock::day_start(statup::clock::today()).unwrap();
-    ServiceRepository::mark_detected_down(&app.pool, id, day_start)
+    ServiceRepository::mark_detected_down(&app.pool, id, day_start, &OutageCause::Report)
         .await
         .unwrap();
     ServiceRepository::mark_detected_up(&app.pool, id, day_start + chrono::Duration::minutes(42))

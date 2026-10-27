@@ -25,7 +25,7 @@ use super::error::refusal;
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{ApiKeyHolder, Happening, JournalKind, Service, excerpt};
-use crate::repositories::{EventRepository, NewJournalEntry, ServiceRepository};
+use crate::repositories::{EventRepository, NewJournalEntry, OutageCause, ServiceRepository};
 use crate::services::{SERVICE_NAME_MAX_CHARS, announce, declare_outage, end_outage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -278,11 +278,13 @@ impl<'a> Applying<'a> {
         };
         // `None` when another report made the change since this one started.
         let applied = match signal.state {
-            Reported::Down => match declare_outage(self.pool, service_id, self.now).await {
-                Ok(told) => Some(told),
-                Err(e) if already_open(&e) => None,
-                Err(e) => return Err(e),
-            },
+            Reported::Down => {
+                match declare_outage(self.pool, service_id, self.now, &OutageCause::Report).await {
+                    Ok(told) => Some(told),
+                    Err(e) if already_open(&e) => None,
+                    Err(e) => return Err(e),
+                }
+            }
             Reported::Up => end_outage(self.pool, service_id, self.now).await?.map(Some),
         };
         let Some(told) = applied else {

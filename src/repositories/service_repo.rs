@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 
 use super::GrantTables;
-use super::outage_repo::{close_outage, delete_open_outage, open_outage};
+use super::outage_repo::{OutageCause, close_outage, delete_open_outage, open_outage};
 use crate::db::DbPool;
 use crate::models::{
     CheckedService, Grants, Scope, Service, ServiceCheck, ServiceStatus, Visibility,
@@ -229,6 +229,7 @@ impl ServiceRepository {
         pool: &DbPool,
         id: i64,
         started_at: DateTime<Utc>,
+        cause: &OutageCause,
     ) -> Result<(), sqlx::Error> {
         let mut tx = pool.begin().await?;
         sqlx::query("UPDATE services SET detected_status = ? WHERE id = ?")
@@ -236,7 +237,7 @@ impl ServiceRepository {
             .bind(id)
             .execute(&mut *tx)
             .await?;
-        open_outage(&mut tx, id, started_at).await?;
+        open_outage(&mut tx, id, started_at, cause).await?;
         tx.commit().await
     }
 
@@ -589,7 +590,7 @@ mod tests {
         ServiceRepository::set_check(&pool, svc.id, Some(&web("https://wiki.example")))
             .await
             .unwrap();
-        ServiceRepository::mark_detected_down(&pool, svc.id, at(9))
+        ServiceRepository::mark_detected_down(&pool, svc.id, at(9), &OutageCause::Report)
             .await
             .unwrap();
 
@@ -612,7 +613,7 @@ mod tests {
         ServiceRepository::set_check(&pool, svc.id, Some(&check))
             .await
             .unwrap();
-        ServiceRepository::mark_detected_down(&pool, svc.id, at(9))
+        ServiceRepository::mark_detected_down(&pool, svc.id, at(9), &OutageCause::Report)
             .await
             .unwrap();
 
@@ -635,13 +636,13 @@ mod tests {
         ServiceRepository::set_check(&pool, svc.id, Some(&web("https://wrong")))
             .await
             .unwrap();
-        ServiceRepository::mark_detected_down(&pool, svc.id, at(8))
+        ServiceRepository::mark_detected_down(&pool, svc.id, at(8), &OutageCause::Report)
             .await
             .unwrap();
         ServiceRepository::mark_detected_up(&pool, svc.id, at(9))
             .await
             .unwrap();
-        ServiceRepository::mark_detected_down(&pool, svc.id, at(10))
+        ServiceRepository::mark_detected_down(&pool, svc.id, at(10), &OutageCause::Report)
             .await
             .unwrap();
 
@@ -654,7 +655,7 @@ mod tests {
         assert_eq!(spans[&svc.id].len(), 1, "the ended outage stays");
         assert_eq!(spans[&svc.id][0].end, Some(at(9)));
 
-        ServiceRepository::mark_detected_down(&pool, svc.id, at(11))
+        ServiceRepository::mark_detected_down(&pool, svc.id, at(11), &OutageCause::Report)
             .await
             .unwrap();
         let dropped = ServiceRepository::set_check(&pool, svc.id, None)
@@ -676,11 +677,11 @@ mod tests {
     async fn a_service_has_one_outage_under_way_at_most() {
         let pool = test_pool().await;
         let svc = create(&pool, "VPN", "vpn").await;
-        ServiceRepository::mark_detected_down(&pool, svc.id, at(9))
+        ServiceRepository::mark_detected_down(&pool, svc.id, at(9), &OutageCause::Report)
             .await
             .unwrap();
         assert!(
-            ServiceRepository::mark_detected_down(&pool, svc.id, at(10))
+            ServiceRepository::mark_detected_down(&pool, svc.id, at(10), &OutageCause::Report)
                 .await
                 .is_err()
         );
@@ -695,7 +696,7 @@ mod tests {
                 .unwrap(),
             "an outage ends once"
         );
-        ServiceRepository::mark_detected_down(&pool, svc.id, at(12))
+        ServiceRepository::mark_detected_down(&pool, svc.id, at(12), &OutageCause::Report)
             .await
             .unwrap();
         let spans = OutageRepository::since(&pool, at(0)).await.unwrap();
@@ -707,7 +708,7 @@ mod tests {
     async fn deleting_a_service_deletes_its_outages() {
         let pool = test_pool().await;
         let svc = create(&pool, "Gone", "gone").await;
-        ServiceRepository::mark_detected_down(&pool, svc.id, at(9))
+        ServiceRepository::mark_detected_down(&pool, svc.id, at(9), &OutageCause::Report)
             .await
             .unwrap();
         ServiceRepository::delete(&pool, svc.id).await.unwrap();
