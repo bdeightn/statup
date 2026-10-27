@@ -39,7 +39,7 @@ async fn visitors_read_when_and_how_long_but_not_why() {
 
     assert!(panel.contains("Pannes détectées"));
     assert!(panel.contains("46\u{a0}min"));
-    assert!(!panel.contains("nom introuvable"));
+    assert!(!panel.contains("Nom introuvable"));
     assert!(!panel.contains("/admin/journal"));
 }
 
@@ -53,10 +53,10 @@ async fn members_read_why_but_not_the_journal() {
     app.login("reader@example.com", PASSWORD).await;
 
     let (_, panel) = app.get(&format!("/services/{id}/drawer")).await;
-    assert!(panel.contains("nom introuvable"));
+    assert!(panel.contains("Nom introuvable"));
     assert!(!panel.contains("/admin/journal"));
     let (_, panel) = app.get(&format!("/services/{tool}/drawer")).await;
-    assert!(panel.contains("signalée par un outil de supervision"));
+    assert!(panel.contains("Signalée par un outil de supervision"));
 }
 
 #[tokio::test]

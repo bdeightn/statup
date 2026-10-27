@@ -758,18 +758,29 @@
         border-top: 1px solid var(--hairline);
     }
 
+    /* The span leads, its length at the right, as a row of a list. */
+    .outage-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
     .outage-when {
         font-size: var(--text-md);
+        font-weight: 500;
         font-feature-settings: 'tnum' 1;
     }
 
-    .outage-erase {
-        margin-top: 6px;
+    .outage-length {
+        font-size: var(--text-sm);
+        color: var(--ink-soft);
+        font-feature-settings: 'tnum' 1;
+        white-space: nowrap;
     }
 
-    /* Lines the word up with the text above it. */
-    .outage-erase > .text-action {
-        margin-left: -2px;
+    .outage-erase {
+        margin-top: 10px;
     }
 
     .outage-erase .confirm {

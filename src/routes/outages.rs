@@ -175,11 +175,16 @@ fn when(outage: &Outage, i18n: &I18n) -> String {
     )
 }
 
+/// What found the outage, opening its line: "Aucun serveur de noms ne
+/// répond", "Signalée par un outil de supervision".
 fn reason(cause: &OutageCause, i18n: &I18n) -> Option<String> {
-    match cause {
-        OutageCause::Check(words) => words.as_deref().and_then(|w| finding_words(w, i18n)),
-        OutageCause::Report => Some(i18n.t("services.outage_reported").to_string()),
-    }
+    let words = match cause {
+        OutageCause::Check(words) => words.as_deref().and_then(|w| finding_words(w, i18n))?,
+        OutageCause::Report => i18n.t("services.outage_reported").to_string(),
+    };
+    let mut letters = words.chars();
+    let first = letters.next()?;
+    Some(first.to_uppercase().chain(letters).collect())
 }
 
 /// The monitoring lines of the days the outage covered, about this service.

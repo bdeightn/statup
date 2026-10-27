@@ -36,12 +36,17 @@
         <ul class="outage-list">
             {% for outage in outages %}
             <li class="outage" data-outage-days="{{ outage.days }}"{% if !outage.shown %} hidden{% endif %}>
-                <p class="outage-when">{{ outage.when }}</p>
-                <p class="outage-meta">{{ outage.length }}{% if let Some(reason) = outage.reason %}&nbsp;<span aria-hidden="true">·</span> {{ reason }}{% endif %}{% if let Some(link) = outage.journal %}&nbsp;<span aria-hidden="true">·</span> <a class="link" href="{{ link }}">{{ i18n.t("journal.title") }}</a>{% endif %}</p>
+                <div class="outage-head">
+                    <p class="outage-when">{{ outage.when }}</p>
+                    <p class="outage-length">{{ outage.length }}</p>
+                </div>
+                {% if outage.reason.is_some() || outage.journal.is_some() %}
+                <p class="outage-meta">{% if let Some(reason) = outage.reason %}{{ reason }}{% if outage.journal.is_some() %}&nbsp;<span aria-hidden="true">·</span> {% endif %}{% endif %}{% if let Some(link) = outage.journal %}<a class="link" href="{{ link }}">{{ i18n.t("journal.title") }}</a>{% endif %}</p>
+                {% endif %}
                 {% if outage.erasable %}
                 <form class="outage-erase" method="post" action="/services/{{ row.service.id }}/outages/{{ outage.id }}/erase" hx-post="/services/{{ row.service.id }}/outages/{{ outage.id }}/erase" hx-target="#drawer-content" hx-swap="innerHTML" data-confirm>
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <button type="button" class="text-action text-action-danger" data-confirm-open>{{ i18n.t("services.outage_erase") }}</button>
+                    <button type="button" class="btn btn-ghost" data-confirm-open>{{ i18n.t("services.outage_erase") }}</button>
                     <div class="confirm" role="group" aria-label="{{ i18n.t("services.outage_erase") }}" aria-describedby="erase-q-{{ outage.id }}" data-confirm-box hidden>
                         <span id="erase-q-{{ outage.id }}" class="confirm-text">{{ i18n.t("services.outage_erase_question") }}</span>
                         {% if outage.fallen_with > 0 %}
