@@ -24,7 +24,7 @@ use crate::models::{
 use crate::repositories::{NewJournalEntry, NotificationRepository, SettingsRepository};
 use crate::services::{
     Facts, Failure, Finding, Notice, Origin, PAGE_ADDRESS_SETTING, Sender, Subject, channel_detail,
-    destination_allowed, destination_name_refusal, email_addresses, page_address,
+    completed_target, destination_allowed, destination_name_refusal, email_addresses, page_address,
 };
 use crate::state::AppState;
 
@@ -100,11 +100,11 @@ impl DestinationForm {
         if kind == ChannelKind::Email && !email_ready {
             return Err((Field::Kind, "notifications.email_unavailable"));
         }
-        let target = self.target.trim();
+        let target = completed_target(kind, self.target.trim());
         let target = if kind == ChannelKind::Email {
-            email_addresses(target)
+            email_addresses(&target)
         } else {
-            destination_allowed(kind, target).map(|()| target.to_string())
+            destination_allowed(kind, &target).map(|()| target)
         };
         Ok((kind, target.map_err(|key| (Field::Target, key))?))
     }

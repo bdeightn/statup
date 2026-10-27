@@ -14,7 +14,7 @@ Dans l'application, **Notifications** désigne la cloche de l'en-tête ; les **
 | Champ | Description |
 |---|---|
 | **Type** | Microsoft Teams, Slack, Google Chat, Discord, Mattermost, ntfy (téléphone), E-mail ou Webhook. |
-| **Nom** | Obligatoire, 60 caractères au plus, comme « Canal #informatique ». |
+| **Nom dans Statup** | Obligatoire, 60 caractères au plus : le nom du canal dans les listes de Statup, comme « Mon téléphone ». Son exemple suit le type. |
 | **URL du webhook** | Ou **URL du sujet** pour ntfy, **Adresses** pour l'e-mail. Voir plus bas où la trouver. |
 | **Langue des messages** | Français, English, Deutsch ou Español. Au départ, la [langue par défaut](configuration.md#default_locale) de l'instance. |
 | **Reçoit** | **Incidents**, **Maintenances** et **Annonces** sont cochés au départ, **Pannes détectées automatiquement** ne l'est pas. |
@@ -32,7 +32,7 @@ Pour modifier un canal, ouvrez-le par son nom dans la liste. **Supprimer ce cana
 | Google Chat | Dans l'espace Google Chat : Applications et intégrations, Webhooks, Ajouter. |
 | Discord | Paramètres du salon : Intégrations, Webhooks, Nouveau webhook, Copier l'URL du webhook. |
 | Mattermost | Dans Mattermost : Intégrations, Webhooks entrants, Ajouter. |
-| ntfy | L'URL du sujet, comme `https://ntfy.sh/your-topic`, puis abonnez-vous au sujet dans l'application ntfy. Un sujet sur ntfy.sh est lisible par quiconque connaît son nom : choisissez-en un que personne ne devinera, ou utilisez votre propre serveur ntfy, avec `?auth=` dans l'URL pour un sujet protégé. |
+| ntfy | La case commence par `https://ntfy.sh/` : tapez le sujet à la suite, ou le sujet seul. Sur votre propre serveur ntfy, l'URL complète du sujet. Puis abonnez-vous au sujet dans l'application ntfy. Un sujet sur ntfy.sh est lisible par quiconque connaît son nom : choisissez-en un que personne ne devinera, ou utilisez votre propre serveur ntfy, avec `?auth=` dans l'URL pour un sujet protégé. |
 | E-mail | Des adresses séparées par des virgules, 50 au plus. |
 | Webhook | Une URL qui accepte un `POST` JSON : Zapier, Make, n8n, Power Automate, Home Assistant. Voir [Corps du webhook](webhook.md). |
 

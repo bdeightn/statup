@@ -20,6 +20,23 @@ pub fn destination_name_refusal(name: &str) -> Option<&'static str> {
     (name.chars().count() > MAX_NAME_CHARS).then_some("notifications.name_too_long")
 }
 
+/// The address as saved: a bare ntfy topic, as its app names it, lives on
+/// the server the field starts with.
+pub fn completed_target(kind: ChannelKind, target: &str) -> String {
+    match kind.prefill() {
+        Some(server) if is_topic(target) => format!("{server}{target}"),
+        _ => target.to_string(),
+    }
+}
+
+/// A topic name as ntfy accepts one.
+fn is_topic(text: &str) -> bool {
+    (1..=64).contains(&text.len())
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+}
+
 /// The one gate for what a destination may reach, as a message key when
 /// refused. A hosted instance will add its own limits here, such as private
 /// addresses, and the sending stays as it is.
@@ -131,6 +148,22 @@ mod tests {
             refused("https://user:secret@example.com/hook"),
             Err("notifications.target_credentials")
         );
+    }
+
+    #[test]
+    fn a_bare_ntfy_topic_is_on_the_public_server() {
+        assert_eq!(
+            completed_target(ChannelKind::Ntfy, "statup-alerts_1"),
+            "https://ntfy.sh/statup-alerts_1"
+        );
+        let own = "https://ntfy.example.com/alerts";
+        assert_eq!(completed_target(ChannelKind::Ntfy, own), own);
+        assert_eq!(completed_target(ChannelKind::Ntfy, "my topic"), "my topic");
+        assert_eq!(
+            completed_target(ChannelKind::Ntfy, &"a".repeat(65)),
+            "a".repeat(65)
+        );
+        assert_eq!(completed_target(ChannelKind::Webhook, "alerts"), "alerts");
     }
 
     #[test]

@@ -2,7 +2,8 @@
    the template gives `form`, `email_ready`, `i18n` and the helpers of
    `DestinationFields`. The address row says what to paste for the chosen
    tool (notifications.js); without script it keeps the hint of the tool
-   shown first. #}
+   shown first. The name's example follows the tool too, and an empty ntfy
+   address starts with the public server. #}
 <div class="form-grid form-grid-2">
     <div class="field">
         <label for="destination-kind" class="field-label">{{ i18n.t("notifications.kind") }}</label>
@@ -10,7 +11,7 @@
                 {% if self.error_for(Field::Kind).is_some() %}aria-invalid="true" aria-describedby="kind-error"{% endif %}>
             {% for kind in self.kinds() %}
             {% let unavailable = kind.as_str() == "email" && !email_ready %}
-            <option value="{{ kind.as_str() }}" data-label="{{ i18n.t(kind.target_label_key()) }}" data-placeholder="{{ kind.placeholder() }}" data-inputmode="{% if kind.as_str() == "email" %}email{% else %}url{% endif %}"{% if form.kind == kind.as_str() %} selected{% endif %}{% if unavailable %} disabled{% endif %}>{{ i18n.t(kind.label_key()) }}{% if unavailable %} ({{ i18n.t("notifications.email_needs_server") }}){% endif %}</option>
+            <option value="{{ kind.as_str() }}" data-label="{{ i18n.t(kind.target_label_key()) }}" data-placeholder="{{ kind.placeholder() }}" data-name-placeholder="{{ i18n.t(kind.name_placeholder_key()) }}"{% if let Some(prefill) = kind.prefill() %} data-prefill="{{ prefill }}"{% endif %} data-inputmode="{% if kind.as_str() == "email" %}email{% else %}url{% endif %}"{% if form.kind == kind.as_str() %} selected{% endif %}{% if unavailable %} disabled{% endif %}>{{ i18n.t(kind.label_key()) }}{% if unavailable %} ({{ i18n.t("notifications.email_needs_server") }}){% endif %}</option>
             {% endfor %}
         </select>
         {% if let Some(message) = self.error_for(Field::Kind) %}
@@ -20,7 +21,7 @@
     <div class="field">
         <label for="destination-name" class="field-label">{{ i18n.t("notifications.name") }}</label>
         <input id="destination-name" name="name" type="text" class="input" maxlength="60" required autocomplete="off"
-               value="{{ form.name }}" placeholder="{{ i18n.t("notifications.name_placeholder") }}"
+               value="{{ form.name }}" placeholder="{{ i18n.t(self.chosen().name_placeholder_key()) }}"
                {% if self.error_for(Field::Name).is_some() %}aria-invalid="true" aria-describedby="name-error" autofocus{% endif %}>
         {% if let Some(message) = self.error_for(Field::Name) %}
         <p id="name-error" class="field-error" role="alert">{{ message }}</p>

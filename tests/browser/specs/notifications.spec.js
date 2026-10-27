@@ -42,7 +42,7 @@ test("an admin adds a destination, tests it, and finds it listed", async ({ page
         await page.getByRole("option", { name: "Webhook" }).click();
         await expect(form.getByText("Statup y envoie un JSON")).toBeVisible();
 
-        await form.getByLabel("Nom", { exact: true }).fill(name);
+        await form.getByLabel("Nom dans Statup", { exact: true }).fill(name);
         await form.getByLabel("URL du webhook").fill(`http://127.0.0.1:${tool.port}/hook`);
         await form.getByRole("button", { name: "Envoyer un test" }).click();
         await expect(form.getByText("Message de test envoyé.")).toBeVisible();

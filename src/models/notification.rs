@@ -91,6 +91,30 @@ impl ChannelKind {
         }
     }
 
+    /// An example of what the team calls the destination, so the name reads
+    /// as Statup's own and not as the tool's.
+    pub fn name_placeholder_key(self) -> &'static str {
+        match self {
+            Self::Teams => "notifications.name_placeholder_teams",
+            Self::Slack => "notifications.name_placeholder_slack",
+            Self::GoogleChat => "notifications.name_placeholder_google_chat",
+            Self::Discord => "notifications.name_placeholder_discord",
+            Self::Mattermost => "notifications.name_placeholder_mattermost",
+            Self::Ntfy => "notifications.name_placeholder_ntfy",
+            Self::Email => "notifications.name_placeholder_email",
+            Self::Webhook => "notifications.name_placeholder_webhook",
+        }
+    }
+
+    /// The start of the address already written in the field: the public
+    /// ntfy server, so only the topic is left to type.
+    pub fn prefill(self) -> Option<&'static str> {
+        match self {
+            Self::Ntfy => Some("https://ntfy.sh/"),
+            _ => None,
+        }
+    }
+
     /// The shape of the address each tool gives, so a wrong paste stands out.
     pub fn placeholder(self) -> &'static str {
         match self {

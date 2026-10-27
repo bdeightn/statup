@@ -11,6 +11,7 @@ All notable changes to Statup are listed here. The project is pre-v1: until 1.0,
 - **Import from Uptime Kuma**, under **New** on the Services page: paste the URL of a Kuma status page, tick its groups, and Statup creates a folder for each group and a service for each monitor, under the same names, so Kuma's alerts find them. Importing again adds only the new monitors; nothing is renamed, moved or deleted, and no secret is kept.
 - Fixed: when Statup itself is off the network (no route, or no name server answering), its checks pause for as long as that lasts instead of declaring every service down after five minutes; the Journal records when the network went and when it came back, and **Test** gives these two reasons.
 - Detected outages explained and erasable. A day coloured by a detected outage reads **No answer for** and its length; a click on it, on the dashboard or in a service's side panel, shows that day's outages, with the reason for members and a link to the Journal for administrators. **It was not an outage** lets an editor erase an ended outage, and with it, ticked by default, those of the services that fell at the same moment. The database is upgraded on start; outages recorded before keep no reason.
+- A clearer channel form in **Alerts**: the name field reads **Name in Statup**, with an example for each type, and an ntfy address starts with `https://ntfy.sh/`, so only the topic is left to type; the topic alone is accepted too.
 
 ## 0.8.0, 2026-10-25
 

@@ -14,7 +14,7 @@ In the app, **Notifications** is the bell in the header; **Alerts** are the mess
 | Field | Description |
 |---|---|
 | **Type** | Microsoft Teams, Slack, Google Chat, Discord, Mattermost, ntfy (phone), Email or Webhook. |
-| **Name** | Required, up to 60 characters, such as "#it-team channel". |
+| **Name in Statup** | Required, up to 60 characters: how the channel reads in Statup's lists, such as "My phone". Its example follows the type. |
 | **Webhook URL** | Or **Topic URL** for ntfy, **Addresses** for email. Where to find it is below. |
 | **Message language** | Français, English, Deutsch or Español. The instance's [default language](configuration.md#default_locale) at first. |
 | **Receives** | **Incidents**, **Maintenance**, **Announcements**, all ticked at first, and **Outages detected automatically**, not ticked. |
@@ -32,7 +32,7 @@ To change a channel, open it by its name in the list. **Delete this channel** st
 | Google Chat | In the space: Apps & integrations, Webhooks, Add. |
 | Discord | In the channel settings: Integrations, Webhooks, New Webhook, Copy Webhook URL. |
 | Mattermost | Integrations, Incoming Webhooks, Add. |
-| ntfy | The topic URL, such as `https://ntfy.sh/your-topic`, then subscribe to the topic in the ntfy app. A topic on ntfy.sh is readable by anyone who knows its name: choose one nobody guesses, or use your own ntfy server, with `?auth=` in the URL for a protected topic. |
+| ntfy | The field starts with `https://ntfy.sh/`: type the topic after it, or only the topic. On your own ntfy server, the full topic URL. Then subscribe to the topic in the ntfy app. A topic on ntfy.sh is readable by anyone who knows its name: choose one nobody guesses, or use your own ntfy server, with `?auth=` in the URL for a protected topic. |
 | Email | Addresses separated by commas, 50 at most. |
 | Webhook | A URL that takes a JSON `POST`: Zapier, Make, n8n, Power Automate, Home Assistant. See [Webhook body](webhook.md). |
 

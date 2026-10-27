@@ -182,6 +182,25 @@ async fn an_admin_adds_a_destination_and_finds_it_listed() {
 }
 
 #[tokio::test]
+async fn an_ntfy_topic_typed_alone_is_saved_on_the_public_server() {
+    let app = TestApp::spawn().await;
+    app.as_admin().await;
+
+    let csrf = app.csrf_from("/admin/notifications").await;
+    let fields = destination_fields("My phone", "ntfy", " statup-alerts ");
+    let (status, _, _) = app.post_form("/admin/notifications", &csrf, &fields).await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        app.destinations().await,
+        [(
+            "My phone".to_string(),
+            "https://ntfy.sh/statup-alerts".to_string()
+        )]
+    );
+}
+
+#[tokio::test]
 async fn a_refused_address_is_said_and_the_form_kept() {
     let app = TestApp::spawn().await;
     app.as_admin().await;
