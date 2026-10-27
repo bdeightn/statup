@@ -99,13 +99,18 @@ pub fn format_input(dt: &DateTime<Utc>) -> String {
 /// Reads a `YYYY-MM-DD` filter bound as the first or last second of that
 /// day in the instance zone.
 pub fn parse_day_bound(value: &str, end_of_day: bool) -> Option<DateTime<Utc>> {
-    let date = NaiveDate::parse_from_str(value.trim(), "%Y-%m-%d").ok()?;
+    let date = parse_day(value)?;
     let time = if end_of_day {
         NaiveTime::from_hms_opt(23, 59, 59)?
     } else {
         NaiveTime::MIN
     };
     to_utc(&zone(), date.and_time(time))
+}
+
+/// A day written `2026-10-27`, as a date field or a link sends it.
+pub fn parse_day(value: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(value.trim(), "%Y-%m-%d").ok()
 }
 
 /// First instant of a day in the instance zone.

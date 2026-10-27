@@ -711,6 +711,13 @@
         margin-top: 28px;
     }
 
+    /* A service's panel rules its sections apart, the hidden outages
+       aside. */
+    .svc-panel .drawer-section:not([hidden]) ~ .drawer-section:not([hidden]) {
+        padding-top: 24px;
+        border-top: 1px solid var(--hairline);
+    }
+
     .drawer-title-svc {
         display: flex;
         align-items: center;
@@ -742,6 +749,54 @@
 
     .drawer-section .log-list {
         margin-bottom: 12px;
+    }
+
+    .outage-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-feature-settings: 'tnum' 1;
+    }
+
+    /* Only the outages of the day clicked show: a rule separates two
+       that both show. */
+    .outage:not([hidden]) ~ .outage:not([hidden]) {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--hairline);
+    }
+
+    /* The span leads, its length at the right, as a row of a list. */
+    .outage-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .outage-when {
+        font-size: var(--text-md);
+        font-weight: 500;
+    }
+
+    .outage-length {
+        font-size: var(--text-sm);
+        color: var(--ink-soft);
+        white-space: nowrap;
+    }
+
+    .outage-erase {
+        margin-top: 10px;
+    }
+
+    .outage-erase .confirm {
+        margin-top: 8px;
+    }
+
+    .outage-meta {
+        margin-top: 2px;
+        font-size: var(--text-sm);
+        color: var(--muted);
     }
 
     .drawer-actions {

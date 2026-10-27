@@ -24,6 +24,7 @@ mod kuma_import;
 mod locale;
 mod notices;
 mod notifications;
+mod outages;
 mod page;
 mod password;
 mod password_reset;
@@ -209,6 +210,10 @@ fn publisher_routes() -> Router<AppState> {
         .route(
             "/events/{id}/updates/{update_id}/delete",
             post(events::delete_update),
+        )
+        .route(
+            "/services/{id}/outages/{outage_id}/erase",
+            post(outages::erase),
         )
         .route("/events/{id}/review", post(events::publish_review))
         .route("/events/{id}/review/delete", post(events::remove_review))

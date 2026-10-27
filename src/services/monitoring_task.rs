@@ -19,7 +19,7 @@ use crate::db::DbPool;
 use crate::error::AppError;
 use crate::journal;
 use crate::models::{CheckKind, CheckedService, Happening, JournalKind, Notification};
-use crate::repositories::{EventRepository, NewJournalEntry, ServiceRepository};
+use crate::repositories::{EventRepository, NewJournalEntry, OutageCause, ServiceRepository};
 
 const ROUND_INTERVAL: Duration = Duration::from_secs(60);
 /// Checks running at once, so a long list never floods the network.
@@ -347,7 +347,8 @@ async fn apply(
     let told = match transition {
         Transition::Stay => return Ok(None),
         Transition::Down => {
-            let told = declare_outage(pool, service_id, since).await?;
+            let cause = OutageCause::Check(Some(checked.report.finding.words()));
+            let told = declare_outage(pool, service_id, since, &cause).await?;
             checked
                 .record(pool, JournalKind::OutageDetected, failures, detailed)
                 .await;
@@ -371,8 +372,9 @@ pub(crate) async fn declare_outage(
     pool: &DbPool,
     service_id: i64,
     since: DateTime<Utc>,
+    cause: &OutageCause,
 ) -> Result<Option<Happening>, AppError> {
-    ServiceRepository::mark_detected_down(pool, service_id, since).await?;
+    ServiceRepository::mark_detected_down(pool, service_id, since, cause).await?;
     let told = EventRepository::status_drivers(pool, service_id)
         .await?
         .is_empty()
@@ -779,6 +781,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_outage_keeps_why_the_checks_failed() {
+        let pool = test_pool().await;
+        let id = checked_service(&pool, "Mail").await;
+        let mut state = MonitorState::default();
+
+        rounds(&pool, &mut state, Outcome::Failed, &[0, 1, 2]).await;
+
+        let reason: (String, Option<String>) =
+            sqlx::query_as("SELECT source, reason FROM service_outages WHERE service_id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            reason,
+            ("check".to_string(), Some("connection refused".to_string()))
+        );
+    }
+
+    #[tokio::test]
     async fn statup_off_the_network_waits_as_long_as_it_lasts() {
         let pool = test_pool().await;
         let mut ids = Vec::new();
@@ -871,7 +893,7 @@ mod tests {
         let gone = checked_service(&pool, "Gone").await;
         let kept = checked_service(&pool, "Kept").await;
         for id in [gone, kept] {
-            ServiceRepository::mark_detected_down(&pool, id, minute(0))
+            ServiceRepository::mark_detected_down(&pool, id, minute(0), &OutageCause::Report)
                 .await
                 .unwrap();
         }

@@ -15,7 +15,8 @@ use statup::models::{
     Visibility,
 };
 use statup::repositories::{
-    FolderRepository, GroupRepository, ServiceRepository, SubscriberRepository, UserRepository,
+    FolderRepository, GroupRepository, OutageCause, ServiceRepository, SubscriberRepository,
+    UserRepository,
 };
 use statup::services::{
     EventService, Notifier, ServiceService, SubscriptionService, deliver_to_subscribers,
@@ -271,9 +272,14 @@ async fn seed_events(pool: &SqlitePool, admin: i64, open: i64, restricted: i64) 
     .await
     .unwrap();
     // As the monitoring does when checks fail, then the status follows.
-    ServiceRepository::mark_detected_down(pool, restricted, Utc::now() - Duration::minutes(20))
-        .await
-        .unwrap();
+    ServiceRepository::mark_detected_down(
+        pool,
+        restricted,
+        Utc::now() - Duration::minutes(20),
+        &OutageCause::Report,
+    )
+    .await
+    .unwrap();
     ServiceService::recalculate_status(pool, restricted)
         .await
         .unwrap();

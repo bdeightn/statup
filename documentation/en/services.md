@@ -123,6 +123,7 @@ Each service has one bar per day, in the instance's time zone, ending today. The
 
 - The most serious incident of the day wins. An incident counts from its start until it moves to **Monitoring**, or until it ends; a cancelled incident never counts.
 - Maintenance never colours a day.
+- On a computer, a day coloured by a detected outage shows that outage when clicked: see [Monitoring](monitoring.md#in-the-history).
 - A detected outage colours a day only when no incident covers it, and only when it lasts fifteen minutes or more in total.
 
 There is no percentage: the caption counts the days with an incident.
@@ -140,4 +141,6 @@ A service that events name is kept, so their history stays whole. To stop showin
 | See the states and the history, open a service's side panel | Yes | Yes | Yes |
 | Create, edit, set a state, change the order, delete, manage icons | | Yes | Yes |
 | Choose who sees a service, manage folders | | Yes | Yes |
+| Read why a detected outage happened | Yes | Yes | Yes |
+| Erase a detected outage that was not one | | Yes | Yes |
 | Leave a service out of the dashboard | | | Yes |

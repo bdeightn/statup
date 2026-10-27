@@ -44,9 +44,13 @@ Services that fall in the same minute, such as the services of a server being re
 
 ## In the history
 
-A detected outage of fifteen minutes or more colours its days in the service's availability history, unless an incident already covers that day. A shorter one leaves the day green. See [Services](services.md#availability-history).
+A detected outage of fifteen minutes or more colours its days in the service's availability history, unless an incident already covers that day, and the day reads "No answer for" and the length. A shorter one leaves the day green. See [Services](services.md#availability-history).
 
-Changing the kind of check, the address, or **Accept an internal certificate** clears an outage under way, such as a false one caused by a wrong address. Outages already ended stay in the history.
+On a computer, a click on one of these days, on the dashboard or in a service's side panel, shows the outages of that day under **Detected outages**: when the service stopped answering and for how long. Members also read why, in the words of **Test**, or that a monitoring tool reported it; administrators get a **Journal** link to the entries of those days. Outages recorded before version 0.9.0 keep no reason.
+
+**It was not an outage**, for editors and administrators, erases an ended outage. The box ticked under it erases with it the ended outages of the other services that began within five minutes, as when Statup or its server loses the network. The days turn green again, and the Journal records one entry for each service. An outage under way cannot be erased.
+
+Changing the kind of check, the address, or **Accept an internal certificate** clears an outage under way, such as a false one caused by a wrong address. Outages already ended stay in the history until they are erased.
 
 ## Turn the checks off
 

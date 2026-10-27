@@ -184,6 +184,14 @@ impl I18n {
         self.language.clock_24h
     }
 
+    /// "Nom introuvable" from "nom introuvable": a phrase that opens a line.
+    pub fn capitalized(text: &str) -> String {
+        let mut letters = text.chars();
+        letters.next().map_or_else(String::new, |first| {
+            first.to_uppercase().chain(letters).collect()
+        })
+    }
+
     pub fn format_time(&self, dt: &DateTime<Utc>) -> String {
         let pattern = if self.clock_24h() {
             "%H:%M"

@@ -39,6 +39,9 @@ pub struct DayCell {
     pub status: String,
     /// Older than the short strip: shown only where there is room.
     pub early: bool,
+    /// The day, when an outage the checks or a tool found coloured it: a
+    /// click on it shows that outage in the service's panel.
+    pub outage_day: Option<NaiveDate>,
 }
 
 impl DayCell {
@@ -192,6 +195,20 @@ fn is_left_out(service: &Service, hidden: Option<&[String]>) -> bool {
     hidden.is_some_and(|values| values.contains(&id))
 }
 
+/// Whether a detected outage lasted long enough to colour its days.
+pub fn lasted_long_enough(
+    start: DateTime<Utc>,
+    end: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> bool {
+    end.unwrap_or(now) - start >= MIN_DETECTED_OUTAGE
+}
+
+/// Where the short strip begins, so the panel's outages match its days.
+pub fn short_strip_start() -> DateTime<Utc> {
+    clock::day_start(Window::ending_now(SHORT_DAYS).first_day()).unwrap_or_default()
+}
+
 /// One service's last thirty days, for its side panel.
 pub async fn service_history(
     pool: &DbPool,
@@ -280,6 +297,7 @@ fn strip_of(service: &Service, history: &History, window: &Window, i18n: &I18n) 
                 date: i18n.format_date_short(&day.date),
                 status: day_status(day, i18n),
                 early: window.is_early(day.date),
+                outage_day: day.detected_minutes.map(|_| day.date),
             })
             .collect(),
         label: availability_label(&days, i18n),
@@ -396,7 +414,7 @@ fn detected_minutes_on(outages: &[OutageSpan], date: NaiveDate, now: DateTime<Ut
     };
     outages
         .iter()
-        .filter(|outage| outage.end.unwrap_or(now) - outage.start >= MIN_DETECTED_OUTAGE)
+        .filter(|outage| lasted_long_enough(outage.start, outage.end, now))
         .map(|outage| {
             let start = outage.start.max(day_start);
             let end = outage.end.unwrap_or(now).min(day_end);
@@ -528,10 +546,10 @@ mod tests {
         let day = &days[29];
         assert_eq!(day.level, Some(1));
         assert_eq!(day.detected_minutes, Some(42));
-        assert_eq!(day_status(day, &I18n::new("en")), "Outage detected, 42 min");
+        assert_eq!(day_status(day, &I18n::new("en")), "No answer for 42 min");
         assert_eq!(
             day_status(day, &I18n::new("fr")),
-            "Panne détectée, 42\u{a0}min"
+            "Sans réponse pendant 42\u{a0}min"
         );
     }
 

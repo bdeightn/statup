@@ -150,6 +150,8 @@ pub enum JournalKind {
     OutageDetected,
     /// A service declared down answers again.
     OutageEnded,
+    /// A member erased a detected outage that was not one.
+    OutageErased,
     /// One check of a service failed.
     CheckFailed,
     /// Every service failed at once: the round was ignored.
@@ -281,6 +283,7 @@ impl JournalKind {
             Self::PasswordResetNotSent => row(Cat::Access, true, Level::WARN, Tone::Minor, "Password reset email not sent", "journal.password_reset_not_sent"),
             Self::PasswordResetCompleted => row(Cat::Access, false, Level::INFO, Tone::Neutral, "Password reset completed", "journal.password_reset_completed"),
             Self::OutageDetected => row(Cat::Monitoring, true, Level::WARN, Tone::Crit, "Outage detected", "journal.outage_detected"),
+            Self::OutageErased => row(Cat::Members, true, Level::INFO, Tone::Neutral, "Detected outage erased", "journal.outage_erased"),
             Self::OutageEnded => row(Cat::Monitoring, true, Level::INFO, Tone::Ok, "Service back up", "journal.outage_ended"),
             Self::CheckFailed => row(Cat::Monitoring, false, Level::DEBUG, Tone::Minor, "Check failed", "journal.check_failed"),
             Self::MonitoringRoundSkipped => row(Cat::Monitoring, true, Level::WARN, Tone::Minor, "Monitoring round ignored: every service failed at once", "journal.monitoring_round_skipped"),
