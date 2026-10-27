@@ -744,6 +744,34 @@
         margin-bottom: 12px;
     }
 
+    .outage-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .outage {
+        padding: 10px 0;
+        border-top: 1px solid var(--hairline);
+    }
+
+    .outage:first-child {
+        border-top: 0;
+        padding-top: 0;
+    }
+
+    .outage-when {
+        font-size: var(--text-md);
+        font-feature-settings: 'tnum' 1;
+    }
+
+    .outage-meta {
+        margin-top: 2px;
+        font-size: var(--text-sm);
+        color: var(--muted);
+        font-feature-settings: 'tnum' 1;
+    }
+
     .drawer-actions {
         display: flex;
         flex-wrap: wrap;

@@ -27,7 +27,7 @@ pub const SHORT_DAYS: i64 = 30;
 pub const LONG_DAYS: i64 = 90;
 
 /// A shorter detected outage does not colour a whole day of the strip.
-const MIN_DETECTED_OUTAGE: Duration = Duration::minutes(15);
+pub const MIN_DETECTED_OUTAGE: Duration = Duration::minutes(15);
 
 pub struct ServicesModule;
 
@@ -528,10 +528,10 @@ mod tests {
         let day = &days[29];
         assert_eq!(day.level, Some(1));
         assert_eq!(day.detected_minutes, Some(42));
-        assert_eq!(day_status(day, &I18n::new("en")), "Outage detected, 42 min");
+        assert_eq!(day_status(day, &I18n::new("en")), "No answer for 42 min");
         assert_eq!(
             day_status(day, &I18n::new("fr")),
-            "Panne détectée, 42\u{a0}min"
+            "Sans réponse pendant 42\u{a0}min"
         );
     }
 

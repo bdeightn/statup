@@ -268,7 +268,7 @@ fn check_facts(detail: &str, i18n: &I18n) -> Vec<String> {
 }
 
 /// The words [`crate::services::Finding::words`] writes, said again.
-fn finding(words: &str, i18n: &I18n) -> Option<String> {
+pub(crate) fn finding(words: &str, i18n: &I18n) -> Option<String> {
     let key = match words {
         "connection refused" => "journal.fact_refused",
         "no answer in time" => "journal.fact_timed_out",

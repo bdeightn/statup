@@ -1182,7 +1182,7 @@ async fn a_detected_outage_of_42_minutes_shows_in_the_strip() {
         .unwrap();
 
     let (_, page) = app.get("/").await;
-    assert!(page.contains("data-day-status=\"Panne détectée, 42\u{a0}min\""));
+    assert!(page.contains("data-day-status=\"Sans réponse pendant 42\u{a0}min\""));
 }
 
 /// Answers for the service named, fails for the others.

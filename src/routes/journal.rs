@@ -4,6 +4,8 @@
 mod csv_export;
 mod facts;
 
+pub(super) use facts::finding as finding_words;
+
 use askama::Template;
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;

@@ -24,6 +24,7 @@ mod kuma_import;
 mod locale;
 mod notices;
 mod notifications;
+mod outages;
 mod page;
 mod password;
 mod password_reset;

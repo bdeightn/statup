@@ -12,6 +12,7 @@ use super::audience::{
     AccessBlock, Audience, VISIBILITY_CHOICE, VISIBILITY_NO_FOLDER, VISIBILITY_REQUIRED,
 };
 use super::checks::{CheckFields, CheckInput, OUTAGE_AFTER_INVALID};
+use super::outages::{OutageLine, panel_outages};
 use super::{Frame, members_only, render};
 use crate::db::DbPool;
 use crate::error::AppError;
@@ -898,6 +899,7 @@ struct ServiceDrawerTemplate {
     events: Vec<EventSummary>,
     /// The checks found the service down and no open event explains it.
     detected: bool,
+    outages: Vec<OutageLine>,
     can_edit: bool,
     i18n: I18n,
 }
@@ -937,11 +939,14 @@ pub async fn drawer_content(
         && !EventRepository::state_drivers(&state.pool, Some(id))
             .await?
             .contains_key(&id);
+    let outages =
+        panel_outages(&state.pool, id, &service.name, viewer.user.as_ref(), &i18n).await?;
     let row = service_history(&state.pool, service, &i18n).await?;
     render(&ServiceDrawerTemplate {
         row,
         events,
         detected,
+        outages,
         can_edit: viewer.user.is_some_and(|u| u.role.can_publish()),
         i18n,
     })

@@ -27,6 +27,20 @@
         </div>
     </section>
 
+    {% if !outages.is_empty() %}
+    <section class="drawer-section" aria-labelledby="svc-outages-title">
+        <h3 id="svc-outages-title" class="label">{{ i18n.t("services.panel_outages") }}</h3>
+        <ul class="outage-list">
+            {% for outage in outages %}
+            <li class="outage">
+                <p class="outage-when">{{ outage.when }}</p>
+                <p class="outage-meta">{{ outage.length }}{% if let Some(reason) = outage.reason %}&nbsp;<span aria-hidden="true">·</span> {{ reason }}{% endif %}{% if let Some(link) = outage.journal %}&nbsp;<span aria-hidden="true">·</span> <a class="link" href="{{ link }}">{{ i18n.t("journal.title") }}</a>{% endif %}</p>
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
     <section class="drawer-section" aria-labelledby="svc-events-title">
         <h3 id="svc-events-title" class="label">{{ i18n.t("services.panel_events") }}</h3>
         {% if events.is_empty() %}
