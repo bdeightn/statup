@@ -687,12 +687,6 @@
 
     /* A group: its box and name, what importing it does on the right, its
        monitors under the name. */
-    .kuma-groups {
-        margin: 0;
-        padding: 0;
-        list-style: none;
-    }
-
     .kuma-group {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -740,13 +734,6 @@
 
     .kuma-groups-error {
         padding: 12px 16px 0;
-    }
-
-    .kuma-import-foot {
-        display: flex;
-        justify-content: flex-end;
-        padding: 16px;
-        border-top: 1px solid var(--line);
     }
 
     @media (max-width: 640px) {
@@ -1392,7 +1379,8 @@
     }
 
     .group-links,
-    .group-members {
+    .group-members,
+    .kuma-groups {
         margin: 0;
         padding: 0;
         list-style: none;

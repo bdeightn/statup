@@ -1,14 +1,12 @@
 //! Reading a public status page of Uptime Kuma: its groups and the names of
 //! their monitors, the ones its webhook sends.
 
-use std::time::Duration;
-
 use reqwest::Url;
 use serde::Deserialize;
 
 use crate::models::CheckKind;
-use crate::services::probe::{classify_http, client_builder};
-use crate::services::{Finding, target_allowed};
+use crate::services::probe::classify_http;
+use crate::services::{Finding, Probes, target_allowed};
 
 /// Largest page read, in bytes: a page of a few hundred monitors takes a
 /// few dozen kilobytes.
@@ -42,6 +40,8 @@ pub struct KumaMonitor {
 /// Why a page could not be read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KumaError {
+    /// The address is not that of a status page, and why (a translation key).
+    Address(&'static str),
     /// Kuma has no status page under this name.
     NotFound,
     /// Kuma answered with another error status.
@@ -74,7 +74,7 @@ struct PageConfig {
 /// a browser (`/status/<slug>`, `/status` for the default page) or that of
 /// its data (`/api/status-page/<slug>`). The URL passes the gate of the
 /// checks first, so a hosted instance limits both in one place.
-pub fn status_page_api(raw: &str) -> Result<Url, &'static str> {
+fn status_page_api(raw: &str) -> Result<Url, &'static str> {
     let raw = raw.trim();
     target_allowed(CheckKind::Http, raw).map_err(|key| match key {
         "validation.check_url_credentials" => key,
@@ -113,21 +113,17 @@ fn page_of<'a>(segments: &'a [&'a str]) -> Option<(&'a [&'a str], String)> {
     valid.then_some((prefix, slug))
 }
 
-/// The client that reads a page, accepting a certificate the instance
-/// cannot verify when the editor asks it to, for an internal Kuma.
-pub fn kuma_client(
+/// Reads the page at the address an editor pasted, with the client of the
+/// checks, lenient for an internal certificate.
+pub async fn read_status_page(
+    probes: &Probes,
+    address: &str,
     internal_cert: bool,
-    timeout: Duration,
-) -> Result<reqwest::Client, reqwest::Error> {
-    client_builder(timeout)
-        .danger_accept_invalid_certs(internal_cert)
-        .build()
-}
-
-/// Reads the page at the address `status_page_api` gave.
-pub async fn read_status_page(client: &reqwest::Client, api: &Url) -> Result<KumaPage, KumaError> {
-    let response = client
-        .get(api.clone())
+) -> Result<KumaPage, KumaError> {
+    let api = status_page_api(address).map_err(KumaError::Address)?;
+    let response = probes
+        .http(internal_cert)
+        .get(api)
         .header(reqwest::header::ACCEPT, "application/json")
         .send()
         .await
@@ -199,6 +195,7 @@ fn network(error: reqwest::Error) -> KumaError {
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
+    use std::time::Duration;
 
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
@@ -384,9 +381,8 @@ mod tests {
 
     async fn read_from(response: String, timeout: Duration) -> Result<KumaPage, KumaError> {
         let addr = serve(response).await;
-        let client = kuma_client(false, timeout).unwrap();
-        let api = status_page_api(&format!("http://{addr}/status/infra")).unwrap();
-        read_status_page(&client, &api).await
+        let probes = Probes::new(timeout).unwrap();
+        read_status_page(&probes, &format!("http://{addr}/status/infra"), false).await
     }
 
     fn ok(body: &str) -> String {
@@ -455,10 +451,9 @@ mod tests {
                 held.push(stream);
             }
         });
-        let client = kuma_client(false, Duration::from_millis(200)).unwrap();
-        let api = status_page_api(&format!("http://{addr}/status/infra")).unwrap();
+        let probes = Probes::new(Duration::from_millis(200)).unwrap();
         assert_eq!(
-            read_status_page(&client, &api).await,
+            read_status_page(&probes, &format!("http://{addr}/status/infra"), false).await,
             Err(KumaError::Network(Finding::TimedOut))
         );
     }

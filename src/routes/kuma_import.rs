@@ -17,7 +17,7 @@ use crate::models::User;
 use crate::repositories::{FolderRepository, ServiceRepository};
 use crate::services::{
     CHECK_TIMEOUT, FolderPlan, GroupPlan, KumaError, KumaPage, LastImport, MonitorFate,
-    MonitorPlan, import_groups, kuma_client, plan_import, read_status_page, status_page_api,
+    MonitorPlan, Probes, import_groups, plan_import, read_status_page,
 };
 use crate::state::AppState;
 
@@ -25,8 +25,8 @@ use crate::state::AppState;
 #[template(path = "services/import.html")]
 struct ImportTemplate {
     frame: Frame,
-    address: String,
-    internal_cert: bool,
+    /// The URL and certificate choice in the form.
+    last: LastImport,
     /// Why the page could not be read, under its URL.
     error: Option<String>,
     /// The page once read.
@@ -42,22 +42,15 @@ impl ImportTemplate {
         if group.monitors.is_empty() {
             return vec![self.i18n.t("kuma_import.no_monitor").to_string()];
         }
-        let count = |kept: fn(&MonitorFate) -> bool| {
-            group
-                .monitors
-                .iter()
-                .filter(|monitor| kept(&monitor.fate))
-                .count()
-        };
         let counts = [
             ("kuma_import.to_import", group.new_services()),
             (
                 "kuma_import.existing",
-                count(|fate| *fate == MonitorFate::Exists),
+                group.count(|fate| fate == MonitorFate::Exists),
             ),
             (
                 "kuma_import.refused",
-                count(|fate| matches!(fate, MonitorFate::Refused(_))),
+                group.count(|fate| matches!(fate, MonitorFate::Refused(_))),
             ),
         ];
         let mut facts: Vec<String> = counts
@@ -65,18 +58,21 @@ impl ImportTemplate {
             .filter(|(_, n)| *n > 0)
             .map(|(key, n)| self.i18n.plural(key, n))
             .collect();
-        if group.new_services() > 0 {
-            match group.folder {
-                FolderPlan::Existing { .. } => {
-                    facts.push(self.i18n.t("kuma_import.folder_existing").to_string());
-                }
-                FolderPlan::Refused(_) => {
-                    facts.push(self.i18n.t("kuma_import.no_folder").to_string());
-                }
-                FolderPlan::New(_) => {}
-            }
-        }
+        facts.extend(self.folder_fact(group));
         facts
+    }
+
+    /// Where a group's new services go, when it is not a folder of its name.
+    fn folder_fact(&self, group: &GroupPlan) -> Option<String> {
+        if group.new_services() == 0 {
+            return None;
+        }
+        let key = match group.folder {
+            FolderPlan::Existing { .. } => "kuma_import.folder_existing",
+            FolderPlan::Refused(_) => "kuma_import.no_folder",
+            FolderPlan::New(_) => return None,
+        };
+        Some(self.i18n.t(key).to_string())
     }
 
     /// Why a monitor is left, for screen readers: its tag only looks quiet.
@@ -223,7 +219,7 @@ async fn render_import(
             let services = ServiceRepository::list_all(&state.pool).await?;
             let folders = FolderRepository::list(&state.pool).await?;
             Some(ReadPage {
-                groups: plan_import(&page, &services, &folders),
+                groups: plan_import(&page.groups, &services, &folders),
                 title: page.title,
             })
         }
@@ -231,8 +227,7 @@ async fn render_import(
     };
     render(&ImportTemplate {
         frame: Frame::load(&state.pool, Some(user), csrf_token, &i18n).await?,
-        address: shown.last.address,
-        internal_cert: shown.last.internal_cert,
+        last: shown.last,
         error: shown.error,
         read,
         nothing_ticked: shown.nothing_ticked,
@@ -243,19 +238,17 @@ async fn render_import(
 /// The page the form names, or why it could not be read, in the reader's
 /// words.
 async fn read_page(input: &ImportInput, i18n: &I18n) -> Result<Result<KumaPage, String>, AppError> {
-    let api = match status_page_api(&input.address) {
-        Ok(api) => api,
-        Err(key) => return Ok(Err(i18n.t(key).to_string())),
-    };
-    let client =
-        kuma_client(input.internal_cert.is_some(), CHECK_TIMEOUT).map_err(anyhow::Error::from)?;
-    Ok(read_status_page(&client, &api)
-        .await
-        .map_err(|error| error_text(error, i18n)))
+    let probes = Probes::new(CHECK_TIMEOUT).map_err(anyhow::Error::from)?;
+    Ok(
+        read_status_page(&probes, &input.address, input.internal_cert.is_some())
+            .await
+            .map_err(|error| error_text(error, i18n)),
+    )
 }
 
 fn error_text(error: KumaError, i18n: &I18n) -> String {
     match error {
+        KumaError::Address(key) => i18n.t(key).to_string(),
         KumaError::NotFound => i18n.t("kuma_import.not_found").to_string(),
         KumaError::Status(status) => i18n.tf(
             "kuma_import.error_status",

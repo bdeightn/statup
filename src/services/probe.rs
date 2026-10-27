@@ -88,17 +88,19 @@ impl Probes {
         })
     }
 
+    /// The client for a web address, lenient for an internal certificate.
+    pub fn http(&self, internal_cert: bool) -> &reqwest::Client {
+        if internal_cert {
+            &self.lenient
+        } else {
+            &self.strict
+        }
+    }
+
     /// Runs a check and says what it found.
     pub async fn examine(&self, check: &ServiceCheck) -> Report {
         match check.kind {
-            CheckKind::Http => {
-                let client = if check.internal_cert {
-                    &self.lenient
-                } else {
-                    &self.strict
-                };
-                probe_http(client, &check.target).await
-            }
+            CheckKind::Http => probe_http(self.http(check.internal_cert), &check.target).await,
             CheckKind::Tcp => probe_tcp(&check.target, self.timeout).await,
         }
     }
@@ -120,7 +122,7 @@ impl Prober for Probes {
     }
 }
 
-pub(crate) fn client_builder(timeout: Duration) -> reqwest::ClientBuilder {
+fn client_builder(timeout: Duration) -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .timeout(timeout)
         .redirect(reqwest::redirect::Policy::limited(MAX_REDIRECTS))

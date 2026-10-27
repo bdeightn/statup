@@ -8,6 +8,4 @@ pub use import::{
     FolderPlan, GroupPlan, Imported, LastImport, MonitorFate, MonitorPlan, import_groups,
     plan_import,
 };
-pub use page::{
-    KumaError, KumaGroup, KumaMonitor, KumaPage, kuma_client, read_status_page, status_page_api,
-};
+pub use page::{KumaError, KumaGroup, KumaMonitor, KumaPage, read_status_page};

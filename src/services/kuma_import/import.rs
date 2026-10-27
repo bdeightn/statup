@@ -2,9 +2,9 @@
 //! monitor, under the same names, leaving alone what already answers to a
 //! name. Running it again adds only what is new.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use super::page::KumaPage;
+use super::page::{KumaGroup, KumaPage};
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{JournalKind, Service, ServiceFolder, User, check_folder_name};
@@ -58,9 +58,14 @@ pub enum MonitorFate {
 impl GroupPlan {
     /// How many services importing it creates.
     pub fn new_services(&self) -> usize {
+        self.count(|fate| fate == MonitorFate::New)
+    }
+
+    /// How many of its monitors meet the test.
+    pub fn count(&self, test: impl Fn(MonitorFate) -> bool) -> usize {
         self.monitors
             .iter()
-            .filter(|monitor| monitor.is_new())
+            .filter(|monitor| test(monitor.fate))
             .count()
     }
 }
@@ -99,16 +104,16 @@ impl LastImport {
     }
 
     pub async fn save(&self, pool: &DbPool) -> Result<(), AppError> {
-        SettingsRepository::set(pool, ADDRESS_SETTING, self.address.trim()).await?;
+        SettingsRepository::set(pool, ADDRESS_SETTING, &self.address).await?;
         let internal_cert = if self.internal_cert { "true" } else { "false" };
         SettingsRepository::set(pool, INTERNAL_CERT_SETTING, internal_cert).await?;
         Ok(())
     }
 }
 
-/// The plan of every group of the page, against what Statup holds.
-pub fn plan_import(
-    page: &KumaPage,
+/// The plan of groups of a page, in its order, against what Statup holds.
+pub fn plan_import<'a>(
+    groups: impl IntoIterator<Item = &'a KumaGroup>,
     services: &[Service],
     folders: &[ServiceFolder],
 ) -> Vec<GroupPlan> {
@@ -116,8 +121,8 @@ pub fn plan_import(
         services,
         planned: HashSet::new(),
     };
-    page.groups
-        .iter()
+    groups
+        .into_iter()
         .map(|group| GroupPlan {
             name: group.name.trim().to_string(),
             folder: folder_plan(&group.name, folders),
@@ -188,24 +193,18 @@ pub async fn import_groups(
     ticked: &[String],
     user: &User,
 ) -> Result<Imported, AppError> {
-    let chosen = KumaPage {
-        title: page.title.clone(),
-        groups: page
-            .groups
-            .iter()
-            .filter(|group| ticked.iter().any(|name| name == group.name.trim()))
-            .cloned()
-            .collect(),
-    };
+    let chosen = page
+        .groups
+        .iter()
+        .filter(|group| ticked.iter().any(|name| name == group.name.trim()));
     let services = ServiceRepository::list_all(pool).await?;
     let folders = FolderRepository::list(pool).await?;
     let mut run = Run {
         pool,
         user,
-        created: HashMap::new(),
         imported: Imported::default(),
     };
-    for group in plan_import(&chosen, &services, &folders) {
+    for group in plan_import(chosen, &services, &folders) {
         run.group(&group).await?;
     }
     Ok(run.imported)
@@ -215,9 +214,6 @@ pub async fn import_groups(
 struct Run<'a> {
     pool: &'a DbPool,
     user: &'a User,
-    /// The folders it created, by lowercased name: two groups of the same
-    /// name share one.
-    created: HashMap<String, i64>,
     imported: Imported,
 }
 
@@ -271,23 +267,20 @@ impl Run<'_> {
         Ok(())
     }
 
-    /// The folder a group's services go in: found, or created once.
+    /// The folder a group's services go in: found, or created. Groups of
+    /// one name are merged when the page is read, so a name is created once.
     async fn folder(&mut self, plan: &FolderPlan) -> Result<Option<(i64, String)>, AppError> {
         let name = match plan {
             FolderPlan::Refused(_) => return Ok(None),
             FolderPlan::Existing { id, name } => return Ok(Some((*id, name.clone()))),
             FolderPlan::New(name) => name,
         };
-        if let Some(id) = self.created.get(&name.to_lowercase()) {
-            return Ok(Some((*id, name.clone())));
-        }
         let id = FolderRepository::create(self.pool, name).await?;
         NewJournalEntry::new(JournalKind::FolderCreated)
             .by(self.user)
             .about(name)
             .record(self.pool)
             .await;
-        self.created.insert(name.to_lowercase(), id);
         self.imported.folders += 1;
         Ok(Some((id, name.clone())))
     }
@@ -374,7 +367,7 @@ mod tests {
             "Wiki Paie",
             "wiki-paie",
         ];
-        let plans = plan_import(&page(&[("Infra", &monitors)]), &services, &[]);
+        let plans = plan_import(&page(&[("Infra", &monitors)]).groups, &services, &[]);
         assert_eq!(
             fates(&plans),
             [vec![
@@ -399,7 +392,7 @@ mod tests {
             visibility: Visibility::Everyone,
         }];
         let plans = plan_import(
-            &page(&[(" RÉSEAU ", &[]), ("Infrastructure", &[]), ("  ", &[])]),
+            &page(&[(" RÉSEAU ", &[]), ("Infrastructure", &[]), ("  ", &[])]).groups,
             &[],
             &folders,
         );

@@ -22,7 +22,7 @@
                 <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
                 <div class="check-target">
                     <input id="kuma-url" name="address" type="text" class="input" inputmode="url" autocomplete="off" spellcheck="false" maxlength="2000" required
-                           value="{{ address }}" placeholder="{{ i18n.t("kuma_import.url_placeholder") }}"
+                           value="{{ last.address }}" placeholder="{{ i18n.t("kuma_import.url_placeholder") }}"
                            {% if error.is_some() %}aria-invalid="true" aria-describedby="kuma-url-error" autofocus{% endif %}>
                     {# The black button of the screen until the page is read,
                        then Import takes that place. #}
@@ -32,7 +32,7 @@
                 <p id="kuma-url-error" class="field-error" role="alert">{{ message }}</p>
                 {% endif %}
                 <label class="check-row mt-3">
-                    <input type="checkbox" name="internal_cert" value="on" class="checkbox"{% if internal_cert %} checked{% endif %}>
+                    <input type="checkbox" name="internal_cert" value="on" class="checkbox"{% if last.internal_cert %} checked{% endif %}>
                     <span>{{ i18n.t("services.check_internal_cert") }}</span>
                 </label>
             </form>
@@ -44,8 +44,8 @@
         <section class="card" aria-labelledby="kuma-groups-title">
             <form method="post" action="/services/import">
                 <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                <input type="hidden" name="address" value="{{ address }}">
-                {% if internal_cert %}<input type="hidden" name="internal_cert" value="on">{% endif %}
+                <input type="hidden" name="address" value="{{ last.address }}">
+                {% if last.internal_cert %}<input type="hidden" name="internal_cert" value="on">{% endif %}
                 <header class="card-head">
                     <h2 id="kuma-groups-title" class="card-title wrap-anywhere">{% if let Some(title) = page.title %}{{ title }}{% else %}{{ i18n.t("kuma_import.groups") }}{% endif %} <span class="count">{{ page.groups.len() }}</span></h2>
                 </header>
@@ -71,11 +71,11 @@
                 </ul>
                 {% endif %}
                 {% if page.importable() %}
-                <div class="kuma-import-foot">
+                <div class="set-foot">
                     <button type="submit" class="btn btn-primary">{{ i18n.t("kuma_import.submit") }}</button>
                 </div>
                 {% else if !page.groups.is_empty() %}
-                <p class="groups-empty kuma-nothing-new">{{ i18n.t("kuma_import.nothing_new") }}</p>
+                <p class="groups-empty">{{ i18n.t("kuma_import.nothing_new") }}</p>
                 {% endif %}
             </form>
         </section>
