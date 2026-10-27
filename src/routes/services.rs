@@ -6,13 +6,14 @@ use askama::Template;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
+use chrono::NaiveDate;
 use serde::Deserialize;
 
 use super::audience::{
     AccessBlock, Audience, VISIBILITY_CHOICE, VISIBILITY_NO_FOLDER, VISIBILITY_REQUIRED,
 };
 use super::checks::{CheckFields, CheckInput, OUTAGE_AFTER_INVALID};
-use super::outages::{OutageLine, panel_outages};
+use super::outages::{OutageLine, PanelView, panel_outages};
 use super::{Frame, members_only, render};
 use crate::db::DbPool;
 use crate::error::AppError;
@@ -23,7 +24,7 @@ use crate::models::{
     BUILTIN_ICONS, BuiltinIcon, EventFilters, EventSummary, Icon, JournalKind, Service,
     ServiceFolder, ServiceStatus, User, find_builtin_icon,
 };
-use crate::modules::services::{LONG_DAYS, ServiceRow, Strip, service_history, strips};
+use crate::modules::services::{DayCell, LONG_DAYS, ServiceRow, Strip, service_history, strips};
 use crate::repositories::{EventRepository, FolderRepository, NewJournalEntry, ServiceRepository};
 use crate::services::{
     DEFAULT_OUTAGE_AFTER, IconService, LastCheck, ServiceService, put_problems_first,
@@ -889,6 +890,12 @@ pub async fn update_status(
     })
 }
 
+/// The day a service's panel opens on, from a click on its row.
+#[derive(Deserialize)]
+pub struct PanelQuery {
+    day: Option<String>,
+}
+
 /// How many of its events a service's side panel lists.
 const PANEL_EVENTS: i64 = 3;
 
@@ -900,11 +907,21 @@ struct ServiceDrawerTemplate {
     /// The checks found the service down and no open event explains it.
     detected: bool,
     outages: Vec<OutageLine>,
+    /// "2026-10-27", the day the panel opened on.
+    day: Option<String>,
     can_edit: bool,
     i18n: I18n,
 }
 
 impl ServiceDrawerTemplate {
+    fn is_selected(&self, day: &DayCell) -> bool {
+        self.day.as_deref() == Some(day.iso.as_str())
+    }
+
+    fn shows_outages(&self) -> bool {
+        self.outages.iter().any(|outage| outage.shown)
+    }
+
     fn event_day(&self, event: &EventSummary) -> String {
         self.i18n
             .format_date_short(&crate::clock::local_date(&event.created_at))
@@ -917,6 +934,7 @@ pub async fn drawer_content(
     viewer: Viewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    Query(query): Query<PanelQuery>,
     headers: HeaderMap,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
@@ -939,14 +957,22 @@ pub async fn drawer_content(
         && !EventRepository::state_drivers(&state.pool, Some(id))
             .await?
             .contains_key(&id);
-    let outages =
-        panel_outages(&state.pool, id, &service.name, viewer.user.as_ref(), &i18n).await?;
+    let day = query
+        .day
+        .as_deref()
+        .and_then(|day| NaiveDate::parse_from_str(day, "%Y-%m-%d").ok());
+    let view = PanelView {
+        user: viewer.user.as_ref(),
+        day,
+    };
+    let outages = panel_outages(&state.pool, id, &service.name, &view, &i18n).await?;
     let row = service_history(&state.pool, service, &i18n).await?;
     render(&ServiceDrawerTemplate {
         row,
         events,
         detected,
         outages,
+        day: day.map(|day| day.format("%Y-%m-%d").to_string()),
         can_edit: viewer.user.is_some_and(|u| u.role.can_publish()),
         i18n,
     })

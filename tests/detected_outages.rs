@@ -96,3 +96,40 @@ async fn a_short_outage_colours_nothing_and_is_not_listed() {
 
     assert!(!panel.contains("Pannes détectées"));
 }
+
+#[tokio::test]
+async fn the_panel_opens_folded_or_on_the_day_clicked() {
+    let app = TestApp::spawn_public().await;
+    let id = service_with_an_outage(&app, "Mail", checks_found("name not found")).await;
+    sqlx::query("UPDATE services SET created_at = datetime('now', '-60 days')")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+    let day: String =
+        sqlx::query_scalar("SELECT date(started_at) FROM service_outages WHERE service_id = ?")
+            .bind(id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let (_, folded) = app.get(&format!("/services/{id}/drawer")).await;
+    assert!(folded.contains(
+        r#"id="svc-outages" class="drawer-section" aria-labelledby="svc-outages-title" hidden"#
+    ));
+    assert!(folded.contains(&format!(
+        r#"data-outage-day="{day}" aria-controls="svc-outages" aria-pressed="false""#
+    )));
+
+    let (_, opened) = app.get(&format!("/services/{id}/drawer?day={day}")).await;
+    assert!(opened.contains(r#"aria-labelledby="svc-outages-title">"#));
+    assert!(opened.contains(&format!(
+        r#"data-outage-day="{day}" aria-controls="svc-outages" aria-pressed="true""#
+    )));
+    assert!(opened.contains(&format!(r#"data-outage-days="{day}">"#)));
+
+    let (_, home) = app.get("/").await;
+    assert!(
+        home.contains(&format!(r#"data-outage-day="{day}""#)),
+        "the row's day opens the panel on it"
+    );
+}

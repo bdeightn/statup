@@ -22,17 +22,20 @@
 
     <section class="drawer-section" aria-labelledby="svc-days-title">
         <h3 id="svc-days-title" class="label">{{ row.strip.legend }}</h3>
-        <div class="svc-bars drawer-bars" role="img" aria-label="{{ row.strip.label }}">
-            {% for day in row.strip.days %}<span class="{{ day.class() }}" data-day-date="{{ day.date }}" data-day-status="{{ day.status }}"></span>{% endfor %}
+        <p class="sr-only">{{ row.strip.label }}</p>
+        {# A day an outage coloured is a button: it shows that day's
+           outages below. #}
+        <div class="svc-bars drawer-bars">
+            {% for day in row.strip.days %}{% if day.detected && !outages.is_empty() %}<button type="button" class="{{ day.class() }}" data-day-date="{{ day.date }}" data-day-status="{{ day.status }}" data-outage-day="{{ day.iso }}" aria-controls="svc-outages" aria-pressed="{{ self.is_selected(day) }}" aria-label="{{ day.date }}, {{ day.status }}"></button>{% else %}<span class="{{ day.class() }}" data-day-date="{{ day.date }}" data-day-status="{{ day.status }}" aria-hidden="true"></span>{% endif %}{% endfor %}
         </div>
     </section>
 
     {% if !outages.is_empty() %}
-    <section class="drawer-section" aria-labelledby="svc-outages-title">
+    <section id="svc-outages" class="drawer-section" aria-labelledby="svc-outages-title"{% if !self.shows_outages() %} hidden{% endif %}>
         <h3 id="svc-outages-title" class="label">{{ i18n.t("services.panel_outages") }}</h3>
         <ul class="outage-list">
             {% for outage in outages %}
-            <li class="outage">
+            <li class="outage" data-outage-days="{{ outage.days }}"{% if !outage.shown %} hidden{% endif %}>
                 <p class="outage-when">{{ outage.when }}</p>
                 <p class="outage-meta">{{ outage.length }}{% if let Some(reason) = outage.reason %}&nbsp;<span aria-hidden="true">·</span> {{ reason }}{% endif %}{% if let Some(link) = outage.journal %}&nbsp;<span aria-hidden="true">·</span> <a class="link" href="{{ link }}">{{ i18n.t("journal.title") }}</a>{% endif %}</p>
             </li>

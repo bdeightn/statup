@@ -36,9 +36,14 @@ pub struct ServicesModule;
 pub struct DayCell {
     pub level: Option<u8>,
     pub date: String,
+    /// "2026-10-27", what a click on the day asks the panel for.
+    pub iso: String,
     pub status: String,
     /// Older than the short strip: shown only where there is room.
     pub early: bool,
+    /// Coloured by an outage the checks or a tool found, which the
+    /// service's panel lists.
+    pub detected: bool,
 }
 
 impl DayCell {
@@ -278,8 +283,10 @@ fn strip_of(service: &Service, history: &History, window: &Window, i18n: &I18n) 
             .map(|day| DayCell {
                 level: day.level,
                 date: i18n.format_date_short(&day.date),
+                iso: day.date.format("%Y-%m-%d").to_string(),
                 status: day_status(day, i18n),
                 early: window.is_early(day.date),
+                detected: day.detected_minutes.is_some(),
             })
             .collect(),
         label: availability_label(&days, i18n),

@@ -570,10 +570,37 @@
         return true;
     }
 
+    // A day an outage coloured on a service's row opens its panel on that
+    // day's outages.
+    function drawerUrl(link, target) {
+        const day = target.closest("[data-outage-day]");
+        if (!day || !link.contains(day)) return link.dataset.drawer;
+        return `${link.dataset.drawer}?day=${encodeURIComponent(day.dataset.outageDay)}`;
+    }
+
+    // In the panel, the same day shows the outages found then; a second
+    // click folds them away.
+    function onOutageDay(target) {
+        const day = target.closest("button[data-outage-day]");
+        if (!day) return false;
+        const list = document.getElementById(day.getAttribute("aria-controls"));
+        if (!list) return true;
+        const show = day.getAttribute("aria-pressed") !== "true";
+        for (const other of day.parentElement.querySelectorAll("button[data-outage-day]")) {
+            other.setAttribute("aria-pressed", "false");
+        }
+        day.setAttribute("aria-pressed", String(show));
+        for (const item of list.querySelectorAll("[data-outage-days]")) {
+            item.hidden = !show || !item.dataset.outageDays.split(" ").includes(day.dataset.outageDay);
+        }
+        list.hidden = !show;
+        return true;
+    }
+
     function onDrawerClick(target, event) {
         const link = target.closest("[data-drawer]");
         if (link && !event.metaKey && !event.ctrlKey && !event.shiftKey && event.button === 0) {
-            if (!isPhoneLayout() && openDrawer(link.dataset.drawer, link)) {
+            if (!isPhoneLayout() && openDrawer(drawerUrl(link, target), link)) {
                 event.preventDefault();
             }
             return true;
@@ -621,7 +648,7 @@
             clearToast();
             return;
         }
-        if (onDrawerClick(target, event) || onConfirmClick(target)) return;
+        if (onOutageDay(target) || onDrawerClick(target, event) || onConfirmClick(target)) return;
         const copy = target.closest("[data-copy]");
         if (copy) copyValue(copy);
     });

@@ -644,6 +644,19 @@
         opacity: 1;
     }
 
+    /* A day of a service's panel that shows its outages when clicked. */
+    button.bar {
+        padding: 0;
+        border: 0;
+        cursor: pointer;
+    }
+
+    .bar[aria-pressed="true"] {
+        opacity: 1;
+        outline: 2px solid var(--ink);
+        outline-offset: 2px;
+    }
+
     .bar-minor {
         background: var(--sem-minor);
         opacity: 0.85;

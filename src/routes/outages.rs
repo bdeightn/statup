@@ -1,7 +1,7 @@
 //! The outages the checks or a monitoring tool found on a service, as its
 //! side panel lists them.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 
 use super::journal::finding_words;
@@ -13,9 +13,6 @@ use crate::models::{User, split_duration};
 use crate::modules::services::{MIN_DETECTED_OUTAGE, SHORT_DAYS};
 use crate::repositories::{Outage, OutageCause, OutageRepository};
 
-/// Most outages a service's panel lists.
-const PANEL_OUTAGES: usize = 5;
-
 /// One outage as the panel shows it, cut to what the viewer may read.
 pub struct OutageLine {
     /// "Du 26 oct. à 23:56 au 27 oct. à 08:42".
@@ -26,6 +23,17 @@ pub struct OutageLine {
     pub reason: Option<String>,
     /// The Journal around the outage, for administrators.
     pub journal: Option<String>,
+    /// The days of the strip it covers, "2026-10-26 2026-10-27": a click on
+    /// one of them shows it.
+    pub days: String,
+    /// Covers the day the panel opened on.
+    pub shown: bool,
+}
+
+/// Who reads the panel, and the day it opened on.
+pub struct PanelView<'a> {
+    pub user: Option<&'a User>,
+    pub day: Option<NaiveDate>,
 }
 
 /// The outages that coloured the days of a service's strip, newest first.
@@ -33,18 +41,39 @@ pub async fn panel_outages(
     pool: &DbPool,
     service_id: i64,
     service_name: &str,
-    user: Option<&User>,
+    view: &PanelView<'_>,
     i18n: &I18n,
 ) -> Result<Vec<OutageLine>, AppError> {
     let now = Utc::now();
     let since = now - chrono::Duration::days(SHORT_DAYS);
     let outages =
         OutageRepository::recent(pool, service_id, since, MIN_DETECTED_OUTAGE, now).await?;
+    let first_day = clock::local_date(&since);
     Ok(outages
-        .into_iter()
-        .take(PANEL_OUTAGES)
-        .map(|outage| line(&outage, service_name, user, now, i18n))
+        .iter()
+        .map(|outage| {
+            let days = days_covered(outage, first_day, now);
+            OutageLine {
+                shown: view.day.is_some_and(|day| days.contains(&day)),
+                days: days
+                    .iter()
+                    .map(|day| day.format("%Y-%m-%d").to_string())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                ..line(outage, service_name, view.user, now, i18n)
+            }
+        })
         .collect())
+}
+
+/// The local days an outage spans, from `first_day` on.
+fn days_covered(outage: &Outage, first_day: NaiveDate, now: DateTime<Utc>) -> Vec<NaiveDate> {
+    let last = clock::local_date(&outage.end.unwrap_or(now));
+    clock::local_date(&outage.start)
+        .max(first_day)
+        .iter_days()
+        .take_while(|day| *day <= last)
+        .collect()
 }
 
 fn line(
@@ -62,6 +91,8 @@ fn line(
         journal: user
             .filter(|u| u.role.can_admin())
             .map(|_| journal_link(outage.start, end, service_name)),
+        days: String::new(),
+        shown: false,
     }
 }
 
