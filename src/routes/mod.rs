@@ -211,6 +211,10 @@ fn publisher_routes() -> Router<AppState> {
             "/events/{id}/updates/{update_id}/delete",
             post(events::delete_update),
         )
+        .route(
+            "/services/{id}/outages/{outage_id}/erase",
+            post(outages::erase),
+        )
         .route("/events/{id}/review", post(events::publish_review))
         .route("/events/{id}/review/delete", post(events::remove_review))
         .route("/events/templates/search", get(events::template_search))

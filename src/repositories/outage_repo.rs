@@ -63,6 +63,61 @@ impl OutageRepository {
             .collect())
     }
 
+    /// For each outage of `service_id` ended since `since`, the services
+    /// whose ended outage began within `window` of it: what fell together.
+    pub async fn fallen_together(
+        pool: &DbPool,
+        service_id: i64,
+        since: DateTime<Utc>,
+        window: TimeDelta,
+    ) -> Result<Vec<(i64, i64)>, sqlx::Error> {
+        sqlx::query_as(
+            "SELECT mine.id, other.service_id FROM service_outages mine \
+             JOIN service_outages other ON other.service_id != mine.service_id \
+             AND other.ended_at IS NOT NULL \
+             AND abs(julianday(other.started_at) - julianday(mine.started_at)) * 86400 <= ? \
+             WHERE mine.service_id = ? AND mine.ended_at >= ?",
+        )
+        .bind(window.num_seconds())
+        .bind(service_id)
+        .bind(clock::db(since))
+        .fetch_all(pool)
+        .await
+    }
+
+    /// Erases an ended outage of `service_id`, and the ended outages of
+    /// `others` that began within `window` of it. Returns what was erased,
+    /// the outage asked for first; nothing when it is under way or unknown.
+    pub async fn erase(
+        pool: &DbPool,
+        service_id: i64,
+        outage_id: i64,
+        others: &[i64],
+        window: TimeDelta,
+    ) -> Result<Vec<ErasedOutage>, sqlx::Error> {
+        let mut tx = pool.begin().await?;
+        let Some(first) = erase_ended(&mut tx, service_id, outage_id).await? else {
+            return Ok(Vec::new());
+        };
+        let mut erased = vec![first];
+        for &other in others {
+            let near = sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM service_outages WHERE service_id = ? AND ended_at IS NOT NULL \
+                 AND abs(julianday(started_at) - julianday(?)) * 86400 <= ?",
+            )
+            .bind(other)
+            .bind(clock::db(erased[0].start))
+            .bind(window.num_seconds())
+            .fetch_all(&mut *tx)
+            .await?;
+            for id in near {
+                erased.extend(erase_ended(&mut tx, other, id).await?);
+            }
+        }
+        tx.commit().await?;
+        Ok(erased)
+    }
+
     /// When each outage under way began, by service.
     pub async fn open_starts(pool: &DbPool) -> Result<HashMap<i64, DateTime<Utc>>, sqlx::Error> {
         let rows: Vec<(i64, DateTime<Utc>)> = sqlx::query_as(
@@ -142,6 +197,34 @@ pub struct Outage {
 pub struct OutageSpan {
     pub start: DateTime<Utc>,
     pub end: Option<DateTime<Utc>>,
+}
+
+/// An outage taken out of the history.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ErasedOutage {
+    pub service_id: i64,
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+}
+
+async fn erase_ended(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    service_id: i64,
+    id: i64,
+) -> Result<Option<ErasedOutage>, sqlx::Error> {
+    let row: Option<(DateTime<Utc>, DateTime<Utc>)> = sqlx::query_as(
+        "DELETE FROM service_outages WHERE service_id = ? AND ended_at IS NOT NULL AND id = ? \
+         RETURNING started_at, ended_at",
+    )
+    .bind(service_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(row.map(|(start, end)| ErasedOutage {
+        service_id,
+        start,
+        end,
+    }))
 }
 
 pub(super) async fn open_outage(
@@ -234,6 +317,82 @@ mod tests {
 
         let listed: Vec<_> = outages.iter().map(|o| (o.start, o.cause.clone())).collect();
         assert_eq!(listed, [(at(4), OutageCause::Report), (at(1), checked)]);
+    }
+
+    async fn service_down(
+        pool: &DbPool,
+        name: &str,
+        start: DateTime<Utc>,
+        end: Option<DateTime<Utc>>,
+    ) -> i64 {
+        let id = ServiceRepository::create(pool, name, &name.to_lowercase(), None, None, None)
+            .await
+            .unwrap()
+            .id;
+        ServiceRepository::mark_detected_down(pool, id, start, &OutageCause::Report)
+            .await
+            .unwrap();
+        if let Some(end) = end {
+            ServiceRepository::mark_detected_up(pool, id, end)
+                .await
+                .unwrap();
+        }
+        id
+    }
+
+    async fn outage_ids(pool: &DbPool) -> Vec<(i64, i64)> {
+        sqlx::query_as("SELECT id, service_id FROM service_outages ORDER BY id")
+            .fetch_all(pool)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn erasing_takes_the_outages_that_fell_together_only_when_asked() {
+        let pool = test_pool().await;
+        let window = Duration::minutes(5);
+        let mail = service_down(&pool, "Mail", at(1), Some(at(3))).await;
+        let wiki = service_down(&pool, "Wiki", at(1) + Duration::minutes(2), Some(at(3))).await;
+        let late = service_down(&pool, "Late", at(1) + Duration::minutes(9), Some(at(3))).await;
+        let open = service_down(&pool, "Open", at(1), None).await;
+        let ids = outage_ids(&pool).await;
+        let mail_outage = ids[0].0;
+
+        let together = OutageRepository::fallen_together(&pool, mail, at(0), window)
+            .await
+            .unwrap();
+        assert_eq!(together, [(mail_outage, wiki)]);
+
+        let erased = OutageRepository::erase(&pool, mail, mail_outage, &[wiki, late, open], window)
+            .await
+            .unwrap();
+        let services: Vec<i64> = erased.iter().map(|o| o.service_id).collect();
+        assert_eq!(services, [mail, wiki]);
+        let left: Vec<i64> = outage_ids(&pool).await.iter().map(|(_, s)| *s).collect();
+        assert_eq!(left, [late, open]);
+    }
+
+    #[tokio::test]
+    async fn an_outage_under_way_or_of_another_service_is_never_erased() {
+        let pool = test_pool().await;
+        let open = service_down(&pool, "Open", at(1), None).await;
+        let other = service_down(&pool, "Other", at(1), Some(at(2))).await;
+        let ids = outage_ids(&pool).await;
+
+        let window = Duration::minutes(5);
+        assert_eq!(
+            OutageRepository::erase(&pool, open, ids[0].0, &[], window)
+                .await
+                .unwrap(),
+            []
+        );
+        assert_eq!(
+            OutageRepository::erase(&pool, open, ids[1].0, &[], window)
+                .await
+                .unwrap(),
+            []
+        );
+        assert_eq!(outage_ids(&pool).await.len(), 2, "{other} keeps its outage");
     }
 
     #[tokio::test]

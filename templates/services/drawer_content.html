@@ -38,6 +38,20 @@
             <li class="outage" data-outage-days="{{ outage.days }}"{% if !outage.shown %} hidden{% endif %}>
                 <p class="outage-when">{{ outage.when }}</p>
                 <p class="outage-meta">{{ outage.length }}{% if let Some(reason) = outage.reason %}&nbsp;<span aria-hidden="true">·</span> {{ reason }}{% endif %}{% if let Some(link) = outage.journal %}&nbsp;<span aria-hidden="true">·</span> <a class="link" href="{{ link }}">{{ i18n.t("journal.title") }}</a>{% endif %}</p>
+                {% if outage.erasable %}
+                <form class="outage-erase" method="post" action="/services/{{ row.service.id }}/outages/{{ outage.id }}/erase" hx-post="/services/{{ row.service.id }}/outages/{{ outage.id }}/erase" hx-target="#drawer-content" hx-swap="innerHTML" data-confirm>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="button" class="text-action text-action-danger" data-confirm-open>{{ i18n.t("services.outage_erase") }}</button>
+                    <div class="confirm" role="group" aria-label="{{ i18n.t("services.outage_erase") }}" aria-describedby="erase-q-{{ outage.id }}" data-confirm-box hidden>
+                        <span id="erase-q-{{ outage.id }}" class="confirm-text">{{ i18n.t("services.outage_erase_question") }}</span>
+                        {% if outage.fallen_with > 0 %}
+                        <label class="check-row confirm-desc"><input type="checkbox" name="together" value="on" class="checkbox" checked><span>{{ i18n.plural("services.outage_erase_together", *outage.fallen_with) }}</span></label>
+                        {% endif %}
+                        <button type="button" class="confirm-cancel" data-confirm-cancel>{{ i18n.t("common.cancel") }}</button>
+                        <button type="submit" class="confirm-go" data-danger>{{ i18n.t("services.outage_erase_go") }}</button>
+                    </div>
+                </form>
+                {% endif %}
             </li>
             {% endfor %}
         </ul>

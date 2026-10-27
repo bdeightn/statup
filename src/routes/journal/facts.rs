@@ -134,6 +134,7 @@ fn detail_facts(kind: JournalKind, detail: &str, i18n: &I18n) -> Vec<String> {
         K::CheckFailed | K::OutageDetected | K::OutageEnded => check_facts(detail, i18n),
         K::MonitoringRoundSkipped => round_skipped(detail, i18n),
         K::NetworkLost => services_off_the_network(detail, i18n),
+        K::OutageErased => erased_outage(detail, i18n),
         K::ReportIgnored => match detail {
             "unknown service" => said("journal.fact_unknown_service"),
             "checked by Statup" => said("journal.fact_checked_by_statup"),
@@ -300,6 +301,33 @@ fn services_off_the_network(detail: &str, i18n: &I18n) -> Vec<String> {
         || vec![detail.to_string()],
         |count| vec![i18n.plural("journal.fact_services_off_network", count)],
     )
+}
+
+/// `2026-10-26T23:56:00Z · 2026-10-27T08:42:00Z`, then the service it was
+/// erased from when erased with another's.
+fn erased_outage(detail: &str, i18n: &I18n) -> Vec<String> {
+    let mut parts = detail.split(" · ");
+    let span = parts.next().zip(parts.next()).and_then(|(start, end)| {
+        let start = DateTime::parse_from_rfc3339(start).ok()?.to_utc();
+        let end = DateTime::parse_from_rfc3339(end).ok()?.to_utc();
+        Some(i18n.tf(
+            "journal.fact_outage_span",
+            &[
+                ("start", &i18n.format_datetime(&start)),
+                ("end", &i18n.format_datetime(&end)),
+            ],
+        ))
+    });
+    let Some(span) = span else {
+        return vec![detail.to_string()];
+    };
+    let mut facts = vec![span];
+    facts.extend(
+        parts
+            .next()
+            .map(|name| i18n.tf("journal.fact_erased_with", &[("name", name)])),
+    );
+    facts
 }
 
 fn leading_number(text: &str) -> Option<usize> {

@@ -910,6 +910,7 @@ struct ServiceDrawerTemplate {
     /// "2026-10-27", the day the panel opened on.
     day: Option<String>,
     can_edit: bool,
+    csrf_token: String,
     i18n: I18n,
 }
 
@@ -935,6 +936,7 @@ pub async fn drawer_content(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Query(query): Query<PanelQuery>,
+    csrf_token: CsrfToken,
     headers: HeaderMap,
     Locale(i18n): Locale,
 ) -> Result<Response, AppError> {
@@ -944,6 +946,22 @@ pub async fn drawer_content(
     if !viewer.scope.sees_service(id) {
         return Err(AppError::NotFound);
     }
+    let day = query
+        .day
+        .as_deref()
+        .and_then(|day| NaiveDate::parse_from_str(day, "%Y-%m-%d").ok());
+    service_panel(&state, &viewer, id, day, csrf_token.0, i18n).await
+}
+
+/// The side panel of a service, opened on `day` when one was clicked.
+pub(super) async fn service_panel(
+    state: &AppState,
+    viewer: &Viewer,
+    id: i64,
+    day: Option<NaiveDate>,
+    csrf_token: String,
+    i18n: I18n,
+) -> Result<Response, AppError> {
     let service = ServiceRepository::find_by_id(&state.pool, id)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -957,12 +975,9 @@ pub async fn drawer_content(
         && !EventRepository::state_drivers(&state.pool, Some(id))
             .await?
             .contains_key(&id);
-    let day = query
-        .day
-        .as_deref()
-        .and_then(|day| NaiveDate::parse_from_str(day, "%Y-%m-%d").ok());
     let view = PanelView {
         user: viewer.user.as_ref(),
+        scope: &viewer.scope,
         day,
     };
     let outages = panel_outages(&state.pool, id, &service.name, &view, &i18n).await?;
@@ -973,7 +988,8 @@ pub async fn drawer_content(
         detected,
         outages,
         day: day.map(|day| day.format("%Y-%m-%d").to_string()),
-        can_edit: viewer.user.is_some_and(|u| u.role.can_publish()),
+        can_edit: viewer.user.as_ref().is_some_and(|u| u.role.can_publish()),
+        csrf_token,
         i18n,
     })
 }

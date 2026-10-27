@@ -763,6 +763,19 @@
         font-feature-settings: 'tnum' 1;
     }
 
+    .outage-erase {
+        margin-top: 6px;
+    }
+
+    /* Lines the word up with the text above it. */
+    .outage-erase > .text-action {
+        margin-left: -2px;
+    }
+
+    .outage-erase .confirm {
+        margin-top: 8px;
+    }
+
     .outage-meta {
         margin-top: 2px;
         font-size: var(--text-sm);

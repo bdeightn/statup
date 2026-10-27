@@ -133,3 +133,134 @@ async fn the_panel_opens_folded_or_on_the_day_clicked() {
         "the row's day opens the panel on it"
     );
 }
+
+async fn outages_of(app: &TestApp, service_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM service_outages WHERE service_id = ?")
+        .bind(service_id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap()
+}
+
+async fn outage_id(app: &TestApp, service_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT id FROM service_outages WHERE service_id = ?")
+        .bind(service_id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap()
+}
+
+async fn signed_in(app: &TestApp, role: Role) {
+    app.create_user("member@example.com", PASSWORD, "Member", role)
+        .await;
+    app.login("member@example.com", PASSWORD).await;
+}
+
+#[tokio::test]
+async fn an_editor_sees_the_button_and_how_many_services_fell_together() {
+    let app = TestApp::spawn().await;
+    let mail = service_with_an_outage(&app, "Mail", checks_found("unreachable")).await;
+    service_with_an_outage(&app, "Wiki", checks_found("unreachable")).await;
+    service_with_an_outage(&app, "VPN", checks_found("unreachable")).await;
+    signed_in(&app, Role::Publisher).await;
+
+    let (_, panel) = app.get(&format!("/services/{mail}/drawer")).await;
+
+    assert!(panel.contains("était pas une panne"));
+    assert!(panel.contains("Effacer aussi chez les 2 autres services tombés au même moment"));
+}
+
+#[tokio::test]
+async fn a_reader_neither_sees_nor_may_erase() {
+    let app = TestApp::spawn().await;
+    let mail = service_with_an_outage(&app, "Mail", checks_found("unreachable")).await;
+    let outage = outage_id(&app, mail).await;
+    signed_in(&app, Role::Reader).await;
+
+    let (_, panel) = app.get(&format!("/services/{mail}/drawer")).await;
+    assert!(!panel.contains("était pas une panne"));
+    let csrf = app.csrf_from("/").await;
+    let (status, _, _) = app
+        .post_form(
+            &format!("/services/{mail}/outages/{outage}/erase"),
+            &csrf,
+            &[],
+        )
+        .await;
+
+    assert!(status.is_client_error(), "{status}");
+    assert_eq!(outages_of(&app, mail).await, 1);
+}
+
+#[tokio::test]
+async fn an_editor_erases_one_outage_or_those_that_fell_with_it() {
+    let app = TestApp::spawn().await;
+    let mail = service_with_an_outage(&app, "Mail", checks_found("unreachable")).await;
+    let wiki = service_with_an_outage(&app, "Wiki", checks_found("unreachable")).await;
+    let vpn = service_with_an_outage(&app, "VPN", checks_found("unreachable")).await;
+    signed_in(&app, Role::Publisher).await;
+    let csrf = app.csrf_from("/").await;
+
+    let alone = outage_id(&app, mail).await;
+    let (status, _, _) = app
+        .post_form(
+            &format!("/services/{mail}/outages/{alone}/erase"),
+            &csrf,
+            &[],
+        )
+        .await;
+    assert!(status.is_redirection(), "{status}");
+    assert_eq!(
+        (outages_of(&app, mail).await, outages_of(&app, wiki).await),
+        (0, 1)
+    );
+
+    let together = outage_id(&app, wiki).await;
+    app.post_form(
+        &format!("/services/{wiki}/outages/{together}/erase"),
+        &csrf,
+        &[("together", "on")],
+    )
+    .await;
+    assert_eq!(outages_of(&app, vpn).await, 0);
+
+    let lines: Vec<(String, String)> = sqlx::query_as(
+        "SELECT subject, detail FROM journal_entries WHERE kind = 'outage_erased' ORDER BY id",
+    )
+    .fetch_all(&app.pool)
+    .await
+    .unwrap();
+    let subjects: Vec<&str> = lines.iter().map(|(s, _)| s.as_str()).collect();
+    assert_eq!(subjects, ["Mail", "Wiki", "VPN"]);
+    assert!(lines[2].1.ends_with(" · Wiki"), "{}", lines[2].1);
+}
+
+#[tokio::test]
+async fn an_outage_under_way_is_not_erased() {
+    let app = TestApp::spawn().await;
+    let service = ServiceRepository::create(&app.pool, "Mail", "mail", None, None, None)
+        .await
+        .unwrap();
+    ServiceRepository::mark_detected_down(
+        &app.pool,
+        service.id,
+        Utc::now() - Duration::hours(1),
+        &checks_found("unreachable"),
+    )
+    .await
+    .unwrap();
+    let outage = outage_id(&app, service.id).await;
+    signed_in(&app, Role::Publisher).await;
+    let csrf = app.csrf_from("/").await;
+
+    let (status, _, _) = app
+        .post_form(
+            &format!("/services/{}/outages/{outage}/erase", service.id),
+            &csrf,
+            &[],
+        )
+        .await;
+
+    assert_eq!(status, reqwest::StatusCode::NOT_FOUND);
+    assert_eq!(outages_of(&app, service.id).await, 1);
+}
