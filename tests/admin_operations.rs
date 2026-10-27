@@ -98,6 +98,26 @@ async fn admin_can_change_user_role_to_publisher() {
 }
 
 #[tokio::test]
+async fn saving_the_same_role_writes_nothing_to_the_journal() {
+    let (app, _admin_id) = spawn_with_admin().await;
+    let reader_id = app.reader("reader@test.com", "Reader").await;
+
+    let csrf = app.csrf().await;
+    let path = format!("/admin/users/{reader_id}/role");
+    let (status, _body, _location) = app.post_form(&path, &csrf, &[("role", "reader")]).await;
+
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(app.role_of(reader_id).await, Role::Reader);
+    let changes: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entries WHERE kind = 'member_role_changed'",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .expect("journal read");
+    assert_eq!(changes, 0);
+}
+
+#[tokio::test]
 async fn admin_can_change_user_role_to_admin() {
     let (app, _admin_id) = spawn_with_admin().await;
     let user_id = app.reader("user@test.com", "User").await;

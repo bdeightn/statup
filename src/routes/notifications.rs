@@ -19,7 +19,7 @@ use crate::i18n::{I18n, LANGUAGES, Locale, language};
 use crate::middleware::{CsrfToken, HtmlForm, RequireAdmin};
 use crate::models::{
     Channel, ChannelInput, ChannelKind, Delivery, DeliveryStatus, Happening, JournalKind,
-    SEPARATOR, User,
+    SEPARATOR, User, find_builtin_icon,
 };
 use crate::repositories::{NewJournalEntry, NotificationRepository, SettingsRepository};
 use crate::services::{
@@ -145,10 +145,13 @@ fn field_error((field, key): (Field, &'static str), i18n: &I18n) -> FieldError {
 struct DestinationRow {
     id: i64,
     name: String,
-    /// "Slack · Français".
-    tool: String,
-    /// "Incidents, maintenances, annonces", or that it is paused.
-    receives: String,
+    /// The outline of the tool's family: a chat, a phone, a mail, a link.
+    icon: &'static str,
+    /// "Slack · Incidents, annonces", with the language when it is not the
+    /// instance's.
+    summary: String,
+    /// Nothing ticked: the list says so in place of the last message.
+    paused: bool,
     last: LastSend,
 }
 
@@ -358,21 +361,30 @@ async fn destination_rows(
         .into_iter()
         .map(|channel| DestinationRow {
             id: channel.id,
-            tool: tool_line(&channel, i18n),
-            receives: receives(&channel, i18n),
+            icon: find_builtin_icon(channel.kind.icon_name()).map_or("", |icon| icon.paths),
+            summary: summary(&channel, i18n),
+            paused: receives(&channel, i18n).is_none(),
             last: last_send(channel.id, &retrying, &outcomes, i18n),
             name: channel.name,
         })
         .collect())
 }
 
-fn tool_line(channel: &Channel, i18n: &I18n) -> String {
-    let language = language(&channel.locale).map_or(channel.locale.as_str(), |l| l.name);
-    format!("{}{SEPARATOR}{language}", i18n.t(channel.kind.label_key()))
+/// The tool, what it receives and, when it differs from the instance's,
+/// the language its messages are written in.
+fn summary(channel: &Channel, i18n: &I18n) -> String {
+    let mut parts = vec![i18n.t(channel.kind.label_key()).to_string()];
+    parts.extend(receives(channel, i18n));
+    if channel.locale != I18n::default().locale() {
+        let name = language(&channel.locale).map_or(channel.locale.as_str(), |l| l.name);
+        parts.push(name.to_string());
+    }
+    parts.join(SEPARATOR)
 }
 
-/// What a destination receives, as one sentence: "Incidents, annonces".
-fn receives(channel: &Channel, i18n: &I18n) -> String {
+/// What a destination receives, as one sentence: "Incidents, annonces",
+/// or nothing when it is paused.
+fn receives(channel: &Channel, i18n: &I18n) -> Option<String> {
     let parts: Vec<&str> = [
         (channel.on_incidents, "notifications.receives_incidents"),
         (
@@ -389,10 +401,7 @@ fn receives(channel: &Channel, i18n: &I18n) -> String {
     .filter(|(ticked, _)| *ticked)
     .map(|(_, key)| i18n.t(key))
     .collect();
-    if parts.is_empty() {
-        return i18n.t("notifications.paused").to_string();
-    }
-    I18n::capitalized(&parts.join(", "))
+    (!parts.is_empty()).then(|| I18n::capitalized(&parts.join(", ")))
 }
 
 /// A failure being tried again comes first: it is what an admin can act on.
@@ -827,10 +836,13 @@ mod tests {
         let mut channel = trial_channel(&form("slack", "x"), ChannelKind::Slack, String::new());
         channel.on_maintenances = false;
         channel.on_detected = false;
-        assert_eq!(receives(&channel, &i18n), "Incidents, annonces");
+        assert_eq!(
+            receives(&channel, &i18n).as_deref(),
+            Some("Incidents, annonces")
+        );
         channel.on_incidents = false;
         channel.on_publications = false;
-        assert_eq!(receives(&channel, &i18n), "En pause");
+        assert_eq!(receives(&channel, &i18n), None);
     }
 
     #[test]

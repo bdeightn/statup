@@ -5,8 +5,6 @@
 {% block section %}admin{% endblock %}
 
 {% block scripts %}
-<script src="{{ crate::asset("js/custom-select.js") }}" defer></script>
-<script src="{{ crate::asset("js/team.js") }}" defer></script>
 <script src="{{ crate::asset("js/list-filter.js") }}" defer></script>
 {% endblock %}
 
@@ -51,7 +49,7 @@
 
     {# The members on a card with their count, the twin of the groups card
        under it. "New member" opens the form at the head of the card; its
-       name, address and role sit on the columns of the rows. #}
+       fields sit side by side on a wide screen. #}
     <section class="card members-card" aria-labelledby="members-title">
         <header class="card-head">
             <h2 id="members-title" class="card-title">{{ i18n.t("admin.group_members_title") }} <span class="count">{{ users.len() }}</span></h2>
@@ -92,65 +90,50 @@
     <ul class="admin-list member-list">
         {% for u in users %}
         <li class="admin-row member-row">
+            {# The member, then one door on the right: "Manage" opens a panel
+               with the role and each action, with what it does; a disabled
+               account only comes back, in place. #}
             <div class="min-w-0">
-                <p class="admin-row-name">{{ u.display_name }}{% if u.id == current_user_id %} <span class="count">{{ i18n.t("admin.you") }}</span>{% endif %}</p>
-                <p class="admin-row-sub">{{ u.email }}</p>
-                <p class="admin-row-sub">{{ i18n.t("admin.last_seen") }} {% if let Some(seen) = u.last_seen_at %}{{ seen }}{% else %}{{ i18n.t("admin.never") }}{% endif %}</p>
+                <p class="admin-row-name">{{ u.display_name }}{% if u.id == current_user_id %} <span class="count">{{ i18n.t("admin.you") }}</span>{% endif %}{% if !u.is_active %}&nbsp;<span aria-hidden="true">·</span> <span class="member-off">{{ i18n.t("admin.disabled") }}</span>{% endif %}</p>
+                <p class="admin-row-sub">{{ u.email }}&nbsp;<span aria-hidden="true">·</span> {{ i18n.t(u.role.i18n_key()) }}&nbsp;<span aria-hidden="true">·</span> {{ i18n.t("admin.last_seen") }} {% if let Some(seen) = u.last_seen_at %}{{ seen }}{% else %}{{ i18n.t("admin.never") }}{% endif %}</p>
             </div>
 
-            <p class="member-status{% if !u.is_active %} member-status-off{% endif %}">{% if !u.is_active %}{{ i18n.t("admin.disabled") }}{% endif %}</p>
-
-            <div class="admin-row-cell member-role">
-                {% if u.id == current_user_id %}
-                <p class="member-role-self">{{ i18n.t(u.role.i18n_key()) }}</p>
-                {% else %}
-                <form method="post" action="/admin/users/{{ u.id }}/role" data-role-form>
-                    <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                    <label for="role-{{ u.id }}" class="sr-only">{{ i18n.t("admin.role_of") }} {{ u.display_name }}</label>
-                    <select id="role-{{ u.id }}" name="role" class="input" data-custom-select data-committed="{{ u.role.as_str() }}"
-                            data-question-reader="{{ i18n.t("admin.confirm_role_reader") }}"
-                            data-question-publisher="{{ i18n.t("admin.confirm_role_publisher") }}"
-                            data-question-admin="{{ i18n.t("admin.confirm_role_admin") }}"
-                            data-desc-reader="{{ i18n.t("role.reader_desc") }}"
-                            data-desc-publisher="{{ i18n.t("role.publisher_desc") }}"
-                            data-desc-admin="{{ i18n.t("role.admin_desc") }}">
-                        {% for r in crate::models::Role::ALL %}
-                        <option value="{{ r.as_str() }}"{% if u.role == r %} selected{% endif %}>{{ i18n.t(r.i18n_key()) }}</option>
-                        {% endfor %}
-                    </select>
-                    <div class="confirm mt-2" role="group" aria-label="{{ i18n.t("admin.confirm_role_aria") }}" aria-describedby="role-q-{{ u.id }} role-d-{{ u.id }}" data-role-confirm hidden>
-                        <span id="role-q-{{ u.id }}" class="confirm-text" data-role-question data-name="{{ u.display_name }}"></span>
-                        <span id="role-d-{{ u.id }}" class="confirm-desc" data-role-desc></span>
-                        <button type="button" class="confirm-cancel" data-role-cancel>{{ i18n.t("common.cancel") }}</button>
-                        <button type="submit" class="confirm-go">{{ i18n.t("common.confirm") }}</button>
-                    </div>
-                </form>
-                {% endif %}
-            </div>
-
-            {# Each action asks first, in a panel under its own button. #}
             <div class="admin-row-actions">
-                {% if u.id != current_user_id && u.is_active %}
-                <details class="more-actions member-confirm" data-more-actions>
-                    <summary class="text-action" aria-label="{{ i18n.t("admin.reset_password") }} {{ u.display_name }}">{{ i18n.t("admin.reset_password") }}</summary>
-                    <form class="more-actions-menu confirm-panel" method="post" action="/admin/users/{{ u.id }}/reset-password" aria-label="{{ i18n.t("admin.confirm_reset_aria") }}">
-                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                        <p class="confirm-panel-text">{{ i18n.t("common.question_open") }}{{ i18n.t("admin.reset_question") }} <q>{{ u.display_name }}</q>{{ i18n.t("common.question_mark") }}</p>
-                        <p class="confirm-panel-desc">{{ i18n.t("admin.reset_consequence") }}</p>
-                        <button type="submit" class="btn btn-primary confirm-panel-go">{{ i18n.t("admin.reset_go") }}</button>
-                    </form>
-                </details>
-                {% endif %}
                 {% if u.id != current_user_id %}
                 {% if u.is_active %}
                 <details class="more-actions member-confirm" data-more-actions>
-                    <summary class="text-action text-action-delete" aria-label="{{ i18n.t("admin.disable") }} {{ u.display_name }}">{{ i18n.t("admin.disable") }}</summary>
-                    <form class="more-actions-menu confirm-panel" method="post" action="/admin/users/{{ u.id }}/disable" aria-label="{{ i18n.t("admin.confirm_disable_aria") }}">
-                        <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
-                        <p class="confirm-panel-text">{{ i18n.t("common.question_open") }}{{ i18n.t("admin.disable") }} <q>{{ u.display_name }}</q>{{ i18n.t("common.question_mark") }}</p>
-                        <p class="confirm-panel-desc">{{ i18n.t("admin.disable_consequence") }}</p>
-                        <button type="submit" class="btn btn-danger confirm-panel-go">{{ i18n.t("admin.disable") }}</button>
-                    </form>
+                    <summary class="text-action member-manage" aria-label="{{ i18n.t("admin.manage") }} {{ u.display_name }}">{{ i18n.t("admin.manage") }}{% call ui::caret_icon() %}{% endcall %}</summary>
+                    <div class="more-actions-menu confirm-panel member-manage-panel">
+                        <form method="post" action="/admin/users/{{ u.id }}/role" class="member-manage-step" aria-label="{{ i18n.t("admin.role_of") }} {{ u.display_name }}">
+                            <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                            <fieldset class="choice-group">
+                                <legend class="confirm-panel-text">{{ i18n.t("profile.role") }}</legend>
+                                <div class="choice-row">
+                                    {% for r in crate::models::Role::ALL %}
+                                    <label class="choice"><input type="radio" name="role" value="{{ r.as_str() }}" class="sr-only"{% if u.role == r %} checked{% endif %}><span>{{ i18n.t(r.i18n_key()) }}</span></label>
+                                    {% endfor %}
+                                </div>
+                                <div class="role-descs">
+                                    <p class="field-hint" data-role-hint="reader">{{ i18n.t("role.reader_desc") }}</p>
+                                    <p class="field-hint" data-role-hint="publisher">{{ i18n.t("role.publisher_desc") }}</p>
+                                    <p class="field-hint" data-role-hint="admin">{{ i18n.t("role.admin_desc") }}</p>
+                                </div>
+                            </fieldset>
+                            <button type="submit" class="btn btn-ghost confirm-panel-go">{{ i18n.t("common.save") }}</button>
+                        </form>
+                        <form method="post" action="/admin/users/{{ u.id }}/reset-password" class="member-manage-step" aria-label="{{ i18n.t("admin.confirm_reset_aria") }}">
+                            <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                            <p class="confirm-panel-text">{{ i18n.t("admin.reset_password") }}</p>
+                            <p class="confirm-panel-desc">{{ i18n.t("admin.reset_consequence") }}</p>
+                            <button type="submit" class="btn btn-ghost confirm-panel-go">{{ i18n.t("admin.reset_go") }}</button>
+                        </form>
+                        <form method="post" action="/admin/users/{{ u.id }}/disable" class="member-manage-step" aria-label="{{ i18n.t("admin.confirm_disable_aria") }}">
+                            <input type="hidden" name="csrf_token" value="{{ frame.csrf_token }}">
+                            <p class="confirm-panel-text">{{ i18n.t("admin.disable") }}</p>
+                            <p class="confirm-panel-desc">{{ i18n.t("admin.disable_consequence") }}</p>
+                            <button type="submit" class="btn btn-danger confirm-panel-go">{{ i18n.t("admin.disable") }}</button>
+                        </form>
+                    </div>
                 </details>
                 {% else %}
                 <form method="post" action="/admin/users/{{ u.id }}/disable">

@@ -34,15 +34,15 @@ Every chosen password needs 12 characters with upper and lower case letters, a d
 
 ## Change a role
 
-Each member's row has a role menu, and the change asks to be confirmed. Nobody can change their own role, and the last administrator cannot become something else: there is always at least one active administrator.
+**Manage** on a member's row, then the role under **Role** and **Save**. Each member's role is written under their name. A disabled member keeps their role, which can be changed once the account is enabled again. Nobody can change their own role, and the last administrator cannot become something else: there is always at least one active administrator.
 
 ## Reset a password
 
-**Reset password**, then **Reset**, gives an active member a new temporary password, valid seven days. The old one stops working and their open sessions are signed out. For your own password, use **My profile**. When nobody can sign in any more, the host can do it from the [command line](command-line.md).
+**Manage** on their row, then **Reset** under **Reset password**, gives an active member a new temporary password, valid seven days. The old one stops working and their open sessions are signed out. For your own password, use **My profile**. When nobody can sign in any more, the host can do it from the [command line](command-line.md).
 
 ## Disable a member
 
-**Disable** stops a member from signing in; their open sessions end at their next click. **Enable** lets them back in. Their address stays reserved meanwhile. Nobody can disable themselves, nor the last active administrator.
+**Manage** on their row, then **Disable**, stops a member from signing in; their open sessions end at their next click. **Enable**, in the same place, lets them back in. Their address stays reserved meanwhile. Nobody can disable themselves, nor the last active administrator.
 
 Members cannot be deleted: disable them instead.
 

@@ -12,6 +12,7 @@ All notable changes to Statup are listed here. The project is pre-v1: until 1.0,
 - Fixed: when Statup itself is off the network (no route, or no name server answering), its checks pause for as long as that lasts instead of declaring every service down after five minutes; the Journal records when the network went and when it came back, and **Test** gives these two reasons.
 - Detected outages explained and erasable. A day coloured by a detected outage reads **No answer for** and its length; a click on it, on the dashboard or in a service's side panel, shows that day's outages, with the reason for members and a link to the Journal for administrators. **It was not an outage** lets an editor erase an ended outage, and with it, ticked by default, those of the services that fell at the same moment. The database is upgraded on start; outages recorded before keep no reason.
 - A clearer channel form in **Alerts**: the name field reads **Name in Statup**, with an example for each type, and an ntfy address starts with `https://ntfy.sh/`, so only the topic is left to type; the topic alone is accepted too.
+- Clearer lists in **Alerts** and **Team**. A channel shows a plain icon for its kind of tool, what it receives, and its last message on the right; its name opens it. A member shows their address, role and last visit under their name, and **Manage** opens their role, the password reset and **Disable** in one panel.
 
 ## 0.8.0, 2026-10-25
 

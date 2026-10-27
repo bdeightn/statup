@@ -34,15 +34,15 @@ Tout mot de passe choisi doit faire 12 caractères avec majuscule, minuscule, ch
 
 ## Changer un rôle
 
-La ligne de chaque membre a un menu de rôle, et le changement demande une confirmation. Personne ne peut changer son propre rôle, et le dernier administrateur ne peut pas en changer : il reste toujours au moins un administrateur actif.
+**Gérer** sur la ligne d'un membre, puis le rôle sous **Rôle** et **Enregistrer**. Le rôle de chacun est écrit sous son nom. Un membre désactivé garde son rôle, qui se change une fois le compte réactivé. Personne ne peut changer son propre rôle, et le dernier administrateur ne peut pas en changer : il reste toujours au moins un administrateur actif.
 
 ## Réinitialiser un mot de passe
 
-**Réinitialiser le mot de passe**, puis **Réinitialiser**, donne à un membre actif un nouveau mot de passe provisoire, valable sept jours. L'ancien ne fonctionne plus et ses sessions ouvertes sont fermées. Pour votre propre mot de passe, passez par **Mon profil**. Quand plus personne ne peut se connecter, la personne qui héberge Statup peut le faire en [ligne de commande](command-line.md).
+**Gérer** sur sa ligne, puis **Réinitialiser** sous **Réinitialiser le mot de passe**, donne à un membre actif un nouveau mot de passe provisoire, valable sept jours. L'ancien ne fonctionne plus et ses sessions ouvertes sont fermées. Pour votre propre mot de passe, passez par **Mon profil**. Quand plus personne ne peut se connecter, la personne qui héberge Statup peut le faire en [ligne de commande](command-line.md).
 
 ## Désactiver un membre
 
-**Désactiver** empêche un membre de se connecter ; ses sessions ouvertes prennent fin à son prochain clic. **Réactiver** lui rend l'accès. Son adresse reste réservée entre-temps. Personne ne peut se désactiver soi-même, ni désactiver le dernier administrateur actif.
+**Gérer** sur sa ligne, puis **Désactiver**, empêche un membre de se connecter ; ses sessions ouvertes prennent fin à son prochain clic. **Réactiver**, au même endroit, lui rend l'accès. Son adresse reste réservée entre-temps. Personne ne peut se désactiver soi-même, ni désactiver le dernier administrateur actif.
 
 Les membres ne peuvent pas être supprimés : désactivez-les plutôt.
 

@@ -565,6 +565,10 @@ async fn apply_role(
     let target = UserRepository::find_by_id(&state.pool, user_id)
         .await?
         .ok_or(AppError::NotFound)?;
+    // The panel sends the role with every save, changed or not.
+    if target.role == new_role {
+        return Ok(());
+    }
     if !UserRepository::update_role(&state.pool, user_id, new_role).await? {
         return Err(AppError::validation("validation.last_admin"));
     }

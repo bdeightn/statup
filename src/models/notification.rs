@@ -82,6 +82,17 @@ impl ChannelKind {
         }
     }
 
+    /// The built-in outline drawn beside a destination: the family of the
+    /// tool, never its logo, whose use the brands keep to themselves.
+    pub fn icon_name(self) -> &'static str {
+        match self {
+            Self::Ntfy => "phone",
+            Self::Email => "envelope",
+            Self::Webhook => "link",
+            _ => "chat-bubble",
+        }
+    }
+
     /// What the address field asks for.
     pub fn target_label_key(self) -> &'static str {
         match self {
