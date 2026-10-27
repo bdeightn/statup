@@ -40,7 +40,7 @@
                     <p class="sr-only svc-strip-short">{{ row.strip.recent_label }}</p>
                     <p class="sr-only svc-strip-long">{{ row.strip.label }}</p>
                     <div class="svc-bars" aria-hidden="true">
-                        {% for day in row.strip.days %}<span class="{{ day.class() }}{% if day.early %} bar-early{% endif %}" data-day-date="{{ day.date }}" data-day-status="{{ day.status }}"{% if day.detected %} data-outage-day="{{ day.iso }}"{% endif %}></span>{% endfor %}
+                        {% for day in row.strip.days %}<span class="{{ day.class() }}{% if day.early %} bar-early{% endif %}" data-day-date="{{ day.date }}" data-day-status="{{ day.status }}"{% if let Some(outage_day) = day.outage_day %} data-outage-day="{{ outage_day }}"{% endif %}></span>{% endfor %}
                     </div>
                 </div>
             </a>

@@ -33,14 +33,12 @@ impl OutageRepository {
         Ok(spans)
     }
 
-    /// The outages of one service under way or ended since `since` that
-    /// lasted at least `shortest`, newest first.
+    /// The outages of one service under way or ended since `since`,
+    /// newest first.
     pub async fn recent(
         pool: &DbPool,
         service_id: i64,
         since: DateTime<Utc>,
-        shortest: TimeDelta,
-        now: DateTime<Utc>,
     ) -> Result<Vec<Outage>, sqlx::Error> {
         let rows: Vec<OutageRow> = sqlx::query_as(
             "SELECT id, started_at, ended_at, source, reason FROM service_outages \
@@ -59,64 +57,56 @@ impl OutageRepository {
                 end,
                 cause: OutageCause::read(&source, reason),
             })
-            .filter(|outage| outage.end.unwrap_or(now) - outage.start >= shortest)
             .collect())
     }
 
-    /// For each outage of `service_id` ended since `since`, the services
-    /// whose ended outage began within `window` of it: what fell together.
+    /// The ended outages of other services that began within `window` of an
+    /// outage of `service_id` ended since `since`: what fell together, as
+    /// `(its outage, the other outage, the other service)`.
     pub async fn fallen_together(
         pool: &DbPool,
         service_id: i64,
         since: DateTime<Utc>,
         window: TimeDelta,
-    ) -> Result<Vec<(i64, i64)>, sqlx::Error> {
+    ) -> Result<Vec<(i64, i64, i64)>, sqlx::Error> {
+        let (before, after) = (
+            format!("-{} seconds", window.num_seconds()),
+            format!("+{} seconds", window.num_seconds()),
+        );
+        // Times are stored as `%Y-%m-%d %H:%M:%S` text: compared as such,
+        // the window reads the index on `started_at`.
         sqlx::query_as(
-            "SELECT DISTINCT mine.id, other.service_id FROM service_outages mine \
+            "SELECT mine.id, other.id, other.service_id FROM service_outages mine \
              JOIN service_outages other ON other.service_id != mine.service_id \
              AND other.ended_at IS NOT NULL \
-             AND abs(julianday(other.started_at) - julianday(mine.started_at)) * 86400 <= ? \
+             AND other.started_at BETWEEN datetime(mine.started_at, ?) \
+             AND datetime(mine.started_at, ?) \
              WHERE mine.service_id = ? AND mine.ended_at >= ?",
         )
-        .bind(window.num_seconds())
+        .bind(before)
+        .bind(after)
         .bind(service_id)
         .bind(clock::db(since))
         .fetch_all(pool)
         .await
     }
 
-    /// Erases an ended outage of `service_id`, and the ended outages of
-    /// `others` that began within `window` of it. Returns what was erased,
-    /// the outage asked for first; nothing when it is under way or unknown.
+    /// Erases an ended outage of `service_id`, then the ended outages
+    /// `others`. Returns what was erased, the outage asked for first;
+    /// nothing when it is under way or not this service's.
     pub async fn erase(
         pool: &DbPool,
         service_id: i64,
         outage_id: i64,
         others: &[i64],
-        window: TimeDelta,
     ) -> Result<Vec<ErasedOutage>, sqlx::Error> {
         let mut tx = pool.begin().await?;
-        let Some(first) = erase_ended(&mut tx, service_id, outage_id).await? else {
+        let Some(first) = erase_ended(&mut tx, outage_id, Some(service_id)).await? else {
             return Ok(Vec::new());
         };
-        let start = clock::db(first.start);
         let mut erased = vec![first];
         for &other in others {
-            let rows: Vec<(DateTime<Utc>, DateTime<Utc>)> = sqlx::query_as(
-                "DELETE FROM service_outages WHERE service_id = ? AND ended_at IS NOT NULL \
-                 AND abs(julianday(started_at) - julianday(?)) * 86400 <= ? \
-                 RETURNING started_at, ended_at",
-            )
-            .bind(other)
-            .bind(&start)
-            .bind(window.num_seconds())
-            .fetch_all(&mut *tx)
-            .await?;
-            erased.extend(rows.into_iter().map(|(start, end)| ErasedOutage {
-                service_id: other,
-                start,
-                end,
-            }));
+            erased.extend(erase_ended(&mut tx, other, None).await?);
         }
         tx.commit().await?;
         Ok(erased)
@@ -189,7 +179,6 @@ type OutageRow = (
 );
 
 /// One outage of a service, as its panel lists it.
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outage {
     pub id: i64,
     pub start: DateTime<Utc>,
@@ -211,20 +200,22 @@ pub struct ErasedOutage {
     pub end: DateTime<Utc>,
 }
 
+/// Deletes an ended outage, of `service_id` when given.
 async fn erase_ended(
     tx: &mut sqlx::Transaction<'_, Sqlite>,
-    service_id: i64,
     id: i64,
+    service_id: Option<i64>,
 ) -> Result<Option<ErasedOutage>, sqlx::Error> {
-    let row: Option<(DateTime<Utc>, DateTime<Utc>)> = sqlx::query_as(
-        "DELETE FROM service_outages WHERE service_id = ? AND ended_at IS NOT NULL AND id = ? \
-         RETURNING started_at, ended_at",
+    let row: Option<(i64, DateTime<Utc>, DateTime<Utc>)> = sqlx::query_as(
+        "DELETE FROM service_outages WHERE id = ? AND ended_at IS NOT NULL \
+         AND (? IS NULL OR service_id = ?) RETURNING service_id, started_at, ended_at",
     )
-    .bind(service_id)
     .bind(id)
+    .bind(service_id)
+    .bind(service_id)
     .fetch_optional(&mut **tx)
     .await?;
-    Ok(row.map(|(start, end)| ErasedOutage {
+    Ok(row.map(|(service_id, start, end)| ErasedOutage {
         service_id,
         start,
         end,
@@ -315,12 +306,19 @@ mod tests {
                 .unwrap();
         }
 
-        let outages = OutageRepository::recent(&pool, svc.id, at(0), Duration::minutes(15), at(8))
+        let outages = OutageRepository::recent(&pool, svc.id, at(0))
             .await
             .unwrap();
 
         let listed: Vec<_> = outages.iter().map(|o| (o.start, o.cause.clone())).collect();
-        assert_eq!(listed, [(at(4), OutageCause::Report), (at(1), checked)]);
+        assert_eq!(
+            listed,
+            [
+                (at(4), OutageCause::Report),
+                (at(3), checked.clone()),
+                (at(1), checked)
+            ]
+        );
     }
 
     async fn service_down(
@@ -352,7 +350,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn erasing_takes_the_outages_that_fell_together_only_when_asked() {
+    async fn erasing_takes_the_ended_outages_that_fell_together() {
         let pool = test_pool().await;
         let window = Duration::minutes(5);
         let mail = service_down(&pool, "Mail", at(1), Some(at(3))).await;
@@ -365,9 +363,9 @@ mod tests {
         let together = OutageRepository::fallen_together(&pool, mail, at(0), window)
             .await
             .unwrap();
-        assert_eq!(together, [(mail_outage, wiki)]);
+        assert_eq!(together, [(mail_outage, ids[1].0, wiki)]);
 
-        let erased = OutageRepository::erase(&pool, mail, mail_outage, &[wiki, late, open], window)
+        let erased = OutageRepository::erase(&pool, mail, mail_outage, &[ids[1].0, ids[3].0])
             .await
             .unwrap();
         let services: Vec<i64> = erased.iter().map(|o| o.service_id).collect();
@@ -383,15 +381,14 @@ mod tests {
         let other = service_down(&pool, "Other", at(1), Some(at(2))).await;
         let ids = outage_ids(&pool).await;
 
-        let window = Duration::minutes(5);
         assert_eq!(
-            OutageRepository::erase(&pool, open, ids[0].0, &[], window)
+            OutageRepository::erase(&pool, open, ids[0].0, &[])
                 .await
                 .unwrap(),
             []
         );
         assert_eq!(
-            OutageRepository::erase(&pool, open, ids[1].0, &[], window)
+            OutageRepository::erase(&pool, open, ids[1].0, &[])
                 .await
                 .unwrap(),
             []

@@ -117,13 +117,13 @@ async fn the_panel_opens_folded_or_on_the_day_clicked() {
         r#"id="svc-outages" class="drawer-section" aria-labelledby="svc-outages-title" hidden"#
     ));
     assert!(folded.contains(&format!(
-        r#"data-outage-day="{day}" aria-controls="svc-outages" aria-pressed="false""#
+        r#"data-outage-toggle="{day}" aria-controls="svc-outages" aria-pressed="false""#
     )));
 
     let (_, opened) = app.get(&format!("/services/{id}/drawer?day={day}")).await;
     assert!(opened.contains(r#"aria-labelledby="svc-outages-title">"#));
     assert!(opened.contains(&format!(
-        r#"data-outage-day="{day}" aria-controls="svc-outages" aria-pressed="true""#
+        r#"data-outage-toggle="{day}" aria-controls="svc-outages" aria-pressed="true""#
     )));
     assert!(opened.contains(&format!(r#"data-outage-days="{day}">"#)));
 

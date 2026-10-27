@@ -27,7 +27,7 @@ pub const SHORT_DAYS: i64 = 30;
 pub const LONG_DAYS: i64 = 90;
 
 /// A shorter detected outage does not colour a whole day of the strip.
-pub const MIN_DETECTED_OUTAGE: Duration = Duration::minutes(15);
+const MIN_DETECTED_OUTAGE: Duration = Duration::minutes(15);
 
 pub struct ServicesModule;
 
@@ -36,14 +36,12 @@ pub struct ServicesModule;
 pub struct DayCell {
     pub level: Option<u8>,
     pub date: String,
-    /// "2026-10-27", what a click on the day asks the panel for.
-    pub iso: String,
     pub status: String,
     /// Older than the short strip: shown only where there is room.
     pub early: bool,
-    /// Coloured by an outage the checks or a tool found, which the
-    /// service's panel lists.
-    pub detected: bool,
+    /// The day, when an outage the checks or a tool found coloured it: a
+    /// click on it shows that outage in the service's panel.
+    pub outage_day: Option<NaiveDate>,
 }
 
 impl DayCell {
@@ -197,6 +195,20 @@ fn is_left_out(service: &Service, hidden: Option<&[String]>) -> bool {
     hidden.is_some_and(|values| values.contains(&id))
 }
 
+/// Whether a detected outage lasted long enough to colour its days.
+pub fn lasted_long_enough(
+    start: DateTime<Utc>,
+    end: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> bool {
+    end.unwrap_or(now) - start >= MIN_DETECTED_OUTAGE
+}
+
+/// Where the short strip begins, so the panel's outages match its days.
+pub fn short_strip_start() -> DateTime<Utc> {
+    clock::day_start(Window::ending_now(SHORT_DAYS).first_day()).unwrap_or_default()
+}
+
 /// One service's last thirty days, for its side panel.
 pub async fn service_history(
     pool: &DbPool,
@@ -283,10 +295,9 @@ fn strip_of(service: &Service, history: &History, window: &Window, i18n: &I18n) 
             .map(|day| DayCell {
                 level: day.level,
                 date: i18n.format_date_short(&day.date),
-                iso: day.date.format("%Y-%m-%d").to_string(),
                 status: day_status(day, i18n),
                 early: window.is_early(day.date),
-                detected: day.detected_minutes.is_some(),
+                outage_day: day.detected_minutes.map(|_| day.date),
             })
             .collect(),
         label: availability_label(&days, i18n),
@@ -403,7 +414,7 @@ fn detected_minutes_on(outages: &[OutageSpan], date: NaiveDate, now: DateTime<Ut
     };
     outages
         .iter()
-        .filter(|outage| outage.end.unwrap_or(now) - outage.start >= MIN_DETECTED_OUTAGE)
+        .filter(|outage| lasted_long_enough(outage.start, outage.end, now))
         .map(|outage| {
             let start = outage.start.max(day_start);
             let end = outage.end.unwrap_or(now).min(day_end);

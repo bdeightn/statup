@@ -575,23 +575,25 @@
     function drawerUrl(link, target) {
         const day = target.closest("[data-outage-day]");
         if (!day || !link.contains(day)) return link.dataset.drawer;
-        return `${link.dataset.drawer}?day=${encodeURIComponent(day.dataset.outageDay)}`;
+        const url = new URL(link.dataset.drawer, window.location.href);
+        url.searchParams.set("day", day.dataset.outageDay);
+        return url.pathname + url.search;
     }
 
     // In the panel, the same day shows the outages found then; a second
     // click folds them away.
     function onOutageDay(target) {
-        const day = target.closest("button[data-outage-day]");
+        const day = target.closest("[data-outage-toggle]");
         if (!day) return false;
         const list = document.getElementById(day.getAttribute("aria-controls"));
         if (!list) return true;
         const show = day.getAttribute("aria-pressed") !== "true";
-        for (const other of day.parentElement.querySelectorAll("button[data-outage-day]")) {
+        for (const other of day.parentElement.querySelectorAll("[data-outage-toggle]")) {
             other.setAttribute("aria-pressed", "false");
         }
         day.setAttribute("aria-pressed", String(show));
         for (const item of list.querySelectorAll("[data-outage-days]")) {
-            item.hidden = !show || !item.dataset.outageDays.split(" ").includes(day.dataset.outageDay);
+            item.hidden = !show || !item.dataset.outageDays.split(" ").includes(day.dataset.outageToggle);
         }
         list.hidden = !show;
         return true;

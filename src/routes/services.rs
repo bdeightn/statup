@@ -7,13 +7,15 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use chrono::NaiveDate;
+
+use crate::clock;
 use serde::Deserialize;
 
 use super::audience::{
     AccessBlock, Audience, VISIBILITY_CHOICE, VISIBILITY_NO_FOLDER, VISIBILITY_REQUIRED,
 };
 use super::checks::{CheckFields, CheckInput, OUTAGE_AFTER_INVALID};
-use super::outages::{OutageLine, PanelView, panel_outages};
+use super::outages::{OutageLine, panel_outages};
 use super::{Frame, members_only, render};
 use crate::db::DbPool;
 use crate::error::AppError;
@@ -907,8 +909,8 @@ struct ServiceDrawerTemplate {
     /// The checks found the service down and no open event explains it.
     detected: bool,
     outages: Vec<OutageLine>,
-    /// "2026-10-27", the day the panel opened on.
-    day: Option<String>,
+    /// The day the panel opened on.
+    day: Option<NaiveDate>,
     can_edit: bool,
     csrf_token: String,
     i18n: I18n,
@@ -916,7 +918,7 @@ struct ServiceDrawerTemplate {
 
 impl ServiceDrawerTemplate {
     fn is_selected(&self, day: &DayCell) -> bool {
-        self.day.as_deref() == Some(day.iso.as_str())
+        day.outage_day.is_some() && day.outage_day == self.day
     }
 
     fn shows_outages(&self) -> bool {
@@ -946,10 +948,7 @@ pub async fn drawer_content(
     if !viewer.scope.sees_service(id) {
         return Err(AppError::NotFound);
     }
-    let day = query
-        .day
-        .as_deref()
-        .and_then(|day| NaiveDate::parse_from_str(day, "%Y-%m-%d").ok());
+    let day = query.day.as_deref().and_then(clock::parse_day);
     service_panel(&state, &viewer, id, day, csrf_token.0, i18n).await
 }
 
@@ -975,19 +974,14 @@ pub(super) async fn service_panel(
         && !EventRepository::state_drivers(&state.pool, Some(id))
             .await?
             .contains_key(&id);
-    let view = PanelView {
-        user: viewer.user.as_ref(),
-        scope: &viewer.scope,
-        day,
-    };
-    let outages = panel_outages(&state.pool, id, &service.name, &view, &i18n).await?;
+    let outages = panel_outages(&state.pool, id, &service.name, viewer, day, &i18n).await?;
     let row = service_history(&state.pool, service, &i18n).await?;
     render(&ServiceDrawerTemplate {
         row,
         events,
         detected,
         outages,
-        day: day.map(|day| day.format("%Y-%m-%d").to_string()),
+        day,
         can_edit: viewer.user.as_ref().is_some_and(|u| u.role.can_publish()),
         csrf_token,
         i18n,

@@ -392,11 +392,7 @@ fn receives(channel: &Channel, i18n: &I18n) -> String {
     if parts.is_empty() {
         return i18n.t("notifications.paused").to_string();
     }
-    let joined = parts.join(", ");
-    let mut chars = joined.chars();
-    chars.next().map_or_else(String::new, |first| {
-        first.to_uppercase().chain(chars).collect()
-    })
+    I18n::capitalized(&parts.join(", "))
 }
 
 /// A failure being tried again comes first: it is what an admin can act on.

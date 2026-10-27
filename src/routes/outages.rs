@@ -1,16 +1,16 @@
 //! The outages the checks or a monitoring tool found on a service, as its
 //! side panel lists them.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use axum::extract::{Path, State};
-use axum::http::HeaderValue;
+use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Redirect, Response};
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 
 use super::journal::finding_words;
+use super::page::query_pairs;
 use super::services::service_panel;
 use crate::clock;
 use crate::db::DbPool;
@@ -18,8 +18,8 @@ use crate::error::AppError;
 use crate::i18n::{I18n, Locale};
 use crate::middleware::headers::is_htmx;
 use crate::middleware::{CsrfToken, HtmlForm, RequirePublisher, Viewer};
-use crate::models::{JournalKind, Scope, User, split_duration};
-use crate::modules::services::{MIN_DETECTED_OUTAGE, SHORT_DAYS};
+use crate::models::{JournalCategory, JournalKind, User, split_duration};
+use crate::modules::services::{lasted_long_enough, short_strip_start};
 use crate::repositories::{
     ErasedOutage, NewJournalEntry, Outage, OutageCause, OutageRepository, ServiceRepository,
 };
@@ -40,22 +40,14 @@ pub struct OutageLine {
     pub reason: Option<String>,
     /// The Journal around the outage, for administrators.
     pub journal: Option<String>,
-    /// The days of the strip it covers, "2026-10-26 2026-10-27": a click on
-    /// one of them shows it.
-    pub days: String,
+    /// The days of the strip it covers: a click on one of them shows it.
+    pub days: Vec<NaiveDate>,
     /// Covers the day the panel opened on.
     pub shown: bool,
     /// Ended, and the viewer may erase it.
     pub erasable: bool,
-    /// Other services the viewer sees whose outage began with this one.
+    /// Other services the viewer sees that fell with it.
     pub fallen_with: usize,
-}
-
-/// Who reads the panel, and the day it opened on.
-pub struct PanelView<'a> {
-    pub user: Option<&'a User>,
-    pub scope: &'a Scope,
-    pub day: Option<NaiveDate>,
 }
 
 /// The outages that coloured the days of a service's strip, newest first.
@@ -63,69 +55,75 @@ pub async fn panel_outages(
     pool: &DbPool,
     service_id: i64,
     service_name: &str,
-    view: &PanelView<'_>,
+    viewer: &Viewer,
+    day: Option<NaiveDate>,
     i18n: &I18n,
 ) -> Result<Vec<OutageLine>, AppError> {
     let now = Utc::now();
-    let since = now - chrono::Duration::days(SHORT_DAYS);
-    let outages =
-        OutageRepository::recent(pool, service_id, since, MIN_DETECTED_OUTAGE, now).await?;
-    let first_day = clock::local_date(&since);
-    let may_erase = view.user.is_some_and(|u| u.role.can_publish());
+    let since = short_strip_start();
+    let user = viewer.user.as_ref();
+    let may_erase = user.is_some_and(|u| u.role.can_publish());
     let fallen = if may_erase {
-        fallen_with(pool, service_id, since, view.scope).await?
+        fallen_together(pool, service_id, viewer).await?
     } else {
         HashMap::new()
     };
+    let outages = OutageRepository::recent(pool, service_id, since).await?;
     Ok(outages
         .iter()
+        .filter(|outage| lasted_long_enough(outage.start, outage.end, now))
         .map(|outage| {
-            let days = days_covered(outage, first_day, now);
+            let days = days_covered(outage, clock::local_date(&since), now);
             let end = outage.end.unwrap_or(now);
             OutageLine {
                 id: outage.id,
                 when: when(outage, i18n),
                 length: i18n.format_duration(&split_duration(end - outage.start)),
-                reason: view.user.and_then(|_| reason(&outage.cause, i18n)),
-                journal: view
-                    .user
+                reason: user.and_then(|_| reason(&outage.cause, i18n)),
+                journal: user
                     .filter(|u| u.role.can_admin())
                     .map(|_| journal_link(outage.start, end, service_name)),
-                shown: view.day.is_some_and(|day| days.contains(&day)),
+                shown: day.is_some_and(|day| days.contains(&day)),
                 erasable: may_erase && outage.end.is_some(),
-                fallen_with: fallen.get(&outage.id).copied().unwrap_or(0),
-                days: day_list(&days),
+                fallen_with: fallen.get(&outage.id).map_or(0, FallenWith::services),
+                days,
             }
         })
         .collect())
 }
 
-/// For each outage of the service, how many services the viewer sees
-/// fell with it.
-async fn fallen_with(
-    pool: &DbPool,
-    service_id: i64,
-    since: DateTime<Utc>,
-    scope: &Scope,
-) -> Result<HashMap<i64, usize>, AppError> {
-    let mut counts = HashMap::new();
-    for (outage_id, other) in
-        OutageRepository::fallen_together(pool, service_id, since, FALLEN_TOGETHER).await?
-    {
-        if scope.sees_service(other) {
-            *counts.entry(outage_id).or_insert(0) += 1;
-        }
-    }
-    Ok(counts)
+/// The ended outages of the services a viewer sees that began with one
+/// outage of a service.
+#[derive(Default)]
+struct FallenWith {
+    outages: Vec<i64>,
+    services: HashSet<i64>,
 }
 
-/// "2026-10-26 2026-10-27", as the strip's days name themselves.
-fn day_list(days: &[NaiveDate]) -> String {
-    let days: Vec<String> = days
-        .iter()
-        .map(|d| d.format("%Y-%m-%d").to_string())
-        .collect();
-    days.join(" ")
+impl FallenWith {
+    fn services(&self) -> usize {
+        self.services.len()
+    }
+}
+
+/// For each recent outage of the service, what fell with it.
+async fn fallen_together(
+    pool: &DbPool,
+    service_id: i64,
+    viewer: &Viewer,
+) -> Result<HashMap<i64, FallenWith>, AppError> {
+    let mut fallen: HashMap<i64, FallenWith> = HashMap::new();
+    let rows =
+        OutageRepository::fallen_together(pool, service_id, short_strip_start(), FALLEN_TOGETHER)
+            .await?;
+    for (mine, other, other_service) in rows {
+        if viewer.scope.sees_service(other_service) {
+            let entry = fallen.entry(mine).or_default();
+            entry.outages.push(other);
+            entry.services.insert(other_service);
+        }
+    }
+    Ok(fallen)
 }
 
 /// The local days an outage spans, from `first_day` on.
@@ -172,20 +170,21 @@ fn reason(cause: &OutageCause, i18n: &I18n) -> Option<String> {
         OutageCause::Check(words) => words.as_deref().and_then(|w| finding_words(w, i18n))?,
         OutageCause::Report => i18n.t("services.outage_reported").to_string(),
     };
-    let mut letters = words.chars();
-    let first = letters.next()?;
-    Some(first.to_uppercase().chain(letters).collect())
+    Some(I18n::capitalized(&words))
 }
 
 /// The monitoring lines of the days the outage covered, about this service.
 fn journal_link(start: DateTime<Utc>, end: DateTime<Utc>, service_name: &str) -> String {
-    let day = |at: &DateTime<Utc>| clock::local_date(at).format("%Y-%m-%d").to_string();
-    format!(
-        "/admin/journal?category=monitoring&from={}&to={}&q={}",
-        day(&start),
-        day(&end),
-        utf8_percent_encode(service_name, NON_ALPHANUMERIC)
-    )
+    let query = query_pairs(&[
+        (
+            "category",
+            Some(JournalCategory::Monitoring.as_str().to_string()),
+        ),
+        ("from", Some(clock::local_date(&start).to_string())),
+        ("to", Some(clock::local_date(&end).to_string())),
+        ("q", Some(service_name.to_string())),
+    ]);
+    format!("/admin/journal?{}", query.trim_end_matches('&'))
 }
 
 #[derive(Deserialize)]
@@ -201,7 +200,7 @@ pub async fn erase(
     State(state): State<AppState>,
     Path((id, outage_id)): Path<(i64, i64)>,
     csrf_token: CsrfToken,
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     Locale(i18n): Locale,
     HtmlForm(form): HtmlForm<EraseForm>,
 ) -> Result<Response, AppError> {
@@ -210,16 +209,21 @@ pub async fn erase(
         return Err(AppError::NotFound);
     }
     let others = if form.together.is_some() {
-        visible_others(&state.pool, id, outage_id, &viewer.scope).await?
+        fallen_together(&state.pool, id, &viewer)
+            .await?
+            .remove(&outage_id)
+            .unwrap_or_default()
+            .outages
     } else {
         Vec::new()
     };
-    let erased =
-        OutageRepository::erase(&state.pool, id, outage_id, &others, FALLEN_TOGETHER).await?;
+    let erased = OutageRepository::erase(&state.pool, id, outage_id, &others).await?;
     if erased.is_empty() {
         return Err(AppError::NotFound);
     }
-    record_erased(&state.pool, &viewer, &erased).await;
+    if let Some(user) = viewer.user.as_ref() {
+        record_erased(&state.pool, user, &erased).await;
+    }
     if !is_htmx(&headers) {
         return Ok(Redirect::to("/").into_response());
     }
@@ -230,55 +234,50 @@ pub async fn erase(
     Ok(response)
 }
 
-/// The services the viewer sees whose ended outage began with this one.
-async fn visible_others(
-    pool: &DbPool,
-    id: i64,
-    outage_id: i64,
-    scope: &Scope,
-) -> Result<Vec<i64>, AppError> {
-    let since = Utc::now() - chrono::Duration::days(SHORT_DAYS);
-    Ok(
-        OutageRepository::fallen_together(pool, id, since, FALLEN_TOGETHER)
-            .await?
-            .into_iter()
-            .filter(|&(mine, other)| mine == outage_id && scope.sees_service(other))
-            .map(|(_, other)| other)
-            .collect(),
-    )
-}
-
 /// One line per outage, under its own service: each service's Journal
 /// link finds its own. The others name the service they were erased from.
-async fn record_erased(pool: &DbPool, viewer: &Viewer, erased: &[ErasedOutage]) {
-    let Some(user) = viewer.user.as_ref() else {
+async fn record_erased(pool: &DbPool, user: &User, erased: &[ErasedOutage]) {
+    let Some((first, others)) = erased.split_first() else {
         return;
     };
-    let names: HashMap<i64, String> = match ServiceRepository::list_all(pool).await {
-        Ok(services) => services.into_iter().map(|s| (s.id, s.name)).collect(),
+    let ids: Vec<i64> = erased.iter().map(|outage| outage.service_id).collect();
+    let names = match ServiceRepository::names(pool, &ids).await {
+        Ok(names) => names,
         Err(e) => {
             tracing::warn!(error = %e, "Erased outages could not be journaled");
             return;
         }
     };
-    let origin = erased.first().and_then(|o| names.get(&o.service_id));
-    for (index, outage) in erased.iter().enumerate() {
-        let Some(name) = names.get(&outage.service_id) else {
-            continue;
-        };
-        let mut detail = format!(
-            "{} · {}",
-            clock::rfc3339(outage.start),
-            clock::rfc3339(outage.end)
-        );
-        if let Some(origin) = origin.filter(|_| index > 0) {
-            detail = format!("{detail} · {origin}");
+    let Some(origin) = names.get(&first.service_id) else {
+        return;
+    };
+    record_one(pool, user, first, origin, None).await;
+    for outage in others {
+        if let Some(name) = names.get(&outage.service_id) {
+            record_one(pool, user, outage, name, Some(origin)).await;
         }
-        NewJournalEntry::new(JournalKind::OutageErased)
-            .by(user)
-            .about(name.clone())
-            .with_detail(detail)
-            .record(pool)
-            .await;
     }
+}
+
+async fn record_one(
+    pool: &DbPool,
+    user: &User,
+    outage: &ErasedOutage,
+    name: &str,
+    origin: Option<&String>,
+) {
+    let mut detail = format!(
+        "{} · {}",
+        clock::rfc3339(outage.start),
+        clock::rfc3339(outage.end)
+    );
+    if let Some(origin) = origin {
+        detail = format!("{detail} · {origin}");
+    }
+    NewJournalEntry::new(JournalKind::OutageErased)
+        .by(user)
+        .about(name.to_string())
+        .with_detail(detail)
+        .record(pool)
+        .await;
 }

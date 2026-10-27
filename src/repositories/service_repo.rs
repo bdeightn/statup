@@ -1,5 +1,7 @@
 //! Service repository: SQL queries on services.
 
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 
 use super::GrantTables;
@@ -72,6 +74,18 @@ impl ServiceRepository {
         sqlx::query_as::<_, Service>(&format!("{WITH_ICON} ORDER BY {CHOSEN_ORDER}"))
             .fetch_all(pool)
             .await
+    }
+
+    /// The names of the services among `ids`.
+    pub async fn names(pool: &DbPool, ids: &[i64]) -> Result<HashMap<i64, String>, sqlx::Error> {
+        let ids = serde_json::to_string(ids).unwrap_or_default();
+        let rows: Vec<(i64, String)> = sqlx::query_as(
+            "SELECT id, name FROM services WHERE id IN (SELECT value FROM json_each(?))",
+        )
+        .bind(ids)
+        .fetch_all(pool)
+        .await?;
+        Ok(rows.into_iter().collect())
     }
 
     /// The services a viewer may see, in the chosen order.

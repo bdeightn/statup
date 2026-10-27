@@ -70,7 +70,7 @@ test("erasing a detected outage from the panel erases the one that fell with it"
     await expect(panel.getByText("Pannes détectées")).toBeVisible();
     await expect(panel.getByText("46 min")).toBeVisible();
     await expect(panel.getByText("Nom introuvable")).toBeVisible();
-    await expect(panel.locator("button[data-outage-day]").first()).toHaveAttribute("aria-pressed", "true");
+    await expect(panel.locator("[data-outage-toggle]").first()).toHaveAttribute("aria-pressed", "true");
 
     await panel.getByRole("button", { name: "Ce n'était pas une panne" }).click();
     await expect(

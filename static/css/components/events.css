@@ -755,6 +755,7 @@
         margin: 0;
         padding: 0;
         list-style: none;
+        font-feature-settings: 'tnum' 1;
     }
 
     /* Only the outages of the day clicked show: a rule separates two
@@ -776,13 +777,11 @@
     .outage-when {
         font-size: var(--text-md);
         font-weight: 500;
-        font-feature-settings: 'tnum' 1;
     }
 
     .outage-length {
         font-size: var(--text-sm);
         color: var(--ink-soft);
-        font-feature-settings: 'tnum' 1;
         white-space: nowrap;
     }
 
@@ -798,7 +797,6 @@
         margin-top: 2px;
         font-size: var(--text-sm);
         color: var(--muted);
-        font-feature-settings: 'tnum' 1;
     }
 
     .drawer-actions {
