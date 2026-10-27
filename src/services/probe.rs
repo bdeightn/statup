@@ -23,6 +23,10 @@ pub enum Finding {
     TimedOut,
     /// The name matches no server.
     NameNotFound,
+    /// No name server answered: Statup's own resolver, or the name's.
+    NameServerSilent,
+    /// Statup has no network route at all.
+    NoRoute,
     /// The certificate was refused.
     Certificate,
     /// The server answered with an error status, 500 or above.
@@ -50,11 +54,21 @@ impl Finding {
             Self::Refused => "connection refused".into(),
             Self::TimedOut => "no answer in time".into(),
             Self::NameNotFound => "name not found".into(),
+            Self::NameServerSilent => "name server not answering".into(),
+            Self::NoRoute => "no network route".into(),
             Self::Certificate => "certificate refused".into(),
             Self::ServerError(status) => format!("server error {status}"),
             Self::TooManyRedirects => "too many redirects".into(),
             Self::Unreachable => "unreachable".into(),
         }
+    }
+}
+
+impl Finding {
+    /// Whether the failure says Statup itself is off the network, rather
+    /// than anything about the service.
+    pub fn is_network_loss(self) -> bool {
+        matches!(self, Self::NameServerSilent | Self::NoRoute)
     }
 }
 
@@ -183,44 +197,58 @@ pub(crate) fn classify_http(error: &reqwest::Error) -> Finding {
 }
 
 /// Looks through an error and its causes for the first one that says why.
+/// A failed lookup is judged on the whole chain: its outer layer only says
+/// "dns error", the cause underneath tells which kind.
 fn classify_chain(error: &(dyn std::error::Error + 'static)) -> Finding {
     let mut link = Some(error);
     while let Some(current) = link {
-        if let Some(io_error) = current.downcast_ref::<std::io::Error>() {
-            match io_error.kind() {
-                std::io::ErrorKind::ConnectionRefused => return Finding::Refused,
-                std::io::ErrorKind::TimedOut => return Finding::TimedOut,
-                _ => {}
-            }
+        if let Some(finding) = current
+            .downcast_ref::<std::io::Error>()
+            .and_then(|io_error| classify_io_kind(io_error.kind()))
+        {
+            return finding;
         }
-        let text = current.to_string().to_lowercase();
-        if text.contains("dns error") || text.contains("failed to lookup address") {
-            return Finding::NameNotFound;
-        }
-        if text.contains("certificate") {
+        if current.to_string().to_lowercase().contains("certificate") {
             return Finding::Certificate;
         }
         link = current.source();
     }
-    Finding::Unreachable
+    classify_lookup(&error_chain(error).to_lowercase()).unwrap_or(Finding::Unreachable)
 }
 
 fn classify_io(error: &std::io::Error) -> Finding {
-    match error.kind() {
-        std::io::ErrorKind::ConnectionRefused => return Finding::Refused,
-        std::io::ErrorKind::TimedOut => return Finding::TimedOut,
-        _ => {}
+    classify_io_kind(error.kind())
+        .or_else(|| classify_lookup(&error.to_string().to_lowercase()))
+        .unwrap_or(Finding::Unreachable)
+}
+
+fn classify_io_kind(kind: std::io::ErrorKind) -> Option<Finding> {
+    use std::io::ErrorKind;
+    match kind {
+        ErrorKind::ConnectionRefused => Some(Finding::Refused),
+        ErrorKind::TimedOut => Some(Finding::TimedOut),
+        ErrorKind::NetworkUnreachable | ErrorKind::NetworkDown => Some(Finding::NoRoute),
+        _ => None,
     }
-    let text = error.to_string().to_lowercase();
-    let unknown_name = [
+}
+
+/// A failed name lookup, from the system's own words: musl says "Try
+/// again" and glibc "Temporary failure" when no name server answers.
+fn classify_lookup(text: &str) -> Option<Finding> {
+    let silent = ["try again", "temporary failure in name resolution"];
+    let unknown = [
+        "dns error",
         "failed to lookup address",
         "nodename nor servname",
         "name or service not known",
     ];
-    if unknown_name.iter().any(|phrase| text.contains(phrase)) {
-        return Finding::NameNotFound;
+    if !unknown.iter().any(|phrase| text.contains(phrase)) {
+        return None;
     }
-    Finding::Unreachable
+    if silent.iter().any(|phrase| text.contains(phrase)) {
+        return Some(Finding::NameServerSilent);
+    }
+    Some(Finding::NameNotFound)
 }
 
 /// An error and its causes, joined from the outermost to the innermost.
@@ -395,6 +423,68 @@ mod tests {
         assert_eq!(web.outcome(), Outcome::Failed);
         let port = probe_tcp("nowhere", Duration::from_secs(1)).await;
         assert_eq!(port.outcome(), Outcome::Failed);
+    }
+
+    /// An outer error that only names its layer, as hyper's "dns error" does.
+    #[derive(Debug)]
+    struct Layer(&'static str, std::io::Error);
+
+    impl std::fmt::Display for Layer {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(self.0)
+        }
+    }
+
+    impl std::error::Error for Layer {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.1)
+        }
+    }
+
+    fn lookup_failure(words: &str) -> std::io::Error {
+        std::io::Error::other(format!("failed to lookup address information: {words}"))
+    }
+
+    #[test]
+    fn a_silent_name_server_is_told_apart_from_an_unknown_name() {
+        assert_eq!(
+            classify_io(&lookup_failure("Try again")),
+            Finding::NameServerSilent
+        );
+        assert_eq!(
+            classify_io(&lookup_failure("Temporary failure in name resolution")),
+            Finding::NameServerSilent
+        );
+        assert_eq!(
+            classify_io(&lookup_failure("Name does not resolve")),
+            Finding::NameNotFound
+        );
+        assert_eq!(
+            classify_io(&lookup_failure("Name or service not known")),
+            Finding::NameNotFound
+        );
+    }
+
+    #[test]
+    fn a_lookup_wrapped_in_a_dns_layer_is_judged_on_its_cause() {
+        let silent = Layer("dns error", lookup_failure("Try again"));
+        assert_eq!(classify_chain(&silent), Finding::NameServerSilent);
+        let unknown = Layer("dns error", lookup_failure("Name does not resolve"));
+        assert_eq!(classify_chain(&unknown), Finding::NameNotFound);
+    }
+
+    #[test]
+    fn no_route_is_a_network_loss() {
+        let unreachable = std::io::Error::from(std::io::ErrorKind::NetworkUnreachable);
+        assert_eq!(classify_io(&unreachable), Finding::NoRoute);
+        let wrapped = Layer("client error (Connect)", unreachable);
+        assert_eq!(classify_chain(&wrapped), Finding::NoRoute);
+        let down = std::io::Error::from(std::io::ErrorKind::NetworkDown);
+        assert_eq!(classify_io(&down), Finding::NoRoute);
+        assert!(Finding::NoRoute.is_network_loss());
+        assert!(Finding::NameServerSilent.is_network_loss());
+        assert!(!Finding::NameNotFound.is_network_loss());
+        assert!(!Finding::Refused.is_network_loss());
     }
 
     #[tokio::test]

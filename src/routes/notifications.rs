@@ -483,6 +483,8 @@ fn transport_key(finding: Finding) -> &'static str {
         Finding::Refused => "notifications.failure_refused",
         Finding::TimedOut => "notifications.failure_timeout",
         Finding::NameNotFound => "notifications.failure_name",
+        Finding::NameServerSilent => "notifications.failure_name_server",
+        Finding::NoRoute => "notifications.failure_no_route",
         Finding::Certificate => "notifications.failure_certificate",
         _ => "notifications.failure_unreachable",
     }

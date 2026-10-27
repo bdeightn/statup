@@ -77,6 +77,15 @@ pub fn looks_like_own_failure(observations: &[Observation]) -> bool {
         && answering_before().all(|observation| observation.outcome == Outcome::Failed)
 }
 
+/// Tells whether every service failed for a reason that says Statup itself
+/// is off the network, one entry per service checked.
+///
+/// Unlike [`looks_like_own_failure`], services already failing count too:
+/// once the network is gone, they fail for the same reason.
+pub fn looks_like_network_loss(network_losses: &[bool]) -> bool {
+    network_losses.len() >= MIN_SIMULTANEOUS_FALLS && network_losses.iter().all(|&lost| lost)
+}
+
 /// Returns whether to ignore this round and the new count of rounds ignored in a row.
 ///
 /// The cap lets a real outage of the whole site show up after a few rounds.
@@ -244,6 +253,14 @@ mod tests {
             obs(1, false, Outcome::Failed),
         ];
         assert!(!looks_like_own_failure(&round));
+    }
+
+    #[test]
+    fn every_service_off_the_network_is_a_network_loss() {
+        assert!(looks_like_network_loss(&[true; 13]));
+        assert!(!looks_like_network_loss(&[true, true, false]));
+        assert!(!looks_like_network_loss(&[true, true]));
+        assert!(!looks_like_network_loss(&[]));
     }
 
     #[test]

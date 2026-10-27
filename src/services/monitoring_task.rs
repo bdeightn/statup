@@ -10,7 +10,8 @@ use tokio::sync::Semaphore;
 use tokio::task::{AbortHandle, JoinSet};
 
 use super::monitoring::{
-    Observation, Outcome, Transition, looks_like_own_failure, next_state, skip_round,
+    Observation, Outcome, Transition, looks_like_network_loss, looks_like_own_failure, next_state,
+    skip_round,
 };
 use super::probe::{CHECK_TIMEOUT, Prober, Probes, Report};
 use super::{ServiceService, notify_later, tell_outage_detected};
@@ -82,6 +83,8 @@ impl LastChecks {
 pub struct MonitorState {
     streaks: HashMap<i64, Streak>,
     skipped_rounds: u8,
+    /// Every check failed because Statup is off the network.
+    offline: bool,
     last: Arc<LastChecks>,
 }
 
@@ -175,7 +178,9 @@ pub async fn run_round<P: Prober>(
             })
         })
         .collect();
-    if skip_this_round(pool, state, &observed, detailed).await {
+    if network_lost(pool, state, &observed, detailed).await
+        || skip_this_round(pool, state, &observed, detailed).await
+    {
         return Ok(());
     }
     // One service that cannot be recorded, such as one deleted during the
@@ -266,6 +271,36 @@ async fn probe_all<P: Prober>(
         }
     }
     reports
+}
+
+/// A round where every check failed because Statup is off the network is
+/// ignored for as long as that lasts, told once when it starts and once
+/// when it ends.
+async fn network_lost(
+    pool: &DbPool,
+    state: &mut MonitorState,
+    observed: &[Checked<'_>],
+    detailed: bool,
+) -> bool {
+    let losses: Vec<bool> = observed
+        .iter()
+        .map(|checked| checked.report.finding.is_network_loss())
+        .collect();
+    let lost = looks_like_network_loss(&losses);
+    if lost != state.offline {
+        state.offline = lost;
+        let entry = if lost {
+            NewJournalEntry::new(JournalKind::NetworkLost)
+                .with_detail(format!("{} services", observed.len()))
+        } else {
+            NewJournalEntry::new(JournalKind::NetworkBack)
+        };
+        journal::record_with(pool, entry, detailed).await;
+    }
+    if lost {
+        state.skipped_rounds = 0;
+    }
+    lost
 }
 
 /// A round where every service that answered fails at once points at
@@ -430,6 +465,19 @@ mod tests {
     impl Prober for Always {
         fn check(&self, _service: &CheckedService) -> impl Future<Output = Report> + Send {
             std::future::ready(report(self.0))
+        }
+    }
+
+    /// Fails every check for the same reason.
+    struct FailsWith(Finding);
+
+    impl Prober for FailsWith {
+        fn check(&self, _service: &CheckedService) -> impl Future<Output = Report> + Send {
+            std::future::ready(Report {
+                finding: self.0,
+                detail: None,
+                elapsed: Duration::ZERO,
+            })
         }
     }
 
@@ -721,6 +769,64 @@ mod tests {
         for &id in &ids {
             assert_eq!(states(&pool, id).await.1, Some(ServiceStatus::MajorOutage));
         }
+    }
+
+    async fn journal_kinds(pool: &DbPool) -> Vec<String> {
+        sqlx::query_scalar("SELECT kind FROM journal_entries ORDER BY id")
+            .fetch_all(pool)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn statup_off_the_network_waits_as_long_as_it_lasts() {
+        let pool = test_pool().await;
+        let mut ids = Vec::new();
+        for name in ["Mail", "Wiki", "VPN"] {
+            ids.push(checked_service(&pool, name).await);
+        }
+        let mut state = MonitorState::default();
+
+        for (n, finding) in
+            (1..=30).zip([Finding::NameServerSilent, Finding::NoRoute].iter().cycle())
+        {
+            let prober = Arc::new(FailsWith(*finding));
+            run_round(&pool, &prober, &mut state, minute(n))
+                .await
+                .unwrap();
+        }
+        rounds(&pool, &mut state, Outcome::Answered, &[31, 32]).await;
+
+        for &id in &ids {
+            assert_eq!(states(&pool, id).await.1, None);
+        }
+        assert_eq!(journal_kinds(&pool).await, ["network_lost", "network_back"]);
+    }
+
+    #[tokio::test]
+    async fn a_network_loss_on_some_services_only_is_judged_as_usual() {
+        let pool = test_pool().await;
+        for name in ["Mail", "Wiki", "VPN"] {
+            checked_service(&pool, name).await;
+        }
+        let mut state = MonitorState::default();
+
+        let prober = Arc::new(FailsWith(Finding::NameServerSilent));
+        run_round(&pool, &prober, &mut state, minute(1))
+            .await
+            .unwrap();
+        rounds(
+            &pool,
+            &mut state,
+            Outcome::Failed,
+            &[2, 3, 4, 5, 6, 7, 8, 9],
+        )
+        .await;
+
+        let kinds = journal_kinds(&pool).await;
+        assert_eq!(kinds.first().map(String::as_str), Some("network_lost"));
+        assert_eq!(kinds.get(1).map(String::as_str), Some("network_back"));
+        assert!(kinds.iter().any(|kind| kind == "outage_detected"));
     }
 
     #[tokio::test]

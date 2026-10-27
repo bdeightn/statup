@@ -133,6 +133,7 @@ fn detail_facts(kind: JournalKind, detail: &str, i18n: &I18n) -> Vec<String> {
         }
         K::CheckFailed | K::OutageDetected | K::OutageEnded => check_facts(detail, i18n),
         K::MonitoringRoundSkipped => round_skipped(detail, i18n),
+        K::NetworkLost => services_off_the_network(detail, i18n),
         K::ReportIgnored => match detail {
             "unknown service" => said("journal.fact_unknown_service"),
             "checked by Statup" => said("journal.fact_checked_by_statup"),
@@ -272,6 +273,8 @@ fn finding(words: &str, i18n: &I18n) -> Option<String> {
         "connection refused" => "journal.fact_refused",
         "no answer in time" => "journal.fact_timed_out",
         "name not found" => "journal.fact_name_not_found",
+        "name server not answering" => "journal.fact_name_server",
+        "no network route" => "journal.fact_no_route",
         "certificate refused" => "journal.fact_certificate",
         "too many redirects" => "journal.fact_redirects",
         "unreachable" => "journal.fact_unreachable",
@@ -288,6 +291,14 @@ fn round_skipped(detail: &str, i18n: &I18n) -> Vec<String> {
     leading_number(detail).map_or_else(
         || vec![detail.to_string()],
         |count| vec![i18n.plural("journal.fact_services_at_once", count)],
+    )
+}
+
+/// `13 services`.
+fn services_off_the_network(detail: &str, i18n: &I18n) -> Vec<String> {
+    leading_number(detail).map_or_else(
+        || vec![detail.to_string()],
+        |count| vec![i18n.plural("journal.fact_services_off_network", count)],
     )
 }
 

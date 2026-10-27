@@ -15,7 +15,7 @@ In the service's form, under **Monitoring**, choose:
 
 An address that holds a user name or a password is refused: the checks keep no credentials.
 
-**Test** runs the check at once, without saving, and says why it fails: the port is closed, there is no answer within 10 seconds, the name is unknown, the certificate is refused, the server answers with an error, the address redirects in a loop, or the connection fails.
+**Test** runs the check at once, without saving, and says why it fails: the port is closed, there is no answer within 10 seconds, the name is unknown, no name server answers, there is no network, the certificate is refused, the server answers with an error, the address redirects in a loop, or the connection fails.
 
 ## How a check runs
 
@@ -35,7 +35,8 @@ Statup never writes an incident itself. **Declare an incident**, on the banner o
 ## When no outage is declared
 
 - **During a maintenance under way** that names the service, unless the maintenance is marked **No downtime**. Failures are counted but raise nothing. If the service still fails when the maintenance ends, the outage is declared at the next failed check, dated from then. A check that answers during the maintenance still ends an outage.
-- **When Statup itself loses its connection.** If at least three services that were answering all fail in the same round, the round is ignored, for at most five rounds in a row. Two services failing together are judged as usual.
+- **When Statup is off the network.** If at least three services fail in the same round, all because Statup has no route to them or no name server answers, the checks pause for as long as that lasts. The Journal records one entry when the pause starts and one when the network is back. If every service on the page relies on the same name server and it goes down, Statup cannot tell that from its own cut and pauses too.
+- **When Statup loses its connection another way.** If at least three services that were answering all fail in the same round, for any other reason, the round is ignored, for at most five rounds in a row. Two services failing together are judged as usual.
 
 ## Alerts
 

@@ -154,6 +154,10 @@ pub enum JournalKind {
     CheckFailed,
     /// Every service failed at once: the round was ignored.
     MonitoringRoundSkipped,
+    /// Every check failed because Statup is off the network: checks paused.
+    NetworkLost,
+    /// Statup reaches the network again: checks resumed.
+    NetworkBack,
     /// A monitoring tool reported on a service Statup cannot act on.
     ReportIgnored,
     /// A message left for an alert channel.
@@ -280,6 +284,8 @@ impl JournalKind {
             Self::OutageEnded => row(Cat::Monitoring, true, Level::INFO, Tone::Ok, "Service back up", "journal.outage_ended"),
             Self::CheckFailed => row(Cat::Monitoring, false, Level::DEBUG, Tone::Minor, "Check failed", "journal.check_failed"),
             Self::MonitoringRoundSkipped => row(Cat::Monitoring, true, Level::WARN, Tone::Minor, "Monitoring round ignored: every service failed at once", "journal.monitoring_round_skipped"),
+            Self::NetworkLost => row(Cat::Monitoring, true, Level::WARN, Tone::Minor, "Statup is off the network: checks paused", "journal.network_lost"),
+            Self::NetworkBack => row(Cat::Monitoring, true, Level::INFO, Tone::Ok, "Statup is back on the network: checks resumed", "journal.network_back"),
             Self::ReportIgnored => row(Cat::Monitoring, true, Level::WARN, Tone::Minor, "Report from a monitoring tool ignored", "journal.report_ignored"),
             Self::AlertSent => row(Cat::Alerts, false, Level::DEBUG, Tone::Neutral, "Alert sent", "journal.alert_sent"),
             Self::AlertRetrying => row(Cat::Alerts, false, Level::WARN, Tone::Minor, "Alert not sent, will try again", "journal.alert_retrying"),

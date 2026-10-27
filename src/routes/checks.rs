@@ -274,6 +274,8 @@ pub(super) fn failure_key(finding: Finding) -> &'static str {
         Finding::Refused => "services.check_result_refused",
         Finding::TimedOut => "services.check_result_timeout",
         Finding::NameNotFound => "services.check_result_name",
+        Finding::NameServerSilent => "services.check_result_name_server",
+        Finding::NoRoute => "services.check_result_no_route",
         Finding::Certificate => "services.check_result_certificate",
         Finding::TooManyRedirects => "services.check_result_redirects",
         Finding::Answered { .. } | Finding::ServerError(_) | Finding::Unreachable => {
