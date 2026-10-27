@@ -72,7 +72,7 @@ impl OutageRepository {
         window: TimeDelta,
     ) -> Result<Vec<(i64, i64)>, sqlx::Error> {
         sqlx::query_as(
-            "SELECT mine.id, other.service_id FROM service_outages mine \
+            "SELECT DISTINCT mine.id, other.service_id FROM service_outages mine \
              JOIN service_outages other ON other.service_id != mine.service_id \
              AND other.ended_at IS NOT NULL \
              AND abs(julianday(other.started_at) - julianday(mine.started_at)) * 86400 <= ? \
@@ -99,20 +99,24 @@ impl OutageRepository {
         let Some(first) = erase_ended(&mut tx, service_id, outage_id).await? else {
             return Ok(Vec::new());
         };
+        let start = clock::db(first.start);
         let mut erased = vec![first];
         for &other in others {
-            let near = sqlx::query_scalar::<_, i64>(
-                "SELECT id FROM service_outages WHERE service_id = ? AND ended_at IS NOT NULL \
-                 AND abs(julianday(started_at) - julianday(?)) * 86400 <= ?",
+            let rows: Vec<(DateTime<Utc>, DateTime<Utc>)> = sqlx::query_as(
+                "DELETE FROM service_outages WHERE service_id = ? AND ended_at IS NOT NULL \
+                 AND abs(julianday(started_at) - julianday(?)) * 86400 <= ? \
+                 RETURNING started_at, ended_at",
             )
             .bind(other)
-            .bind(clock::db(erased[0].start))
+            .bind(&start)
             .bind(window.num_seconds())
             .fetch_all(&mut *tx)
             .await?;
-            for id in near {
-                erased.extend(erase_ended(&mut tx, other, id).await?);
-            }
+            erased.extend(rows.into_iter().map(|(start, end)| ErasedOutage {
+                service_id: other,
+                start,
+                end,
+            }));
         }
         tx.commit().await?;
         Ok(erased)

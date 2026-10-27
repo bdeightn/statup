@@ -264,3 +264,16 @@ async fn an_outage_under_way_is_not_erased() {
     assert_eq!(status, reqwest::StatusCode::NOT_FOUND);
     assert_eq!(outages_of(&app, service.id).await, 1);
 }
+
+#[tokio::test]
+async fn a_day_that_is_not_a_date_opens_the_panel_folded() {
+    let app = TestApp::spawn_public().await;
+    let id = service_with_an_outage(&app, "Mail", checks_found("name not found")).await;
+
+    let (status, panel) = app
+        .get(&format!("/services/{id}/drawer?day=yesterday"))
+        .await;
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert!(panel.contains(r#"aria-labelledby="svc-outages-title" hidden"#));
+}

@@ -81,16 +81,20 @@ pub async fn panel_outages(
         .iter()
         .map(|outage| {
             let days = days_covered(outage, first_day, now);
+            let end = outage.end.unwrap_or(now);
             OutageLine {
+                id: outage.id,
+                when: when(outage, i18n),
+                length: i18n.format_duration(&split_duration(end - outage.start)),
+                reason: view.user.and_then(|_| reason(&outage.cause, i18n)),
+                journal: view
+                    .user
+                    .filter(|u| u.role.can_admin())
+                    .map(|_| journal_link(outage.start, end, service_name)),
                 shown: view.day.is_some_and(|day| days.contains(&day)),
                 erasable: may_erase && outage.end.is_some(),
                 fallen_with: fallen.get(&outage.id).copied().unwrap_or(0),
-                days: days
-                    .iter()
-                    .map(|day| day.format("%Y-%m-%d").to_string())
-                    .collect::<Vec<_>>()
-                    .join(" "),
-                ..line(outage, service_name, view.user, now, i18n)
+                days: day_list(&days),
             }
         })
         .collect())
@@ -115,6 +119,15 @@ async fn fallen_with(
     Ok(counts)
 }
 
+/// "2026-10-26 2026-10-27", as the strip's days name themselves.
+fn day_list(days: &[NaiveDate]) -> String {
+    let days: Vec<String> = days
+        .iter()
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .collect();
+    days.join(" ")
+}
+
 /// The local days an outage spans, from `first_day` on.
 fn days_covered(outage: &Outage, first_day: NaiveDate, now: DateTime<Utc>) -> Vec<NaiveDate> {
     let last = clock::local_date(&outage.end.unwrap_or(now));
@@ -123,29 +136,6 @@ fn days_covered(outage: &Outage, first_day: NaiveDate, now: DateTime<Utc>) -> Ve
         .iter_days()
         .take_while(|day| *day <= last)
         .collect()
-}
-
-fn line(
-    outage: &Outage,
-    service_name: &str,
-    user: Option<&User>,
-    now: DateTime<Utc>,
-    i18n: &I18n,
-) -> OutageLine {
-    let end = outage.end.unwrap_or(now);
-    OutageLine {
-        id: outage.id,
-        when: when(outage, i18n),
-        length: i18n.format_duration(&split_duration(end - outage.start)),
-        reason: user.and_then(|_| reason(&outage.cause, i18n)),
-        journal: user
-            .filter(|u| u.role.can_admin())
-            .map(|_| journal_link(outage.start, end, service_name)),
-        days: String::new(),
-        shown: false,
-        erasable: false,
-        fallen_with: 0,
-    }
 }
 
 /// "Depuis le 27 oct. à 08:12", "27 oct., de 03:00 à 03:40" or "Du 26
@@ -220,7 +210,7 @@ pub async fn erase(
         return Err(AppError::NotFound);
     }
     let others = if form.together.is_some() {
-        visible_others(&state.pool, id, &viewer.scope).await?
+        visible_others(&state.pool, id, outage_id, &viewer.scope).await?
     } else {
         Vec::new()
     };
@@ -240,17 +230,22 @@ pub async fn erase(
     Ok(response)
 }
 
-async fn visible_others(pool: &DbPool, id: i64, scope: &Scope) -> Result<Vec<i64>, AppError> {
+/// The services the viewer sees whose ended outage began with this one.
+async fn visible_others(
+    pool: &DbPool,
+    id: i64,
+    outage_id: i64,
+    scope: &Scope,
+) -> Result<Vec<i64>, AppError> {
     let since = Utc::now() - chrono::Duration::days(SHORT_DAYS);
-    let mut others: Vec<i64> = OutageRepository::fallen_together(pool, id, since, FALLEN_TOGETHER)
-        .await?
-        .into_iter()
-        .map(|(_, other)| other)
-        .filter(|&other| scope.sees_service(other))
-        .collect();
-    others.sort_unstable();
-    others.dedup();
-    Ok(others)
+    Ok(
+        OutageRepository::fallen_together(pool, id, since, FALLEN_TOGETHER)
+            .await?
+            .into_iter()
+            .filter(|&(mine, other)| mine == outage_id && scope.sees_service(other))
+            .map(|(_, other)| other)
+            .collect(),
+    )
 }
 
 /// One line per outage, under its own service: each service's Journal
@@ -259,23 +254,29 @@ async fn record_erased(pool: &DbPool, viewer: &Viewer, erased: &[ErasedOutage]) 
     let Some(user) = viewer.user.as_ref() else {
         return;
     };
-    let mut origin: Option<String> = None;
-    for outage in erased {
-        let Ok(Some(service)) = ServiceRepository::find_by_id(pool, outage.service_id).await else {
+    let names: HashMap<i64, String> = match ServiceRepository::list_all(pool).await {
+        Ok(services) => services.into_iter().map(|s| (s.id, s.name)).collect(),
+        Err(e) => {
+            tracing::warn!(error = %e, "Erased outages could not be journaled");
+            return;
+        }
+    };
+    let origin = erased.first().and_then(|o| names.get(&o.service_id));
+    for (index, outage) in erased.iter().enumerate() {
+        let Some(name) = names.get(&outage.service_id) else {
             continue;
         };
-        let span = format!(
+        let mut detail = format!(
             "{} · {}",
             clock::rfc3339(outage.start),
             clock::rfc3339(outage.end)
         );
-        let detail = origin
-            .as_ref()
-            .map_or_else(|| span.clone(), |origin| format!("{span} · {origin}"));
-        origin.get_or_insert_with(|| service.name.clone());
+        if let Some(origin) = origin.filter(|_| index > 0) {
+            detail = format!("{detail} · {origin}");
+        }
         NewJournalEntry::new(JournalKind::OutageErased)
             .by(user)
-            .about(service.name)
+            .about(name.clone())
             .with_detail(detail)
             .record(pool)
             .await;

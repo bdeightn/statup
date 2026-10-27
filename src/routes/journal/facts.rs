@@ -306,7 +306,8 @@ fn services_off_the_network(detail: &str, i18n: &I18n) -> Vec<String> {
 /// `2026-10-26T23:56:00Z · 2026-10-27T08:42:00Z`, then the service it was
 /// erased from when erased with another's.
 fn erased_outage(detail: &str, i18n: &I18n) -> Vec<String> {
-    let mut parts = detail.split(" · ");
+    // The origin comes last and may hold the separator in its name.
+    let mut parts = detail.splitn(3, " · ");
     let span = parts.next().zip(parts.next()).and_then(|(start, end)| {
         let start = DateTime::parse_from_rfc3339(start).ok()?.to_utc();
         let end = DateTime::parse_from_rfc3339(end).ok()?.to_utc();
@@ -386,6 +387,21 @@ mod tests {
 
     fn said(kind: JournalKind, detail: &str) -> Vec<String> {
         facts(&entry(kind, detail), &I18n::new("fr"))
+    }
+
+    #[test]
+    fn an_erased_outage_says_its_span_and_where_it_was_erased_from() {
+        let facts = said(
+            JournalKind::OutageErased,
+            "2026-10-26T23:56:00Z · 2026-10-27T08:42:00Z · Mail · Paris",
+        );
+        assert_eq!(facts.len(), 2);
+        assert!(facts[0].starts_with("du 26 oct."), "{}", facts[0]);
+        assert_eq!(facts[1], "effacée avec «\u{a0}Mail · Paris\u{a0}»");
+        assert_eq!(
+            said(JournalKind::OutageErased, "not a span"),
+            ["not a span"]
+        );
     }
 
     #[test]
