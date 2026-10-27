@@ -651,10 +651,17 @@
         cursor: pointer;
     }
 
-    .bar[aria-pressed="true"] {
+    /* Hugs the day and paints over its neighbours: a flex item takes a
+       z-index without a position, which would move the day label. */
+    .bar[aria-pressed="true"],
+    button.bar:focus-visible {
+        z-index: 1;
         opacity: 1;
+        outline-offset: 0;
+    }
+
+    .bar[aria-pressed="true"] {
         outline: 2px solid var(--ink);
-        outline-offset: 2px;
     }
 
     .bar-minor {
