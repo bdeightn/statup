@@ -123,6 +123,7 @@ Chaque service a une barre par jour, dans le fuseau horaire de l'instance, jusqu
 
 - L'incident le plus grave de la journée l'emporte. Un incident compte de son début jusqu'à son passage **Sous surveillance**, ou jusqu'à sa fin ; un incident annulé ne compte jamais.
 - Une maintenance ne colore jamais une journée.
+- Sur ordinateur, une journée colorée par une panne détectée montre cette panne quand on clique dessus : voir [Surveillance](monitoring.md#in-the-history).
 - Une panne détectée ne colore une journée que si aucun incident ne la couvre, et seulement si elle dure quinze minutes ou plus au total.
 
 Aucun pourcentage : la légende compte les jours avec incident.

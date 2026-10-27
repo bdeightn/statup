@@ -44,9 +44,13 @@ Les services qui tombent dans la même minute, comme ceux d'un serveur en cours 
 
 ## Dans l'historique
 
-Une panne détectée de quinze minutes ou plus colore ses journées dans l'historique de disponibilité du service, sauf si un incident couvre déjà ce jour-là. Une panne plus courte laisse la journée en vert. Voir [Services](services.md#availability-history).
+Une panne détectée de quinze minutes ou plus colore ses journées dans l'historique de disponibilité du service, sauf si un incident couvre déjà ce jour-là, et la journée affiche « Sans réponse pendant » suivi de la durée. Une panne plus courte laisse la journée en vert. Voir [Services](services.md#availability-history).
 
-Changer le type de vérification, l'adresse, ou **Accepter un certificat interne** efface une panne en cours, par exemple une fausse panne due à une adresse erronée. Les pannes déjà terminées restent dans l'historique.
+Sur ordinateur, un clic sur l'une de ces journées, sur le tableau de bord ou dans le panneau latéral d'un service, montre les pannes de ce jour sous **Pannes détectées** : quand le service a cessé de répondre et pendant combien de temps. Les membres lisent aussi pourquoi, dans les mots de **Tester**, ou qu'un outil de supervision l'a signalée ; les administrateurs ont un lien **Journal** vers les lignes de ces jours-là. Les pannes enregistrées avant la version 0.9.0 n'ont pas de raison.
+
+**Ce n'était pas une panne**, pour les éditeurs et les administrateurs, efface une panne terminée. La case cochée dessous efface avec elle les pannes terminées des autres services qui ont commencé à cinq minutes près, comme quand Statup ou son serveur perd le réseau. Les journées repassent en vert, et le Journal note une ligne par service. Une panne en cours ne s'efface pas.
+
+Changer le type de vérification, l'adresse, ou **Accepter un certificat interne** efface une panne en cours, par exemple une fausse panne due à une adresse erronée. Les pannes déjà terminées restent dans l'historique jusqu'à ce qu'on les efface.
 
 ## Couper les vérifications
 
