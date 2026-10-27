@@ -64,7 +64,7 @@
                         </label>
                         <p class="kuma-group-meta">{% for fact in self.group_facts(group) %}{% if !loop.first %}&nbsp;<span aria-hidden="true">·</span> {% endif %}{{ fact }}{% endfor %}</p>
                         {% if !group.monitors.is_empty() %}
-                        <span class="svc-tags kuma-monitors">{% for monitor in group.monitors %}<span class="svc-tag{% if !monitor.is_new() %} is-kept{% endif %}">{{ monitor.name }}{% if !monitor.is_new() %}<span class="sr-only">&nbsp;: {{ self.kept_reason(monitor) }}</span>{% endif %}</span>{% endfor %}</span>
+                        <span class="svc-tags kuma-monitors">{% for monitor in group.monitors %}<span class="svc-tag{% if !monitor.is_new() %} is-kept{% endif %}">{{ monitor.name }}{% if !monitor.is_new() %}<span class="sr-only">, {{ self.kept_reason(monitor) }}</span>{% endif %}</span>{% endfor %}</span>
                         {% endif %}
                     </li>
                     {% endfor %}

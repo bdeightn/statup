@@ -65,8 +65,16 @@ impl ImportTemplate {
             .filter(|(_, n)| *n > 0)
             .map(|(key, n)| self.i18n.plural(key, n))
             .collect();
-        if group.new_services() > 0 && matches!(group.folder, FolderPlan::Existing { .. }) {
-            facts.push(self.i18n.t("kuma_import.folder_existing").to_string());
+        if group.new_services() > 0 {
+            match group.folder {
+                FolderPlan::Existing { .. } => {
+                    facts.push(self.i18n.t("kuma_import.folder_existing").to_string());
+                }
+                FolderPlan::Refused(_) => {
+                    facts.push(self.i18n.t("kuma_import.no_folder").to_string());
+                }
+                FolderPlan::New(_) => {}
+            }
         }
         facts
     }

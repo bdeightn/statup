@@ -512,6 +512,7 @@
   "kuma_import.refused.other": "{n} Namen zu lang",
   "kuma_import.existing_sr": "existiert bereits",
   "kuma_import.folder_existing": "vorhandener Ordner",
+  "kuma_import.no_folder": "ohne Ordner",
   "kuma_import.no_monitor": "Kein Monitor",
   "kuma_import.no_group": "Keine Gruppe auf dieser Seite.",
   "kuma_import.nothing_new": "Alle Dienste dieser Seite existieren bereits.",

@@ -152,8 +152,25 @@ fn parse(body: &[u8]) -> Result<KumaPage, KumaError> {
             .and_then(|config| config.title)
             .map(|title| title.trim().to_string())
             .filter(|title| !title.is_empty()),
-        groups: data.groups,
+        groups: merge_same_names(data.groups),
     })
+}
+
+/// Groups of the same name, whatever the case, become one: their monitors
+/// go in one folder anyway, and a ticked name means them all.
+fn merge_same_names(groups: Vec<KumaGroup>) -> Vec<KumaGroup> {
+    let mut merged: Vec<KumaGroup> = Vec::with_capacity(groups.len());
+    for group in groups {
+        let name = group.name.trim().to_lowercase();
+        match merged
+            .iter_mut()
+            .find(|kept| kept.name.trim().to_lowercase() == name)
+        {
+            Some(kept) => kept.monitors.extend(group.monitors),
+            None => merged.push(group),
+        }
+    }
+    merged
 }
 
 /// The body, refused as soon as it passes `limit` bytes.
@@ -310,6 +327,30 @@ mod tests {
                 [("Infrastructure", vec!["Mail", "VPN"]), ("Réseau", vec![])]
             );
         }
+    }
+
+    #[test]
+    fn groups_of_the_same_name_become_one() {
+        let body = r#"{"publicGroupList": [
+            {"name": "Services", "monitorList": [{"name": "Mail"}]},
+            {"name": "Réseau", "monitorList": [{"name": "VPN"}]},
+            {"name": " services", "monitorList": [{"name": "Wiki"}]}
+        ]}"#;
+        let page = parse(body.as_bytes()).unwrap();
+        let names: Vec<(&str, Vec<&str>)> = page
+            .groups
+            .iter()
+            .map(|g| {
+                (
+                    g.name.as_str(),
+                    g.monitors.iter().map(|m| m.name.as_str()).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            names,
+            [("Services", vec!["Mail", "Wiki"]), ("Réseau", vec!["VPN"])]
+        );
     }
 
     #[test]

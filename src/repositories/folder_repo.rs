@@ -37,6 +37,31 @@ impl FolderRepository {
         .await
     }
 
+    /// Creates a service already in the folder and following it, in one
+    /// transaction: it is never seen outside the folder with another
+    /// visibility. Returns its id.
+    pub async fn create_service(
+        pool: &DbPool,
+        folder_id: i64,
+        name: &str,
+        slug: &str,
+    ) -> Result<i64, sqlx::Error> {
+        let mut tx = pool.begin().await?;
+        let id = sqlx::query_scalar(
+            "INSERT INTO services (name, slug, position, folder_id, follows_folder) \
+             VALUES (?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM services), ?, 1) \
+             RETURNING id",
+        )
+        .bind(name)
+        .bind(slug)
+        .bind(folder_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        propagate(&mut tx, folder_id).await?;
+        tx.commit().await?;
+        Ok(id)
+    }
+
     /// Whether another folder already has this name, ignoring case, accents
     /// included: SQLite folds the case of ASCII letters only. `except` is
     /// the folder being renamed.

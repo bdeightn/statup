@@ -233,20 +233,41 @@ impl Run<'_> {
             return Ok(());
         }
         let folder = self.folder(&group.folder).await?;
-        let mut ids = Vec::with_capacity(new.len());
         for name in new {
-            let service = ServiceService::create(self.pool, name, None, None, None).await?;
-            NewJournalEntry::new(JournalKind::ServiceCreated)
+            self.service(name, folder.as_ref()).await?;
+        }
+        Ok(())
+    }
+
+    /// Creates one service, inside its folder from the start: it never
+    /// shows with another visibility, even when the import stops there.
+    async fn service(
+        &mut self,
+        name: &str,
+        folder: Option<&(i64, String)>,
+    ) -> Result<(), AppError> {
+        match folder {
+            Some((id, _)) => {
+                ServiceService::create_in_folder(self.pool, *id, name).await?;
+            }
+            None => {
+                ServiceService::create(self.pool, name, None, None, None).await?;
+            }
+        }
+        NewJournalEntry::new(JournalKind::ServiceCreated)
+            .by(self.user)
+            .about(name)
+            .record(self.pool)
+            .await;
+        if let Some((_, folder)) = folder {
+            NewJournalEntry::new(JournalKind::FolderServiceAdded)
                 .by(self.user)
-                .about(&service.name)
+                .about(name)
+                .with_detail(folder)
                 .record(self.pool)
                 .await;
-            ids.push(service.id);
         }
-        self.imported.services += ids.len();
-        if let Some((id, name)) = folder {
-            self.place(id, &name, &ids).await?;
-        }
+        self.imported.services += 1;
         Ok(())
     }
 
@@ -269,20 +290,6 @@ impl Run<'_> {
         self.created.insert(name.to_lowercase(), id);
         self.imported.folders += 1;
         Ok(Some((id, name.clone())))
-    }
-
-    /// Puts the new services in their folder, in the order of the group;
-    /// they take the folder's visibility.
-    async fn place(&self, folder_id: i64, folder: &str, ids: &[i64]) -> Result<(), AppError> {
-        for service in FolderRepository::add_services(self.pool, folder_id, ids).await? {
-            NewJournalEntry::new(JournalKind::FolderServiceAdded)
-                .by(self.user)
-                .about(&service.name)
-                .with_detail(folder)
-                .record(self.pool)
-                .await;
-        }
-        Ok(())
     }
 }
 
