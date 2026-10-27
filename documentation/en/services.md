@@ -141,4 +141,6 @@ A service that events name is kept, so their history stays whole. To stop showin
 | See the states and the history, open a service's side panel | Yes | Yes | Yes |
 | Create, edit, set a state, change the order, delete, manage icons | | Yes | Yes |
 | Choose who sees a service, manage folders | | Yes | Yes |
+| Read why a detected outage happened | Yes | Yes | Yes |
+| Erase a detected outage that was not one | | Yes | Yes |
 | Leave a service out of the dashboard | | | Yes |

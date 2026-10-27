@@ -141,4 +141,6 @@ Un service cité par des événements est conservé, pour que leur historique re
 | Voir les états et l'historique, ouvrir le panneau latéral d'un service | Oui | Oui | Oui |
 | Créer, modifier, régler un état, changer l'ordre, supprimer, gérer les icônes | | Oui | Oui |
 | Choisir qui voit un service, gérer les dossiers | | Oui | Oui |
+| Lire pourquoi une panne a été détectée | Oui | Oui | Oui |
+| Effacer une panne détectée qui n'en était pas une | | Oui | Oui |
 | Retirer un service du tableau de bord | | | Oui |
