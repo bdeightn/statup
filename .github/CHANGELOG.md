@@ -2,7 +2,7 @@
 
 All notable changes to Statup are listed here. The project is pre-v1: until 1.0, a minor version may change the interface or the database, and the README asks you to back up before upgrading.
 
-## Unreleased
+## 0.9.0, 2026-10-27
 
 - Clearer wording in Settings, the Journal, Alerts and the profile, in every language: one word for each thing (**SMTP server**, **Page URL**, **Webhook URL**, **Send a test**), Journal **entries** and a **Capture level**, and the reasons a message failed said plainly.
 - Clearer wording on the dashboard, the events, the subscription pages and emails, and the error pages, in every language: **updates** rather than news, **Delete** where something is deleted, and shorter confirmations.
