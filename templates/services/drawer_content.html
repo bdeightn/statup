@@ -1,5 +1,5 @@
 {% import "components/macros.html" as ui %}
-<div class="drawer-body">
+<div class="drawer-body svc-panel">
     {% if can_edit %}
     <a href="/services/{{ row.service.id }}/edit" class="drawer-tool drawer-edit" title="{{ i18n.t("services.edit") }} {{ row.service.name }}" aria-label="{{ i18n.t("services.edit") }} {{ row.service.name }}">{% call ui::pencil_icon() %}{% endcall %}</a>
     {% endif %}
@@ -86,7 +86,7 @@
             </li>
             {% endfor %}
         </ul>
-        {% endif %}
         <a class="hero-link" href="/events?service_id={{ row.service.id }}">{{ i18n.t("services.panel_all_events") }}{% call ui::arrow_right() %}{% endcall %}</a>
+        {% endif %}
     </section>
 </div>

@@ -711,6 +711,13 @@
         margin-top: 28px;
     }
 
+    /* A service's panel rules its sections apart, the hidden outages
+       aside. */
+    .svc-panel .drawer-section:not([hidden]) ~ .drawer-section:not([hidden]) {
+        padding-top: 24px;
+        border-top: 1px solid var(--hairline);
+    }
+
     .drawer-title-svc {
         display: flex;
         align-items: center;
