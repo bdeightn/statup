@@ -2,7 +2,7 @@
 //!
 //! A service that follows its folder carries a copy of the folder's setting
 //! (`services.visibility` and `service_access`), so the read rule never looks
-//! at folders. [`propagate`] is the only code that writes those copies, for
+//! at folders. [`copy_setting`] is the only code that writes those copies, for
 //! groups (`service_access`) and for single members (`service_member_access`).
 
 use std::collections::HashMap;
@@ -35,6 +35,31 @@ impl FolderRepository {
         .bind(name)
         .fetch_one(pool)
         .await
+    }
+
+    /// Creates a service already in the folder and following it, in one
+    /// transaction: it is never seen outside the folder with another
+    /// visibility. Returns its id.
+    pub async fn create_service(
+        pool: &DbPool,
+        folder_id: i64,
+        name: &str,
+        slug: &str,
+    ) -> Result<i64, sqlx::Error> {
+        let mut tx = pool.begin().await?;
+        let id = sqlx::query_scalar(
+            "INSERT INTO services (name, slug, position, folder_id, follows_folder) \
+             VALUES (?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM services), ?, 1) \
+             RETURNING id",
+        )
+        .bind(name)
+        .bind(slug)
+        .bind(folder_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        copy_setting(&mut tx, folder_id, Some(id)).await?;
+        tx.commit().await?;
+        Ok(id)
     }
 
     /// Whether another folder already has this name, ignoring case, accents
@@ -307,11 +332,22 @@ pub(super) async fn propagate(
     tx: &mut sqlx::Transaction<'_, Sqlite>,
     folder_id: i64,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    copy_setting(tx, folder_id, None).await
+}
+
+/// The copy of [`propagate`], to every follower or to one service only.
+async fn copy_setting(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    folder_id: i64,
+    only: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    const FOLLOWERS: &str = "folder_id = ?1 AND follows_folder = 1 AND (?2 IS NULL OR id = ?2)";
+    sqlx::query(&format!(
         "UPDATE services SET visibility = (SELECT visibility FROM service_folders WHERE id = ?1) \
-         WHERE folder_id = ?1 AND follows_folder = 1",
-    )
+         WHERE {FOLLOWERS}"
+    ))
     .bind(folder_id)
+    .bind(only)
     .execute(&mut **tx)
     .await?;
     let copies = [
@@ -320,19 +356,20 @@ pub(super) async fn propagate(
     ];
     for (copy, source, grantee) in copies {
         sqlx::query(&format!(
-            "DELETE FROM {copy} WHERE service_id IN \
-             (SELECT id FROM services WHERE folder_id = ?1 AND follows_folder = 1)"
+            "DELETE FROM {copy} WHERE service_id IN (SELECT id FROM services WHERE {FOLLOWERS})"
         ))
         .bind(folder_id)
+        .bind(only)
         .execute(&mut **tx)
         .await?;
         sqlx::query(&format!(
             "INSERT INTO {copy} (service_id, {grantee}) \
              SELECT s.id, a.{grantee} FROM services s \
              JOIN {source} a ON a.folder_id = s.folder_id \
-             WHERE s.folder_id = ?1 AND s.follows_folder = 1"
+             WHERE s.id IN (SELECT id FROM services WHERE {FOLLOWERS})"
         ))
         .bind(folder_id)
+        .bind(only)
         .execute(&mut **tx)
         .await?;
     }

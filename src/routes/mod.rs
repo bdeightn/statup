@@ -20,6 +20,7 @@ mod groups;
 mod health;
 mod icons;
 mod journal;
+mod kuma_import;
 mod locale;
 mod notices;
 mod notifications;
@@ -226,6 +227,11 @@ fn publisher_routes() -> Router<AppState> {
             "/services/{id}/edit",
             get(services::edit_form).post(services::update),
         )
+        .route(
+            "/services/import",
+            get(kuma_import::page).post(kuma_import::import),
+        )
+        .route("/services/import/read", post(kuma_import::read))
         .route("/services/folders/new", post(folders::create_folder))
         .route("/services/folders/order", post(folders::save_order))
         .route("/services/folders/{id}", get(folders::folder_page))

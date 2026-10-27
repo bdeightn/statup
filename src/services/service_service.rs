@@ -4,7 +4,9 @@
 use crate::db::DbPool;
 use crate::error::AppError;
 use crate::models::{CheckKind, Service, ServiceCheck, ServiceStatus, derive_status};
-use crate::repositories::{EventRepository, ServiceRepository, SettingsRepository};
+use crate::repositories::{
+    EventRepository, FolderRepository, ServiceRepository, SettingsRepository,
+};
 
 /// Longest service name, in characters.
 pub const SERVICE_NAME_MAX_CHARS: usize = 100;
@@ -29,6 +31,21 @@ impl ServiceService {
         let slug = unique_slug(pool, name).await?;
         let description = clean_description(description);
         Ok(ServiceRepository::create(pool, name, &slug, description, icon_id, icon_name).await?)
+    }
+
+    /// Creates a service inside a folder, following it from the start.
+    /// Returns its id.
+    pub async fn create_in_folder(
+        pool: &DbPool,
+        folder_id: i64,
+        name: &str,
+    ) -> Result<i64, AppError> {
+        let name = name.trim();
+        if let Some(key) = service_field_error(name, None) {
+            return Err(AppError::validation(key));
+        }
+        let slug = unique_slug(pool, name).await?;
+        Ok(FolderRepository::create_service(pool, folder_id, name, &slug).await?)
     }
 
     pub async fn update(

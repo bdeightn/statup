@@ -23,6 +23,8 @@ Editors and administrators manage services from the **Services** page. Readers a
 
 To change a service later, open it by its name or by its pencil on the Services page, then **Save**. Its state is not in the form: it is set from the list.
 
+To create at once the services of an Uptime Kuma status page, under the names of its monitors: **New**, then **Import from Uptime Kuma**. See [Uptime Kuma](monitoring-tools.md#uptime-kuma).
+
 ## Icons
 
 - 24 built-in icons, from Server to Printing.

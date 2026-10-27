@@ -188,6 +188,14 @@ impl Service {
             .map(|i| i.paths)
     }
 
+    /// Whether a tool that names a service this way means this one: by its
+    /// name or its slug, whatever the case. The first service of the
+    /// Services order that answers takes the report.
+    pub fn answers_to(&self, named: &str) -> bool {
+        let wanted = named.trim().to_lowercase();
+        self.name.to_lowercase() == wanted || self.slug == wanted
+    }
+
     /// Fragment identifier of the service on the status page, stable across
     /// renames, so a link can point at one service.
     pub fn anchor(&self) -> String {
